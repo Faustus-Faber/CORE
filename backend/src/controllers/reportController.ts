@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import type { NextFunction, Request, Response } from "express";
 
 import {
@@ -15,6 +19,47 @@ function mapFiles(request: Request) {
   const voiceFile = filesByField?.voiceNote?.[0];
 
   return { mediaFiles, voiceFile };
+}
+
+function inferFileExtension(file: Express.Multer.File) {
+  const nameExtension = path.extname(file.originalname).toLowerCase();
+  if (nameExtension && nameExtension.length <= 10) {
+    return nameExtension;
+  }
+
+  if (file.mimetype.startsWith("image/")) {
+    return `.${file.mimetype.slice("image/".length)}`;
+  }
+
+  if (file.mimetype.startsWith("video/")) {
+    return `.${file.mimetype.slice("video/".length)}`;
+  }
+
+  return "";
+}
+
+async function persistMediaFiles(files: Express.Multer.File[]) {
+  if (files.length === 0) {
+    return [];
+  }
+
+  const uploadDirectory = path.resolve(process.cwd(), "uploads", "reports");
+  await mkdir(uploadDirectory, { recursive: true });
+
+  return Promise.all(
+    files.map(async (file) => {
+      const extension = inferFileExtension(file);
+      const filename = `${Date.now()}-${randomUUID()}${extension}`;
+      const targetPath = path.join(uploadDirectory, filename);
+      await writeFile(targetPath, file.buffer);
+
+      return {
+        originalname: `/uploads/reports/${filename}`,
+        mimetype: file.mimetype,
+        size: file.size
+      };
+    })
+  );
 }
 
 export async function createReport(
@@ -46,6 +91,7 @@ export async function createReport(
         }
       : undefined
   });
+  const storedMediaFiles = await persistMediaFiles(mediaFiles);
 
   const report = await createIncidentReport({
     reporterId,
@@ -53,7 +99,7 @@ export async function createReport(
     description: payload.description,
     incidentType: payload.incidentType,
     locationText: payload.locationText,
-    mediaFiles: payload.mediaFiles,
+    mediaFiles: storedMediaFiles,
     voiceFile: voiceFile
       ? {
           buffer: voiceFile.buffer,
@@ -87,7 +133,9 @@ export async function listMyReports(
     search: query.search,
     severity: query.severity,
     sortBy: query.sortBy,
-    order: query.order
+    order: query.order,
+    page: query.page,
+    limit: query.limit
   });
 
   return response.status(200).json({ reports });
@@ -110,7 +158,9 @@ export async function listReports(
     search: query.search,
     severity: query.severity,
     sortBy: query.sortBy,
-    order: query.order
+    order: query.order,
+    page: query.page,
+    limit: query.limit
   });
 
   return response.status(200).json({ reports });

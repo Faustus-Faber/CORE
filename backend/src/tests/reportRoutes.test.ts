@@ -1,3 +1,6 @@
+import { existsSync, rmSync } from "node:fs";
+import { resolve } from "node:path";
+
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +17,7 @@ vi.mock("../services/reportService.js", () => {
 });
 
 const { app } = await import("../app.js");
+const uploadsDirectory = resolve(process.cwd(), "uploads", "reports");
 
 function buildAuthToken() {
   return signAuthToken(
@@ -26,6 +30,9 @@ describe("report routes", () => {
   beforeEach(() => {
     createIncidentReportMock.mockReset();
     listIncidentReportsMock.mockReset();
+    if (existsSync(uploadsDirectory)) {
+      rmSync(uploadsDirectory, { recursive: true, force: true });
+    }
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -79,6 +86,48 @@ describe("report routes", () => {
     expect(response.status).toBe(201);
     expect(response.body.report.id).toBe("r100");
     expect(createIncidentReportMock).toHaveBeenCalledOnce();
+  });
+
+  it("stores media uploads and forwards stored media paths", async () => {
+    createIncidentReportMock.mockResolvedValue({
+      id: "r101",
+      incidentTitle: "Flood near bridge",
+      classifiedIncidentTitle: "Flash flood alert",
+      severityLevel: "HIGH",
+      credibilityScore: 76,
+      classifiedIncidentType: "FLOOD",
+      spamFlagged: false,
+      status: "PUBLISHED",
+      translatedDescription: null
+    });
+
+    const response = await request(app)
+      .post("/api/reports")
+      .set("Authorization", `Bearer ${buildAuthToken()}`)
+      .field({
+        incidentTitle: "Flood near bridge",
+        description: "Water level rising fast.",
+        incidentType: "FLOOD",
+        locationText: "Dhaka"
+      })
+      .attach("media", Buffer.from("fake-image"), "evidence.jpg");
+
+    expect(response.status).toBe(201);
+    expect(createIncidentReportMock).toHaveBeenCalledOnce();
+
+    const payload = createIncidentReportMock.mock.calls[0]?.[0] as {
+      mediaFiles: Array<{ originalname: string }>;
+    };
+    expect(payload.mediaFiles).toHaveLength(1);
+    expect(payload.mediaFiles[0].originalname).toMatch(
+      /^\/uploads\/reports\/.+\.jpg$/i
+    );
+
+    const savedFilePath = resolve(
+      process.cwd(),
+      payload.mediaFiles[0].originalname.replace(/^\//, "")
+    );
+    expect(existsSync(savedFilePath)).toBe(true);
   });
 
   it("lists community reports for authenticated users", async () => {

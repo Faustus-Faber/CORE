@@ -197,6 +197,14 @@ function toQueryString(query: ReportListQuery) {
     params.set("order", query.order);
   }
 
+  if (typeof query.page === "number") {
+    params.set("page", String(query.page));
+  }
+
+  if (typeof query.limit === "number") {
+    params.set("limit", String(query.limit));
+  }
+
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
 }

@@ -41,8 +41,6 @@ export const env = {
   groqApiKey: process.env.GROQ_API_KEY ?? "test-groq-key",
   groqBaseUrl: process.env.GROQ_BASE_URL ?? "https://api.groq.com/openai/v1",
   groqWhisperModel: process.env.GROQ_WHISPER_MODEL ?? "whisper-large-v3",
-  textAnalysisApiBaseUrl:
-    process.env.TEXT_ANALYSIS_API_BASE_URL ??
-    "https://lintiest-alissa-brigandishly.ngrok-free.dev",
+  groqQwenModel: process.env.GROQ_QWEN_MODEL ?? "qwen/qwen3-32b",
   aiRequestTimeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 20000)
 };

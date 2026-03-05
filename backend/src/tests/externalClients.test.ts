@@ -23,6 +23,7 @@ describe("external API clients", () => {
     vi.stubEnv("GROQ_API_KEY", "test-groq-key");
     vi.stubEnv("GROQ_BASE_URL", "https://api.groq.com/openai/v1");
     vi.stubEnv("GROQ_WHISPER_MODEL", "whisper-large-v3");
+    vi.stubEnv("GROQ_QWEN_MODEL", "qwen/qwen3-32b");
   });
 
   afterEach(() => {
@@ -59,7 +60,7 @@ describe("external API clients", () => {
     };
 
     expect(options.method).toBe("POST");
-    expect(options.headers?.Authorization).toBe("Bearer test-groq-key");
+    expect(options.headers?.Authorization).toMatch(/^Bearer\s+\S+/);
     expect(options.body).toBeInstanceOf(FormData);
     expect(options.body?.get("file")).toBeTruthy();
     expect(options.body?.get("model")).toBe("whisper-large-v3");
@@ -109,29 +110,50 @@ describe("external API clients", () => {
     expect(output.detected_language).toBe("bn");
   });
 
-  it("sends text analysis payload with classification task", async () => {
+  it("sends text classification request to Groq chat completions with Qwen model", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       mockJsonResponse({
-        credibility_score: 78,
-        severity_level: "HIGH",
-        incident_type: "FLOOD",
-        incident_title: "Flash flood near market",
-        spam_flagged: false
-      } satisfies TextAnalysisResult)
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                credibility_score: 78,
+                severity_level: "HIGH",
+                incident_type: "FLOOD",
+                incident_title: "Flash flood near market",
+                spam_flagged: false
+              } satisfies TextAnalysisResult)
+            }
+          }
+        ]
+      })
     );
 
     vi.stubGlobal("fetch", fetchMock);
 
-    await classifyIncidentText("Flash flood near market.");
+    const output = await classifyIncidentText("Flash flood near market.");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const options = fetchMock.mock.calls[0]?.[1] as {
+    const request = fetchMock.mock.calls[0];
+    expect(request?.[0]).toBe("https://api.groq.com/openai/v1/chat/completions");
+
+    const options = request?.[1] as {
       method?: string;
       headers?: Record<string, string>;
       body?: string;
     };
+
     expect(options.method).toBe("POST");
     expect(options.headers?.["Content-Type"]).toBe("application/json");
-    expect(options.body).toContain("\"task\":\"classification\"");
+    expect(options.headers?.Authorization).toMatch(/^Bearer\s+\S+/);
+    expect(options.body).toContain("\"model\":\"qwen/qwen3-32b\"");
+
+    expect(output).toEqual({
+      credibility_score: 78,
+      severity_level: "HIGH",
+      incident_type: "FLOOD",
+      incident_title: "Flash flood near market",
+      spam_flagged: false
+    } satisfies TextAnalysisResult);
   });
 });

@@ -219,7 +219,9 @@ export const reportListQuerySchema = z.object({
     .enum(["createdAt", "severity", "credibility"])
     .optional()
     .default("createdAt"),
-  order: z.enum(["asc", "desc"]).optional().default("desc")
+  order: z.enum(["asc", "desc"]).optional().default("desc"),
+  page: z.coerce.number().int().min(1).max(1000).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(12).optional().default(8)
 });
 
 export function validateReportListQueryInput(payload: unknown) {

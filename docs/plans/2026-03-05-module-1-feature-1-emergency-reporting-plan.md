@@ -4,7 +4,7 @@
 
 **Goal:** Implement Module 1.1 end-to-end emergency reporting with voice transcription/translation and text classification using the new external APIs, supporting both in-browser voice recording and audio-file upload, then publish validated reports and expose searchable/sortable reporting views for community, reporter, and admin moderation flows.
 
-**Architecture:** Use a synchronous request pipeline for Module 1.1 MVP: validate form input -> optional voice API call -> text analysis API call -> persist normalized report with metadata -> return confirmation payload -> redirect reporter to Reports Explorer. Frontend voice input supports two sources that converge into one backend contract: (1) browser recording via `MediaRecorder` to `.webm` blob and (2) direct file upload (`.mp3/.wav/.webm`). Reporting views consume protected list APIs with query-driven search/filter/sort (including severity ranking): reporter/community endpoints (`GET /api/reports`, `GET /api/reports/mine`) and admin moderation endpoints (`GET /api/admin/reports/unpublished`, `PATCH /api/admin/reports/:reportId/status`).
+**Architecture:** Use a synchronous request pipeline for Module 1.1 MVP: validate form input -> optional Groq Whisper transcription call -> optional Groq translation call for non-English transcripts -> text analysis API call -> persist normalized report with metadata -> return confirmation payload -> redirect reporter to Reports Explorer. Frontend voice input supports two sources that converge into one backend contract: (1) browser recording via `MediaRecorder` to `.webm` blob and (2) direct file upload (`.mp3/.wav/.webm`). Reporting views consume protected list APIs with query-driven search/filter/sort (including severity ranking): reporter/community endpoints (`GET /api/reports`, `GET /api/reports/mine`) and admin moderation endpoints (`GET /api/admin/reports/unpublished`, `PATCH /api/admin/reports/:reportId/status`).
 
 **Tech Stack:** Express + TypeScript + Prisma (MongoDB), React + TypeScript + Tailwind, Vitest, fetch/FormData, JWT-auth protected routes.
 
@@ -108,7 +108,7 @@ git commit -m "feat: add incident report prisma model for module 1.1"
 
 **Step 1: Write failing tests for client contracts**
 - Create tests for:
-  - voice client request must be multipart/form-data with `audio_file`.
+  - voice client request must call Groq with multipart/form-data keys: `file`, `model`, and `response_format=verbose_json` for transcription.
   - text client request must send `{ text, task: "classification" }`.
   - response parsing maps required fields with type checks.
 
@@ -118,11 +118,13 @@ git commit -m "feat: add incident report prisma model for module 1.1"
 
 **Step 3: Implement minimal clients + env wiring**
 - Add env keys:
-  - `VOICE_API_BASE_URL`
+  - `GROQ_API_KEY`
+  - `GROQ_BASE_URL`
+  - `GROQ_WHISPER_MODEL`
   - `TEXT_ANALYSIS_API_BASE_URL`
   - `AI_REQUEST_TIMEOUT_MS` (default e.g. 15000)
 - Implement:
-  - `submitVoiceReport(fileBuffer|stream, filename, mimeType)`
+  - `submitVoiceReport(fileBuffer|stream, filename, mimeType)` with Groq transcription (`/audio/transcriptions`) and conditional translation (`/audio/translations`) for non-English transcripts
   - `classifyIncidentText(text)`
 
 **Step 4: Re-run tests**
@@ -272,7 +274,7 @@ git commit -m "test: verify end-to-end backend report pipeline"
 **Step 3: Implement API helpers**
 - Add `createEmergencyReport(formData)` in `api.ts`.
 - Ensure multipart request for media.
-- Ensure helper can build `audio_file` from either recorded blob or uploaded file.
+- Ensure helper can build backend `voiceNote` payload from either recorded blob or uploaded file.
 - Parse and surface structured validation messages from backend.
 
 **Step 4: Re-run build**
@@ -316,7 +318,7 @@ git commit -m "feat: add frontend report api integration contracts"
 - Implement recorder UX:
   - mic-permission request and error state.
   - recording state indicator/timer.
-  - stop and attach recorded `.webm` as `audio_file`.
+  - stop and attach recorded `.webm` as backend `voiceNote` file.
   - mutually clear/replace behavior between recorded clip and uploaded file.
 
 **Step 4: Re-run build and manual smoke**
@@ -450,9 +452,9 @@ git commit -m "docs: add module 1.1 runbook and qa checklist"
 ## Final Acceptance Criteria (Module 1.1)
 - Authenticated `User`/`Volunteer` can submit incident with text and optional media.
 - Voice input supports both:
-  - in-browser recording button (start/stop) and submission as `audio_file`
+  - in-browser recording button (start/stop) and submission as backend `voiceNote`
   - direct audio file upload fallback.
-- Both voice paths call the specified voice endpoint and persist voice metadata.
+- Both voice paths call Groq Whisper transcription (`/audio/transcriptions`) and, when needed, Groq translation (`/audio/translations`), then persist normalized voice metadata.
 - Text analysis calls the specified Qwen endpoint and persists classification fields.
 - Spam handling follows: `spam_flagged = true` OR `credibility_score < 30`.
 - After successful submit, reporter is redirected to Reports Explorer with a confirmation summary banner.

@@ -45,7 +45,7 @@
 | Service | Purpose |
 |:---|:---|
 | **Text Analysis API (Qwen 3.5-4B)** | Incident credibility evaluation, severity classification, incident-type/title extraction (`POST /api/v1/analyze`, task = `classification`), with future task-specific endpoints for summary/advisory generation |
-| **Voice Report API** | Multilingual voice-note transcription and translation (Bangla / Banglish â†’ English) |
+| **Groq Speech API (Whisper Large v3)** | Multilingual voice-note transcription with optional English translation fallback (`/audio/transcriptions`, `/audio/translations`) |
 | **Google Maps API** | Interactive geolocation mapping of active crises and available resources |
 | **Google Vision OCR API** | Optical character recognition for extracting text data from disaster-damage images |
 | **Twilio API** | Automated SMS dispatch for emergency coordination alerts |
@@ -270,18 +270,19 @@
 
 | Aspect | Detail |
 |:---|:---|
-| **Description** | Authenticated users can submit incident reports describing an ongoing or imminent crisis. Reports can be submitted via structured text forms or multilingual voice notes (supporting Bangla and Banglish). The system automatically processes each submission through an AI pipeline that transcribes audio, translates non-English content, evaluates credibility to filter spam or false reports, and classifies the incident by severity level and disaster type. |
+| **Description** | Authenticated users can submit incident reports describing an ongoing or imminent crisis. Reports can be submitted via structured text forms or multilingual voice notes (supporting Bangla and Banglish). The system automatically processes each submission through an AI pipeline that transcribes audio with Groq Whisper Large v3, conditionally translates non-English content to English, evaluates credibility to filter spam or false reports, and classifies the incident by severity level and disaster type. |
 | **Actors** | User, Volunteer. |
-| **External APIs** | Text Analysis API (Qwen 3.5-4B) (credibility scoring, severity classification), Voice Report API (voice transcription & translation). |
+| **External APIs** | Text Analysis API (Qwen 3.5-4B) (credibility scoring, severity classification), Groq Speech API (Whisper Large v3 transcription with translation fallback). |
 
 **API Integration Contracts (Updated):**
 
 | API | Value |
 |:---|:---|
-| **Voice API Base URL** | `https://dervishlike-nilda-hiply.ngrok-free.dev` |
-| **Voice Endpoint** | `POST /api/v1/voice-report` |
-| **Voice Request** | `FormData { audio_file: File }` |
-| **Voice Response** | `{ status, filename, detected_language, language_probability, translated_description }` |
+| **Groq Base URL** | `https://api.groq.com/openai/v1` |
+| **Groq Transcription Endpoint** | `POST /audio/transcriptions` |
+| **Groq Translation Endpoint** | `POST /audio/translations` (used when detected language is not English) |
+| **Groq Request** | `FormData { file: File, model: "whisper-large-v3" }` (+ `response_format: "verbose_json"` for transcription) |
+| **Normalized Voice Metadata** | `{ status, filename, detected_language, language_probability, translated_description }` where `language_probability` may be `null` because Groq Whisper does not provide confidence probability in this flow |
 | **Voice Constraints** | `.mp3`, `.wav`, `.webm`; max 5 minutes; ≤ 10 MB |
 | **Text Analysis Base URL** | `https://lintiest-alissa-brigandishly.ngrok-free.dev` |
 | **Text Analysis Endpoint** | `POST /api/v1/analyze` |
@@ -301,9 +302,10 @@
      - **Record Voice** (in-browser start/stop recording button)
      - **Upload Voice File** (audio file â‰¤ 5 minutes, formats: .mp3, .wav, .webm)
 2. If a voice note is recorded or uploaded, the system shall:
-   - Send the audio file to `POST https://dervishlike-nilda-hiply.ngrok-free.dev/api/v1/voice-report` as `FormData` with key `audio_file`.
-   - Parse and store response fields: `filename`, `detected_language`, `language_probability`, and `translated_description`.
-   - Auto-populate the **Description** field with `translated_description`.
+   - Send the audio file to `POST https://api.groq.com/openai/v1/audio/transcriptions` as `FormData` with keys `file`, `model=whisper-large-v3`, and `response_format=verbose_json`.
+   - Parse transcription text and detected language from Groq.
+   - If detected language is non-English, send the same audio file to `POST https://api.groq.com/openai/v1/audio/translations` to get English text.
+   - Persist normalized voice metadata fields: `filename`, `detected_language`, `language_probability` (`null` when unavailable), and `translated_description` (final text used for downstream classification).
 3. Upon submission, the system shall send the final report text to `POST https://lintiest-alissa-brigandishly.ngrok-free.dev/api/v1/analyze` with payload `{ text, task: "classification" }` and use the response to:
    - Set `credibility_score` (0â€“100). If `spam_flagged = true` or score < 30, mark as `Suspected Spam` and hold for admin review.
    - Set `severity_level` as one of `Critical`, `High`, `Medium`, `Low`.
@@ -831,7 +833,7 @@
 | **Security** | All passwords shall be hashed using bcrypt (salt rounds â‰¥ 10). All API communication shall occur over HTTPS. JWTs shall expire within 24 hours (extendable with "Remember Me"). Sensitive data (OCR results, secure documents) shall be access-controlled. |
 | **Availability** | The deployed application on Render shall target 99% uptime during the academic demonstration period. |
 | **Usability** | The UI shall be fully responsive (mobile, tablet, desktop). All forms shall provide real-time validation feedback. Error messages shall be user-friendly and non-technical. |
-| **Internationalization** | The Voice Report API integration shall support Bangla and Banglish voice input. The UI shall be in English with potential for future localization. |
+| **Internationalization** | The Groq Whisper voice pipeline shall support Bangla and Banglish voice input with transcription and conditional English translation fallback. The UI shall be in English with potential for future localization. |
 | **Data Integrity** | All crisis updates and resource changes shall use append-only logs to maintain a complete audit trail. Soft-delete shall be used for user-facing deletions. |
 | **Compliance** | User location data shall only be collected with explicit browser permission. Users shall be informed of data usage in a privacy notice accessible from the landing page. |
 

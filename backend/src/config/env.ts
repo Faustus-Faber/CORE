@@ -1,7 +1,9 @@
 import "dotenv/config";
 
 const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
-const required: string[] = isTest ? [] : ["JWT_SECRET", "DATABASE_URL"];
+const required: string[] = isTest
+  ? []
+  : ["JWT_SECRET", "DATABASE_URL", "GROQ_API_KEY"];
 
 for (const key of required) {
   if (!process.env[key]) {
@@ -36,9 +38,9 @@ export const env = {
   port: Number(process.env.PORT ?? 5000),
   corsOrigins,
   jwtSecret: process.env.JWT_SECRET ?? "test-secret",
-  voiceApiBaseUrl:
-    process.env.VOICE_API_BASE_URL ??
-    "https://dervishlike-nilda-hiply.ngrok-free.dev",
+  groqApiKey: process.env.GROQ_API_KEY ?? "test-groq-key",
+  groqBaseUrl: process.env.GROQ_BASE_URL ?? "https://api.groq.com/openai/v1",
+  groqWhisperModel: process.env.GROQ_WHISPER_MODEL ?? "whisper-large-v3",
   textAnalysisApiBaseUrl:
     process.env.TEXT_ANALYSIS_API_BASE_URL ??
     "https://lintiest-alissa-brigandishly.ngrok-free.dev",

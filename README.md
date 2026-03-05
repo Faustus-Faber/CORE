@@ -1,110 +1,96 @@
 # CORE - Community Organization for Response & Emergency
 
-CORE is a crisis-response web platform for community-led emergency coordination.  
-It is based on the SRS in [docs/SRS.md](./docs/SRS.md), with Module 0 implemented as the current working milestone.
+CORE is a crisis-response web platform for community-led emergency coordination.
+The full product scope is defined in [docs/SRS.md](./docs/SRS.md).
+
+## Current Implementation Status
+
+### Module 0 (Foundation)
+- Public landing page
+- Authentication (signup/login/logout)
+- Forgot/reset password
+- Profile management
+- RBAC with protected frontend/backend routes
+- Admin user-management basics (list users, role update, ban/unban)
+- Responsive app shell/navigation
+
+### Module 1, Feature 1 (Emergency Reporting)
+- Incident submission form with:
+  - Title, description, incident type, location
+  - Optional media upload (images/videos)
+  - Voice note via:
+    - in-browser recording (`MediaRecorder`)
+    - direct audio file upload (`.mp3`, `.wav`, `.webm`)
+- External AI pipeline integration:
+  - Voice transcription/translation API
+  - Text analysis/classification API (credibility, severity, type, title, spam flag)
+- Report persistence in MongoDB via Prisma
+- Reporter redirect to Reports Explorer after submit
+- Reports Explorer:
+  - `Community Reports` and `My Submissions`
+  - Search, severity filter, sort (time/severity/credibility)
+- Admin moderation for unpublished reports:
+  - Review unpublished (`UNDER_REVIEW`) reports
+  - Publish report from admin moderation page
 
 ## Technology Stack
 - Frontend: React + TypeScript + Tailwind CSS + Vite
 - Backend: Express + TypeScript
-- Database: MongoDB (Atlas/local) via Prisma
+- Database: MongoDB via Prisma
 - Auth: JWT in httpOnly cookies
+- Testing: Vitest + Supertest
 
-## Implemented Right Now (Module 0)
+## Newly Added Packages (Module 1 Feature 1)
 
-### 0.1 Public Landing Page
-- Public, responsive landing page with:
-  - Hero + CTA (`Sign Up`, `Login`)
-  - Core capabilities section
-  - How-it-works summary
-  - Impact stats + footer
+### Backend runtime dependencies
+- `multer` (multipart file upload handling)
+- `supertest` (HTTP route testing support)
 
-### 0.2 Registration (User/Volunteer)
-- Sign up fields:
-  - Full name, email, phone, password + confirm, location, role
-- Volunteer-specific fields:
-  - Skills, availability, certifications
-- Server-side validation:
-  - Email/phone format checks
-  - Password policy (8+ chars, upper/lower/number/symbol)
-  - Duplicate email/phone rejection
-- Password hashing with bcrypt
-
-### 0.3 Login & Authentication
-- Login with email/phone + password
-- JWT issuance with `Remember Me` duration support
-- Session cookie stored as httpOnly cookie
-- Role-aware redirect behavior on login
-
-### 0.4 Password Recovery
-- Forgot password flow
-- Reset token generation and expiry (15 minutes)
-- Reset password endpoint + UI
-
-### 0.5 Profile Management
-- Authenticated profile view/edit
-- Update name, phone, location, avatar URL
-- Volunteer metadata updates (skills/availability/certifications)
-- Change password with current-password verification
-
-### 0.6 Role-Based Access Control (RBAC)
-- Auth middleware (`requireAuth`)
-- Role middleware (`requireRole`)
-- Permission model utility for Module 0 RBAC baseline
-- Protected and role-restricted frontend routes
-
-### 0.7 Admin Seed Account
-- Prisma seed script creates default admin
-- Admin-only endpoints:
-  - List users
-  - Promote/demote User <-> Volunteer
-  - Ban/unban users
-
-### 0.8 Logout
-- Logout endpoint clears auth cookie
-- Frontend logout action in navigation
-
-### 0.9 Responsive Navigation & Layout Shell
-- Navbar adapts by auth state and role:
-  - Guest: Home/Login/Sign Up
-  - User/Volunteer/Admin: role-specific menu
-- Mobile menu support
-
-## Current Non-Module-0 Scope
-- Modules 1-3 are not fully implemented yet.
-- Placeholder/protected routes are present for later modules.
+### Backend dev dependencies
+- `@types/multer`
+- `@types/supertest`
 
 ## Project Structure
-- `backend/` - API, auth, profile, admin controls, Prisma schema/seed, tests
-- `frontend/` - Landing/auth/profile/admin UI + route protection
-- `docs/` - SRS and design notes
+- `backend/` - API, services, Prisma schema/seed, tests
+- `frontend/` - UI pages/components/services
+- `docs/` - SRS and implementation plans
+
+## Requirements
+- Node.js 22+
+- npm 10+
+- MongoDB Atlas/local instance
 
 ## Environment Setup
 
-### 1. Backend env
-Create `backend/.env`:
+### 1. Backend env (`backend/.env`)
 
 ```env
 DATABASE_URL="mongodb+srv://<user>:<pass>@<cluster>/core?retryWrites=true&w=majority"
 PORT=5000
 CORS_ORIGIN="http://localhost:5173"
 JWT_SECRET="replace-with-strong-random-secret"
+
 ADMIN_EMAIL="admin@core.local"
 ADMIN_PHONE="+8801700000000"
 ADMIN_PASSWORD="Admin@12345"
 ADMIN_NAME="CORE Admin"
 ADMIN_LOCATION="Dhaka"
+
+VOICE_API_BASE_URL="https://dervishlike-nilda-hiply.ngrok-free.dev"
+TEXT_ANALYSIS_API_BASE_URL="https://lintiest-alissa-brigandishly.ngrok-free.dev"
+AI_REQUEST_TIMEOUT_MS=15000
 ```
 
-### 2. Frontend env
-Create `frontend/.env`:
+### 2. Frontend env (`frontend/.env`)
 
 ```env
 VITE_API_URL=http://localhost:5000/api
 ```
 
-## How To Run The Project Cleanly (Windows PowerShell)
+## Install Dependencies
 
-### Step A: Install deps
+### First-time setup
+
 ```powershell
 cd backend
 npm install
@@ -113,7 +99,20 @@ npm install
 cd ..
 ```
 
-### Step B: Prepare database
+### After pulling latest changes
+
+Run this every time after `git pull` if package files changed:
+
+```powershell
+cd backend
+npm install
+cd ../frontend
+npm install
+cd ..
+```
+
+## Database Setup
+
 ```powershell
 cd backend
 npm run prisma:generate
@@ -122,7 +121,10 @@ npm run seed
 cd ..
 ```
 
-### Step C: Ensure no old dev servers are running
+## Run the App (Windows PowerShell)
+
+### Stop old processes (recommended)
+
 ```powershell
 $conn5000 = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue
 if ($conn5000) { Stop-Process -Id $conn5000.OwningProcess -Force }
@@ -130,22 +132,28 @@ $conn5173 = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction Sile
 if ($conn5173) { Stop-Process -Id $conn5173.OwningProcess -Force }
 ```
 
-### Step D: Start servers
-Terminal 1:
+### Start backend (Terminal 1)
+
 ```powershell
 cd backend
 npm run dev
 ```
 
-Terminal 2:
+### Start frontend (Terminal 2)
+
 ```powershell
 cd frontend
 npm run dev
 ```
 
-### Step E: Open app
+### Open
 - Frontend: `http://localhost:5173`
 - Backend health: `http://localhost:5000/api/health`
+
+## Admin Login
+- Admin is seeded from `backend/.env`.
+- Login identifier: `ADMIN_EMAIL` or `ADMIN_PHONE`
+- Password: `ADMIN_PASSWORD`
 
 ## Verification Commands
 - Backend tests: `cd backend && npm test`

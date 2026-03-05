@@ -252,9 +252,9 @@
 **Functional Details:**
 
 - **Unauthenticated state:** The navbar shall display: Logo, Home, About, Login, Sign Up.
-- **Authenticated state (User):** The navbar shall display: Logo, Dashboard, Map, Resources, Volunteers, Profile, Notifications Bell, Logout.
-- **Authenticated state (Volunteer):** All User nav items plus: "My Tasks", "Leaderboard", and the "ðŸ”” Dispatch Alert" bell button.
-- **Authenticated state (Admin):** All User nav items plus: "Admin Panel", "Generate Reports".
+- **Authenticated state (User):** The navbar shall display: Logo, Dashboard, Map, Resources, Volunteers, Profile, Leaderboard, a **Reports dropdown** ("Submit Incident", "Browse Reports"), Notifications Bell, Logout.
+- **Authenticated state (Volunteer):** All User nav items plus: "My Tasks" and the "ðŸ”” Dispatch Alert" bell button.
+- **Authenticated state (Admin):** All User nav items plus: "Admin Panel" and extra Reports dropdown options: "Review Unpublished" and "Generate Reports".
 - The layout shall include a mobile-responsive hamburger menu.
 - A global **notification badge** shall indicate unread push notifications.
 
@@ -293,12 +293,14 @@
 
 1. The system shall present a report-submission form with the following fields:
    - **Incident Title** (text, required, max 120 characters)
-   - **Description** (text area, required, max 2000 characters)
+   - **Description** (text area, max 2000 characters; required only when no voice note is attached)
    - **Incident Type** (dropdown: Flood, Fire, Earthquake, Building Collapse, Road Accident, Violence, Medical Emergency, Other)
    - **Location** (text input with optional GPS auto-detect via browser geolocation)
    - **Photo / Video Upload** (optional, max 5 files, each â‰¤ 10 MB)
-   - **Voice Note Upload** (optional, audio file â‰¤ 5 minutes, formats: .mp3, .wav, .webm)
-2. If a voice note is uploaded, the system shall:
+   - **Voice Note Input** with two options:
+     - **Record Voice** (in-browser start/stop recording button)
+     - **Upload Voice File** (audio file â‰¤ 5 minutes, formats: .mp3, .wav, .webm)
+2. If a voice note is recorded or uploaded, the system shall:
    - Send the audio file to `POST https://dervishlike-nilda-hiply.ngrok-free.dev/api/v1/voice-report` as `FormData` with key `audio_file`.
    - Parse and store response fields: `filename`, `detected_language`, `language_probability`, and `translated_description`.
    - Auto-populate the **Description** field with `translated_description`.
@@ -309,7 +311,24 @@
 4. The processed report shall be saved to the database with the following stored fields:
    - Reporter's User ID, timestamp, location, all form inputs, voice metadata (`filename`, `detected_language`, `language_probability`, `translated_description`), AI metadata (`credibility_score`, `severity_level`, `incident_type`, `incident_title`, `spam_flagged`), and processing status.
 5. Reports that pass credibility screening shall immediately appear on the **Real-Time Dashboard** (Module 2.1) and **Interactive Crisis Map** (Module 2.2).
-6. The reporter shall receive an on-screen confirmation with a summary of the submitted report and its assigned severity.
+6. After successful submission, the reporter shall be redirected to a **Reports Explorer** page (`Browse Reports`) and see a submission-summary banner (classified title, severity, credibility, status).
+7. The Reports Explorer page shall be available from the navbar **Reports dropdown** and shall provide:
+   - **Community Reports** tab (published reports visible to authenticated users)
+   - **My Submissions** tab (includes the reporter's own reports, including `Under Review` entries)
+8. Reports Explorer shall support:
+   - Keyword search (title/classified title/location/description)
+   - Severity filter (`Critical`, `High`, `Medium`, `Low`, `All`)
+   - Sorting by `Created Time`, `Severity`, or `Credibility` (ascending/descending)
+9. The backend shall expose protected list endpoints for the explorer:
+   - `GET /api/reports` for community-visible published reports
+   - `GET /api/reports/mine` for the authenticated reporter's own submissions
+10. The system shall provide an **Admin Report Moderation** page for unpublished reports, available only to the `Admin` role from the Reports dropdown ("Review Unpublished").
+11. Admin moderation shall support:
+    - Listing unpublished (`UNDER_REVIEW`) reports with search, severity filter, and sorting controls.
+    - Publishing an unpublished report, which changes status to `PUBLISHED` so it appears in community listings.
+12. The backend shall expose admin-only moderation endpoints:
+    - `GET /api/admin/reports/unpublished`
+    - `PATCH /api/admin/reports/:reportId/status` with body `{ status: "PUBLISHED" | "UNDER_REVIEW" }`
 
 ---
 

@@ -13,6 +13,29 @@ enum Role {
   ADMIN
 }
 
+enum IncidentSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum IncidentStatus {
+  PUBLISHED
+  UNDER_REVIEW
+}
+
+enum IncidentType {
+  FLOOD
+  FIRE
+  EARTHQUAKE
+  BUILDING_COLLAPSE
+  ROAD_ACCIDENT
+  VIOLENCE
+  MEDICAL_EMERGENCY
+  OTHER
+}
+
 model User {
   id                String   @id @default(auto()) @map("_id") @db.ObjectId
   fullName          String
@@ -31,4 +54,29 @@ model User {
   resetTokenExpiry  DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+model IncidentReport {
+  id                    String           @id @default(auto()) @map("_id") @db.ObjectId
+  reporterId            String           @db.ObjectId
+  incidentTitle         String
+  description           String
+  incidentType          IncidentType
+  locationText          String
+  mediaFilenames        String[]
+  sourceAudioFilename   String?
+  detectedLanguage      String?
+  languageProbability   Float?
+  translatedDescription String?
+  credibilityScore      Int
+  severityLevel         IncidentSeverity
+  classifiedIncidentType IncidentType
+  classifiedIncidentTitle String
+  spamFlagged           Boolean          @default(false)
+  status                IncidentStatus   @default(PUBLISHED)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([reporterId, createdAt(sort: Desc)])
+  @@index([status, severityLevel])
 }

@@ -3,6 +3,7 @@ import { Router } from "express";
 import { adminRoutes } from "./adminRoutes.js";
 import { authRoutes } from "./authRoutes.js";
 import { profileRoutes } from "./profileRoutes.js";
+import { reportRoutes } from "./reportRoutes.js";
 
 export const apiRoutes = Router();
 
@@ -13,3 +14,4 @@ apiRoutes.get("/health", (_request, response) => {
 apiRoutes.use("/auth", authRoutes);
 apiRoutes.use("/profile", profileRoutes);
 apiRoutes.use("/admin", adminRoutes);
+apiRoutes.use("/reports", reportRoutes);

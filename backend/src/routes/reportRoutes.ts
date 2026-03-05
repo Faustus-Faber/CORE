@@ -1,0 +1,32 @@
+import multer from "multer";
+import { Router } from "express";
+
+import {
+  createReport,
+  listMyReports,
+  listReports
+} from "../controllers/reportController.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
+import { requireAuth } from "../middleware/auth.js";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024
+  }
+});
+
+export const reportRoutes = Router();
+
+reportRoutes.get("/", requireAuth, asyncHandler(listReports));
+reportRoutes.get("/mine", requireAuth, asyncHandler(listMyReports));
+
+reportRoutes.post(
+  "/",
+  requireAuth,
+  upload.fields([
+    { name: "media", maxCount: 5 },
+    { name: "voiceNote", maxCount: 1 }
+  ]),
+  asyncHandler(createReport)
+);

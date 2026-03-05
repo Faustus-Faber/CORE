@@ -1,7 +1,9 @@
 import { Router } from "express";
 
 import {
+  listUnpublishedReports,
   listUsers,
+  updateReportStatus,
   updateUserBanStatus,
   updateUserRole
 } from "../controllers/adminController.js";
@@ -15,3 +17,5 @@ adminRoutes.use(requireAuth, requireRole("ADMIN"));
 adminRoutes.get("/users", asyncHandler(listUsers));
 adminRoutes.patch("/users/:userId/role", asyncHandler(updateUserRole));
 adminRoutes.patch("/users/:userId/ban", asyncHandler(updateUserBanStatus));
+adminRoutes.get("/reports/unpublished", asyncHandler(listUnpublishedReports));
+adminRoutes.patch("/reports/:reportId/status", asyncHandler(updateReportStatus));

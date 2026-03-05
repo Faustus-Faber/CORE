@@ -16,7 +16,9 @@ const defaultFilters: Required<ReportListQuery> = {
   search: "",
   severity: "ALL",
   sortBy: "createdAt",
-  order: "desc"
+  order: "desc",
+  page: 1,
+  limit: 8
 };
 
 const severityOptions: Array<{ value: IncidentSeverity | "ALL"; label: string }> = [
@@ -88,7 +90,8 @@ export function AdminReportModerationPage() {
     event.preventDefault();
     setAppliedFilters({
       ...filters,
-      search: filters.search.trim()
+      search: filters.search.trim(),
+      page: 1
     });
   };
 
@@ -96,6 +99,24 @@ export function AdminReportModerationPage() {
     setFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
   };
+
+  const handlePageChange = (nextPage: number) => {
+    if (nextPage < 1 || isLoading) {
+      return;
+    }
+
+    setFilters((previous) => ({
+      ...previous,
+      page: nextPage
+    }));
+    setAppliedFilters((previous) => ({
+      ...previous,
+      page: nextPage
+    }));
+  };
+
+  const currentPage = appliedFilters.page;
+  const hasNextPage = reports.length === appliedFilters.limit;
 
   const handlePublish = async (reportId: string) => {
     setError("");
@@ -298,6 +319,28 @@ export function AdminReportModerationPage() {
             ))}
           </div>
         )}
+
+        <div className="mt-4 flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
+          <p className="text-slate-600">Page {currentPage}</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1 || isLoading}
+              className="rounded-md border border-slate-300 px-3 py-1 font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={!hasNextPage || isLoading}
+              className="rounded-md border border-slate-300 px-3 py-1 font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </section>
     </div>
   );

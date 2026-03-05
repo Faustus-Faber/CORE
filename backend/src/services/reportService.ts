@@ -75,6 +75,8 @@ export type ListIncidentReportsInput = {
   severity: SeverityFilter;
   sortBy: ReportSortBy;
   order: ReportSortOrder;
+  page: number;
+  limit: number;
 };
 
 export type ListUnderReviewIncidentReportsInput = {
@@ -82,6 +84,8 @@ export type ListUnderReviewIncidentReportsInput = {
   severity: SeverityFilter;
   sortBy: ReportSortBy;
   order: ReportSortOrder;
+  page: number;
+  limit: number;
 };
 
 type ReportRecordForList = Pick<
@@ -92,6 +96,7 @@ type ReportRecordForList = Pick<
   | "classifiedIncidentTitle"
   | "description"
   | "locationText"
+  | "mediaFilenames"
   | "credibilityScore"
   | "severityLevel"
   | "status"
@@ -117,6 +122,7 @@ export type IncidentReportListItem = {
   classifiedIncidentType: IncidentType;
   description: string;
   locationText: string;
+  mediaFilenames: string[];
   credibilityScore: number;
   severityLevel: IncidentSeverity;
   status: IncidentStatus;
@@ -185,6 +191,7 @@ const defaultListDependencies: ListIncidentReportsDependencies = {
         classifiedIncidentTitle: true,
         description: true,
         locationText: true,
+        mediaFilenames: true,
         credibilityScore: true,
         severityLevel: true,
         status: true,
@@ -389,14 +396,18 @@ export async function listIncidentReports(
     .sort((left, right) =>
       compareReports(left, right, input.sortBy, input.order)
     );
+  const page = Math.max(1, input.page);
+  const limit = Math.max(1, input.limit);
+  const startIndex = (page - 1) * limit;
+  const pagedReports = filteredReports.slice(startIndex, startIndex + limit);
 
   const reporterIds = Array.from(
-    new Set(filteredReports.map((report) => report.reporterId))
+    new Set(pagedReports.map((report) => report.reporterId))
   );
   const reporters = await dependencies.listUsers(reporterIds);
   const reporterMap = new Map(reporters.map((reporter) => [reporter.id, reporter.fullName]));
 
-  return filteredReports.map((report) => {
+  return pagedReports.map((report) => {
     const isMine = report.reporterId === input.viewerId;
     const reporterName = isMine
       ? "You"
@@ -413,6 +424,7 @@ export async function listIncidentReports(
       classifiedIncidentType: report.classifiedIncidentType,
       description: report.description,
       locationText: report.locationText,
+      mediaFilenames: report.mediaFilenames,
       credibilityScore: report.credibilityScore,
       severityLevel: report.severityLevel,
       status: report.status,
@@ -439,16 +451,20 @@ export async function listUnderReviewIncidentReports(
     .sort((left, right) =>
       compareReports(left, right, input.sortBy, input.order)
     );
+  const page = Math.max(1, input.page);
+  const limit = Math.max(1, input.limit);
+  const startIndex = (page - 1) * limit;
+  const pagedReports = filteredReports.slice(startIndex, startIndex + limit);
 
   const reporterIds = Array.from(
-    new Set(filteredReports.map((report) => report.reporterId))
+    new Set(pagedReports.map((report) => report.reporterId))
   );
   const reporters = await dependencies.listUsers(reporterIds);
   const reporterMap = new Map(
     reporters.map((reporter) => [reporter.id, reporter.fullName])
   );
 
-  return filteredReports.map((report) => {
+  return pagedReports.map((report) => {
     return {
       id: report.id,
       reporterId: report.reporterId,
@@ -460,6 +476,7 @@ export async function listUnderReviewIncidentReports(
       classifiedIncidentType: report.classifiedIncidentType,
       description: report.description,
       locationText: report.locationText,
+      mediaFilenames: report.mediaFilenames,
       credibilityScore: report.credibilityScore,
       severityLevel: report.severityLevel,
       status: report.status,

@@ -70,6 +70,8 @@ describe("validateReportListQueryInput", () => {
     expect(result.severity).toBe("ALL");
     expect(result.sortBy).toBe("createdAt");
     expect(result.order).toBe("desc");
+    expect(result.page).toBe(1);
+    expect(result.limit).toBe(8);
   });
 
   it("accepts explicit search and severity sorting options", () => {
@@ -77,13 +79,17 @@ describe("validateReportListQueryInput", () => {
       search: "north market",
       severity: "HIGH",
       sortBy: "severity",
-      order: "asc"
+      order: "asc",
+      page: "2",
+      limit: "5"
     });
 
     expect(result.search).toBe("north market");
     expect(result.severity).toBe("HIGH");
     expect(result.sortBy).toBe("severity");
     expect(result.order).toBe("asc");
+    expect(result.page).toBe(2);
+    expect(result.limit).toBe(5);
   });
 
   it("rejects unsupported sort keys", () => {
@@ -92,5 +98,14 @@ describe("validateReportListQueryInput", () => {
         sortBy: "title"
       })
     ).toThrow("Invalid enum value");
+  });
+
+  it("rejects unsupported pagination values", () => {
+    expect(() =>
+      validateReportListQueryInput({
+        page: "0",
+        limit: "100"
+      })
+    ).toThrow();
   });
 });

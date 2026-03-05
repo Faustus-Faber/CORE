@@ -64,7 +64,9 @@ describe("admin report moderation routes", () => {
       search: "fire",
       severity: "ALL",
       sortBy: "severity",
-      order: "desc"
+      order: "desc",
+      page: 1,
+      limit: 8
     });
   });
 

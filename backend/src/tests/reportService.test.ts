@@ -126,7 +126,7 @@ describe("listIncidentReports", () => {
       description: "water rising",
       incidentType: "FLOOD",
       locationText: "North District",
-      mediaFilenames: [],
+      mediaFilenames: ["/uploads/reports/flood-1.jpg"],
       sourceAudioFilename: null,
       detectedLanguage: null,
       languageProbability: null,
@@ -198,7 +198,9 @@ describe("listIncidentReports", () => {
         search: "market",
         severity: "ALL",
         sortBy: "createdAt",
-        order: "desc"
+        order: "desc",
+        page: 1,
+        limit: 8
       },
       {
         listReports,
@@ -210,6 +212,7 @@ describe("listIncidentReports", () => {
     expect(reports[0].id).toBe("r2");
     expect(reports[0].reporterName).toBe("Rafi Alam");
     expect(reports[0].isMine).toBe(false);
+    expect(reports[0].mediaFilenames).toEqual([]);
   });
 
   it("returns reporter submissions and sorts by severity", async () => {
@@ -220,7 +223,9 @@ describe("listIncidentReports", () => {
         search: "",
         severity: "ALL",
         sortBy: "severity",
-        order: "desc"
+        order: "desc",
+        page: 1,
+        limit: 8
       },
       {
         listReports,
@@ -233,6 +238,29 @@ describe("listIncidentReports", () => {
     expect(reports[1].severityLevel).toBe("LOW");
     expect(reports[1].status).toBe("UNDER_REVIEW");
     expect(reports[0].isMine).toBe(true);
+    expect(reports[0].mediaFilenames).toEqual(["/uploads/reports/flood-1.jpg"]);
+  });
+
+  it("supports pagination after filtering and sorting", async () => {
+    const reports = await listIncidentReports(
+      {
+        viewerId: "u1",
+        scope: "mine",
+        search: "",
+        severity: "ALL",
+        sortBy: "createdAt",
+        order: "desc",
+        page: 2,
+        limit: 1
+      },
+      {
+        listReports,
+        listUsers
+      }
+    );
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0].id).toBe("r1");
   });
 });
 
@@ -291,7 +319,9 @@ describe("listUnderReviewIncidentReports", () => {
         search: "fire",
         severity: "ALL",
         sortBy: "createdAt",
-        order: "desc"
+        order: "desc",
+        page: 1,
+        limit: 8
       },
       {
         listReports,

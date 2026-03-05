@@ -77,7 +77,9 @@ export async function listUnpublishedReports(
     search: query.search,
     severity: query.severity,
     sortBy: query.sortBy,
-    order: query.order
+    order: query.order,
+    page: query.page,
+    limit: query.limit
   });
 
   return response.status(200).json({ reports });

@@ -34,6 +34,8 @@ export type ReportListQuery = {
   severity?: IncidentSeverity | "ALL";
   sortBy?: ReportSortBy;
   order?: SortOrder;
+  page?: number;
+  limit?: number;
 };
 
 export type EmergencyReportSubmissionInput = {
@@ -70,6 +72,7 @@ export type IncidentReportListItem = {
   classifiedIncidentType: IncidentType;
   description: string;
   locationText: string;
+  mediaFilenames: string[];
   credibilityScore: number;
   severityLevel: IncidentSeverity;
   status: IncidentStatus;

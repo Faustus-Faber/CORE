@@ -22,13 +22,17 @@ The full product scope is defined in [docs/SRS.md](./docs/SRS.md).
     - in-browser recording (`MediaRecorder`)
     - direct audio file upload (`.mp3`, `.wav`, `.webm`)
 - External AI pipeline integration:
-  - Voice transcription/translation API
-  - Text analysis/classification API (credibility, severity, type, title, spam flag)
+  - Groq Whisper Large v3 (transcription + translation fallback)
+  - Groq Qwen 3-32B (credibility, severity, type, title, spam flag)
 - Report persistence in MongoDB via Prisma
+- Uploaded media persistence on backend static storage (`backend/uploads/reports`)
 - Reporter redirect to Reports Explorer after submit
 - Reports Explorer:
   - `Community Reports` and `My Submissions`
   - Search, severity filter, sort (time/severity/credibility)
+  - Paginated loading (`page`, `limit`) for faster browsing
+  - Credibility-first card design (circular credibility wheel)
+  - Evidence section collapsed by default; expands on demand
 - Admin moderation for unpublished reports:
   - Review unpublished (`UNDER_REVIEW`) reports
   - Publish report from admin moderation page
@@ -76,8 +80,10 @@ ADMIN_PASSWORD="Admin@12345"
 ADMIN_NAME="CORE Admin"
 ADMIN_LOCATION="Dhaka"
 
-VOICE_API_BASE_URL="https://dervishlike-nilda-hiply.ngrok-free.dev"
-TEXT_ANALYSIS_API_BASE_URL="https://lintiest-alissa-brigandishly.ngrok-free.dev"
+GROQ_API_KEY="replace-with-your-groq-api-key"
+GROQ_BASE_URL="https://api.groq.com/openai/v1"
+GROQ_WHISPER_MODEL="whisper-large-v3"
+GROQ_QWEN_MODEL="qwen/qwen3-32b"
 AI_REQUEST_TIMEOUT_MS=15000
 ```
 

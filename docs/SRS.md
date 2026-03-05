@@ -1,4 +1,4 @@
-﻿# CORE: Real-Time Crisis Response & Community Resilience Network
+# CORE: Real-Time Crisis Response & Community Resilience Network
 
 ## Software Requirements Specification (SRS)
 
@@ -44,7 +44,7 @@
 
 | Service | Purpose |
 |:---|:---|
-| **Text Analysis API (Qwen 3.5-4B)** | Incident credibility evaluation, severity classification, incident-type/title extraction (`POST /api/v1/analyze`, task = `classification`), with future task-specific endpoints for summary/advisory generation |
+| **Groq LLM API (Qwen 3-32B)** | Incident credibility evaluation, severity classification, incident-type/title extraction via `POST /chat/completions` using model `qwen/qwen3-32b`, with future task-specific prompts for summary/advisory generation |
 | **Groq Speech API (Whisper Large v3)** | Multilingual voice-note transcription with optional English translation fallback (`/audio/transcriptions`, `/audio/translations`) |
 | **Google Maps API** | Interactive geolocation mapping of active crises and available resources |
 | **Google Vision OCR API** | Optical character recognition for extracting text data from disaster-damage images |
@@ -66,9 +66,9 @@
 
 ---
 
-### Module 0 â€” Foundation: Landing Page, Authentication & User Management
+### Module 0 — Foundation: Landing Page, Authentication & User Management
 
-> *These features are **prerequisites** for all other modules. They are not counted as primary functional requirements but are essential for the platform to operate. Every team member collaborates on this module before proceeding to Modules 1â€“3.*
+> *These features are **prerequisites** for all other modules. They are not counted as primary functional requirements but are essential for the platform to operate. Every team member collaborates on this module before proceeding to Modules 1–3.*
 
 ---
 
@@ -77,7 +77,7 @@
 | Aspect | Detail |
 |:---|:---|
 | **Description** | A publicly accessible landing page that introduces the CORE platform, communicates its mission, highlights key features, and provides clear call-to-action buttons for registration and login. |
-| **Key Elements** | Hero section with tagline and CTA â†’ Feature overview cards â†’ "How It Works" walkthrough â†’ Testimonials / impact statistics â†’ Footer with contact and social links. |
+| **Key Elements** | Hero section with tagline and CTA → Feature overview cards → "How It Works" walkthrough → Testimonials / impact statistics → Footer with contact and social links. |
 | **Actors** | Any visitor (unauthenticated). |
 
 **Functional Details:**
@@ -110,7 +110,7 @@
   - Skills / Specializations (e.g., First Aid, Search & Rescue, Counseling)
   - Availability Schedule
   - Any prior training or certifications (optional)
-- The system shall validate all inputs (email format, phone format, password strength â‰¥ 8 characters with mixed types).
+- The system shall validate all inputs (email format, phone format, password strength ≥ 8 characters with mixed types).
 - The system shall check for duplicate email/phone before creating the account.
 - Upon successful registration, the system shall hash the password (bcrypt) and store the user record in MongoDB via Prisma.
 - The system shall send a **welcome confirmation email** (or display an on-screen confirmation) and redirect the user to the login page.
@@ -135,9 +135,9 @@
 - The system shall deny access and display an appropriate error message for invalid credentials.
 - The system shall support a **"Remember Me"** option to extend session duration.
 - After login, the user shall be redirected to their **role-specific dashboard**:
-  - `User` â†’ Community Dashboard (Module 2.1)
-  - `Volunteer` â†’ Volunteer Dashboard with task log, dispatch opt-in, and leaderboard access
-  - `Admin` â†’ Admin Panel with full system management tools
+  - `User` → Community Dashboard (Module 2.1)
+  - `Volunteer` → Volunteer Dashboard with task log, dispatch opt-in, and leaderboard access
+  - `Admin` → Admin Panel with full system management tools
 
 ---
 
@@ -188,22 +188,22 @@
 
 | Feature / Action | User | Volunteer | Admin |
 |:---|:---:|:---:|:---:|
-| Submit Incident Report | âœ… | âœ… | âœ… |
-| Register Resources | âœ… | âœ… | âœ… |
-| Submit Volunteer Reviews | âœ… | âŒ | âœ… |
-| Secure Documentation (own) | âœ… | âœ… | âœ… |
-| View Dashboard & Map | âœ… | âœ… | âœ… |
-| Search Volunteer Directory | âœ… | âœ… | âœ… |
-| Update Crisis Status | âŒ | âœ… | âœ… |
-| Manage Resource Stock | Owner Only | Owner Only | âœ… |
-| Opt-in Dispatch SMS | âŒ | âœ… | âŒ |
-| Generate NGO Report | âŒ | âŒ | âœ… |
-| Reserve Resources | âœ… | âœ… | âœ… |
-| Log Volunteer Hours | âŒ | âœ… | âŒ |
-| Verify Volunteer Tasks | âŒ | âŒ | âœ… |
-| Access Leaderboard | âœ… | âœ… | âœ… |
-| Moderate / Ban Users | âŒ | âŒ | âœ… |
-| Admin Panel | âŒ | âŒ | âœ… |
+| Submit Incident Report | ✅ | ✅ | ✅ |
+| Register Resources | ✅ | ✅ | ✅ |
+| Submit Volunteer Reviews | ✅ | ❌ | ✅ |
+| Secure Documentation (own) | ✅ | ✅ | ✅ |
+| View Dashboard & Map | ✅ | ✅ | ✅ |
+| Search Volunteer Directory | ✅ | ✅ | ✅ |
+| Update Crisis Status | ❌ | ✅ | ✅ |
+| Manage Resource Stock | Owner Only | Owner Only | ✅ |
+| Opt-in Dispatch SMS | ❌ | ✅ | ❌ |
+| Generate NGO Report | ❌ | ❌ | ✅ |
+| Reserve Resources | ✅ | ✅ | ✅ |
+| Log Volunteer Hours | ❌ | ✅ | ❌ |
+| Verify Volunteer Tasks | ❌ | ❌ | ✅ |
+| Access Leaderboard | ✅ | ✅ | ✅ |
+| Moderate / Ban Users | ❌ | ❌ | ✅ |
+| Admin Panel | ❌ | ❌ | ✅ |
 
 - All protected API routes shall validate the JWT and check the user's role via **Express middleware** before processing the request.
 - Unauthorized access attempts shall return `HTTP 403 Forbidden`.
@@ -253,26 +253,26 @@
 
 - **Unauthenticated state:** The navbar shall display: Logo, Home, About, Login, Sign Up.
 - **Authenticated state (User):** The navbar shall display: Logo, Dashboard, Map, Resources, Volunteers, Profile, Leaderboard, a **Reports dropdown** ("Submit Incident", "Browse Reports"), Notifications Bell, Logout.
-- **Authenticated state (Volunteer):** All User nav items plus: "My Tasks" and the "ðŸ”” Dispatch Alert" bell button.
+- **Authenticated state (Volunteer):** All User nav items plus: "My Tasks" and the "🔔 Dispatch Alert" bell button.
 - **Authenticated state (Admin):** All User nav items plus: "Admin Panel" and extra Reports dropdown options: "Review Unpublished" and "Generate Reports".
 - The layout shall include a mobile-responsive hamburger menu.
 - A global **notification badge** shall indicate unread push notifications.
 
 ---
 
-### Module 1 â€” Core Data Entry & Submission
+### Module 1 — Core Data Entry & Submission
 
-> *This module covers the primary data-ingestion features â€” submitting incident reports, registering resources, reviewing volunteers, and storing crisis evidence.*
+> *This module covers the primary data-ingestion features — submitting incident reports, registering resources, reviewing volunteers, and storing crisis evidence.*
 
 ---
 
-#### 1.1 Emergency Reporting â€” *Farhan Zarif*
+#### 1.1 Emergency Reporting — *Farhan Zarif*
 
 | Aspect | Detail |
 |:---|:---|
 | **Description** | Authenticated users can submit incident reports describing an ongoing or imminent crisis. Reports can be submitted via structured text forms or multilingual voice notes (supporting Bangla and Banglish). The system automatically processes each submission through an AI pipeline that transcribes audio with Groq Whisper Large v3, conditionally translates non-English content to English, evaluates credibility to filter spam or false reports, and classifies the incident by severity level and disaster type. |
 | **Actors** | User, Volunteer. |
-| **External APIs** | Text Analysis API (Qwen 3.5-4B) (credibility scoring, severity classification), Groq Speech API (Whisper Large v3 transcription with translation fallback). |
+| **External APIs** | Groq LLM API (Qwen 3-32B) (credibility scoring, severity classification), Groq Speech API (Whisper Large v3 transcription with translation fallback). |
 
 **API Integration Contracts (Updated):**
 
@@ -283,12 +283,12 @@
 | **Groq Translation Endpoint** | `POST /audio/translations` (used when detected language is not English) |
 | **Groq Request** | `FormData { file: File, model: "whisper-large-v3" }` (+ `response_format: "verbose_json"` for transcription) |
 | **Normalized Voice Metadata** | `{ status, filename, detected_language, language_probability, translated_description }` where `language_probability` may be `null` because Groq Whisper does not provide confidence probability in this flow |
-| **Voice Constraints** | `.mp3`, `.wav`, `.webm`; max 5 minutes; ≤ 10 MB |
-| **Text Analysis Base URL** | `https://lintiest-alissa-brigandishly.ngrok-free.dev` |
-| **Text Analysis Endpoint** | `POST /api/v1/analyze` |
-| **Text Analysis Request** | `{ text: string, task: "classification" }` |
+| **Voice Constraints** | `.mp3`, `.wav`, `.webm`; max 5 minutes; <= 10 MB |
+| **Text Classification Base URL** | `https://api.groq.com/openai/v1` |
+| **Text Classification Endpoint** | `POST /chat/completions` |
+| **Text Classification Request** | `{ model: "qwen/qwen3-32b", messages: [...], response_format: { type: "json_object" } }` |
 | **Text Analysis Response** | `{ credibility_score, severity_level, incident_type, incident_title, spam_flagged }` |
-| **Expected AI Latency** | ~7–8 seconds per analysis request |
+| **Expected AI Latency** | ~7�8 seconds per analysis request |
 
 **Functional Details:**
 
@@ -297,21 +297,22 @@
    - **Description** (text area, max 2000 characters; required only when no voice note is attached)
    - **Incident Type** (dropdown: Flood, Fire, Earthquake, Building Collapse, Road Accident, Violence, Medical Emergency, Other)
    - **Location** (text input with optional GPS auto-detect via browser geolocation)
-   - **Photo / Video Upload** (optional, max 5 files, each â‰¤ 10 MB)
+   - **Photo / Video Upload** (optional, max 5 files, each ≤ 10 MB)
    - **Voice Note Input** with two options:
      - **Record Voice** (in-browser start/stop recording button)
-     - **Upload Voice File** (audio file â‰¤ 5 minutes, formats: .mp3, .wav, .webm)
+     - **Upload Voice File** (audio file ≤ 5 minutes, formats: .mp3, .wav, .webm)
 2. If a voice note is recorded or uploaded, the system shall:
    - Send the audio file to `POST https://api.groq.com/openai/v1/audio/transcriptions` as `FormData` with keys `file`, `model=whisper-large-v3`, and `response_format=verbose_json`.
    - Parse transcription text and detected language from Groq.
    - If detected language is non-English, send the same audio file to `POST https://api.groq.com/openai/v1/audio/translations` to get English text.
    - Persist normalized voice metadata fields: `filename`, `detected_language`, `language_probability` (`null` when unavailable), and `translated_description` (final text used for downstream classification).
-3. Upon submission, the system shall send the final report text to `POST https://lintiest-alissa-brigandishly.ngrok-free.dev/api/v1/analyze` with payload `{ text, task: "classification" }` and use the response to:
-   - Set `credibility_score` (0â€“100). If `spam_flagged = true` or score < 30, mark as `Suspected Spam` and hold for admin review.
+3. Upon submission, the system shall send the final report text to `POST https://api.groq.com/openai/v1/chat/completions` using model `qwen/qwen3-32b` and a strict JSON-output prompt, then parse and use the response to:
+   - Set `credibility_score` (0–100). If `spam_flagged = true` or score < 30, mark as `Suspected Spam` and hold for admin review.
    - Set `severity_level` as one of `Critical`, `High`, `Medium`, `Low`.
    - Set `incident_type` and `incident_title` from model output.
 4. The processed report shall be saved to the database with the following stored fields:
    - Reporter's User ID, timestamp, location, all form inputs, voice metadata (`filename`, `detected_language`, `language_probability`, `translated_description`), AI metadata (`credibility_score`, `severity_level`, `incident_type`, `incident_title`, `spam_flagged`), and processing status.
+   - Uploaded media evidence paths persisted in backend storage and linked to each report record.
 5. Reports that pass credibility screening shall immediately appear on the **Real-Time Dashboard** (Module 2.1) and **Interactive Crisis Map** (Module 2.2).
 6. After successful submission, the reporter shall be redirected to a **Reports Explorer** page (`Browse Reports`) and see a submission-summary banner (classified title, severity, credibility, status).
 7. The Reports Explorer page shall be available from the navbar **Reports dropdown** and shall provide:
@@ -321,20 +322,25 @@
    - Keyword search (title/classified title/location/description)
    - Severity filter (`Critical`, `High`, `Medium`, `Low`, `All`)
    - Sorting by `Created Time`, `Severity`, or `Credibility` (ascending/descending)
-9. The backend shall expose protected list endpoints for the explorer:
+   - Pagination with query parameters (`page`, `limit`) to avoid loading all reports at once.
+9. Reports Explorer cards shall prioritize readability and performance:
+   - Display a high-visibility credibility indicator (circular score wheel).
+   - Keep media evidence collapsed by default and expand on user action.
+   - Defer media-heavy rendering until evidence is expanded.
+10. The backend shall expose protected list endpoints for the explorer:
    - `GET /api/reports` for community-visible published reports
    - `GET /api/reports/mine` for the authenticated reporter's own submissions
-10. The system shall provide an **Admin Report Moderation** page for unpublished reports, available only to the `Admin` role from the Reports dropdown ("Review Unpublished").
-11. Admin moderation shall support:
+11. The system shall provide an **Admin Report Moderation** page for unpublished reports, available only to the `Admin` role from the Reports dropdown ("Review Unpublished").
+12. Admin moderation shall support:
     - Listing unpublished (`UNDER_REVIEW`) reports with search, severity filter, and sorting controls.
     - Publishing an unpublished report, which changes status to `PUBLISHED` so it appears in community listings.
-12. The backend shall expose admin-only moderation endpoints:
+13. The backend shall expose admin-only moderation endpoints:
     - `GET /api/admin/reports/unpublished`
     - `PATCH /api/admin/reports/:reportId/status` with body `{ status: "PUBLISHED" | "UNDER_REVIEW" }`
 
 ---
 
-#### 1.2 Resource Registration â€” *Al Irfan Alve*
+#### 1.2 Resource Registration — *Al Irfan Alve*
 
 | Aspect | Detail |
 |:---|:---|
@@ -350,9 +356,9 @@
    - **Unit** (dropdown: pieces, packs, liters, kg, units, seats, etc.)
    - **Condition** (dropdown: New, Good, Fair)
    - **Pickup Location** (text address + GPS coordinates via map pin or auto-detect)
-   - **Availability Window** (start date-time and end date-time, optional â€” defaults to "Until Further Notice")
+   - **Availability Window** (start date-time and end date-time, optional — defaults to "Until Further Notice")
    - **Contact Preference** (phone call, SMS, in-app message)
-   - **Photo of Resource** (optional, max 3 images, each â‰¤ 5 MB)
+   - **Photo of Resource** (optional, max 3 images, each ≤ 5 MB)
    - **Additional Notes** (text area, optional, max 500 characters)
 2. Upon submission, the system shall:
    - Validate all required fields and data types.
@@ -364,7 +370,7 @@
 
 ---
 
-#### 1.3 Volunteer Reviews & Fraud Detection â€” *Mahia Mahzabin*
+#### 1.3 Volunteer Reviews & Fraud Detection — *Mahia Mahzabin*
 
 | Aspect | Detail |
 |:---|:---|
@@ -374,8 +380,8 @@
 **Functional Details:**
 
 1. The system shall allow a User to submit a review for a Volunteer, accessible from the volunteer's profile page or the Volunteer Directory (Module 2.3). The review form shall include:
-   - **Star Rating** (1â€“5 stars, required)
-   - **Review Text** (text area, required, 20â€“1000 characters)
+   - **Star Rating** (1–5 stars, required)
+   - **Review Text** (text area, required, 20–1000 characters)
    - **Interaction Context** (dropdown: Rescue Operation, Medical Aid, Supply Distribution, Shelter Management, Other)
    - **Date of Interaction** (date picker, required, cannot be a future date)
    - **Would you work with this volunteer again?** (Yes / No)
@@ -390,13 +396,13 @@
    - If a volunteer's average rating drops below **2.0 stars** across a minimum of **5 reviews**, the volunteer's profile shall be flagged as `Under Review`.
    - If more than **40%** of a volunteer's reviews contain the keyword indicators of fraud (e.g., "scam", "fake", "not present", "took supplies"), the system shall auto-flag the profile and notify the admin.
    - If a single volunteer receives **3 or more** "Would not work again" responses within a 30-day window, an alert shall be generated for admin review.
-5. Flagged volunteer profiles shall display a visible **âš  Warning Badge** to other users and shall be temporarily restricted from accepting new dispatch assignments until an admin resolves the flag.
+5. Flagged volunteer profiles shall display a visible **⚠ Warning Badge** to other users and shall be temporarily restricted from accepting new dispatch assignments until an admin resolves the flag.
 6. Volunteers shall be able to view their own reviews and aggregate score but shall **not** be able to delete or edit reviews submitted by others.
 7. The Admin shall be able to review all flagged profiles from the Admin Panel and take action: **clear the flag**, **issue a warning**, or **ban the volunteer**.
 
 ---
 
-#### 1.4 Secure Documentation â€” *Ishaq Ahnaf Khan*
+#### 1.4 Secure Documentation — *Ishaq Ahnaf Khan*
 
 | Aspect | Detail |
 |:---|:---|
@@ -410,7 +416,7 @@
    - **Linked Crisis Event** (optional dropdown of active/recent crises from the system database)
    - **Description** (text area, optional, max 500 characters)
 2. Within a folder, the user shall be able to:
-   - **Upload files**: images (.jpg, .png, .webp) and videos (.mp4, .webm), each â‰¤ 20 MB, maximum 20 files per folder.
+   - **Upload files**: images (.jpg, .png, .webp) and videos (.mp4, .webm), each ≤ 20 MB, maximum 20 files per folder.
    - **Add text notes**: timestamped operational notes (text area, max 2000 characters each), with no limit on the number of notes.
 3. Each uploaded file and note shall be automatically stamped with:
    - Upload/creation **date and time** (UTC and local).
@@ -424,19 +430,19 @@
 
 ---
 
-### Module 2 â€” Data Visualization, Search & Discovery
+### Module 2 — Data Visualization, Search & Discovery
 
 > *This module transforms the data collected in Module 1 into actionable, visual, and searchable interfaces for community situational awareness.*
 
 ---
 
-#### 2.1 Real-Time Dashboard â€” *Farhan Zarif*
+#### 2.1 Real-Time Dashboard — *Farhan Zarif*
 
 | Aspect | Detail |
 |:---|:---|
 | **Description** | Authenticated users can access a localized, real-time feed of incident reports relevant to their community. The system uses AI to cluster duplicate or overlapping reports about the same incident into a single "Master Incident" card, reducing information noise. Additionally, the dashboard dynamically generates and displays a Situation Report (SitRep) summarizing the current crisis landscape for the user's locality. |
 | **Actors** | User, Volunteer, Admin. |
-| **External APIs** | Text Analysis API (Qwen 3.5-4B) (duplicate clustering, SitRep generation). |
+| **External APIs** | Groq LLM API (Qwen 3-32B) (duplicate clustering, SitRep generation). |
 
 **Functional Details:**
 
@@ -447,12 +453,12 @@
    - Location name, time since report, number of clustered reports, reporter count.
    - Thumbnail of attached media (if any).
 3. **AI Duplicate Clustering:**
-   - When a new report is submitted, the system shall compare it against existing active incidents using the **Text Analysis API (Qwen 3.5-4B)** (semantic similarity analysis on title + description + location proximity).
-   - If the similarity score exceeds a threshold (â‰¥ 0.80), the new report shall be **merged** into the existing Master Incident rather than creating a new card.
+   - When a new report is submitted, the system shall compare it against existing active incidents using the **Groq LLM API (Qwen 3-32B)** (semantic similarity analysis on title + description + location proximity).
+   - If the similarity score exceeds a threshold (≥ 0.80), the new report shall be **merged** into the existing Master Incident rather than creating a new card.
    - The Master Incident card shall display a **"X reports merged"** indicator and allow users to expand and view individual contributing reports.
 4. **Situation Report (SitRep):**
    - The dashboard shall feature a prominent **SitRep panel** at the top.
-   - The SitRep shall be generated by sending all active local incident summaries to the **Text Analysis API (Qwen 3.5-4B)** with a prompt to produce a concise (200â€“400 word), structured community briefing.
+   - The SitRep shall be generated by sending all active local incident summaries to the **Groq LLM API (Qwen 3-32B)** with a prompt to produce a concise (200–400 word), structured community briefing.
    - The SitRep shall include: current active incident count, most critical ongoing events, areas to avoid, resources available nearby, and general safety advisories.
    - The SitRep shall **auto-refresh** every 10 minutes or when a new Critical-severity incident is reported in the user's area.
 5. Users shall be able to **filter** the feed by: incident type, severity level, and time range (last 1 hour, 6 hours, 24 hours, 7 days).
@@ -461,7 +467,7 @@
 
 ---
 
-#### 2.2 Interactive Crisis Map â€” *Al Irfan Alve*
+#### 2.2 Interactive Crisis Map — *Al Irfan Alve*
 
 | Aspect | Detail |
 |:---|:---|
@@ -490,7 +496,7 @@
 
 ---
 
-#### 2.3 Volunteer Directory Search â€” *Mahia Mahzabin*
+#### 2.3 Volunteer Directory Search — *Mahia Mahzabin*
 
 | Aspect | Detail |
 |:---|:---|
@@ -512,13 +518,13 @@
 3. **Search & Filter Options:**
    - **Text Search:** by volunteer name or skill keyword.
    - **Skill Filter:** multi-select dropdown of all skill categories in the system.
-   - **Proximity Filter:** radius slider (1 km â€“ 50 km from user's location).
+   - **Proximity Filter:** radius slider (1 km – 50 km from user's location).
    - **Availability Filter:** checkbox for Available, Busy, Offline.
-   - **Minimum Rating Filter:** slider (1â€“5 stars).
+   - **Minimum Rating Filter:** slider (1–5 stars).
 4. **Sorting Options:**
    - Nearest first (default).
    - Highest rated first.
-   - Alphabetical (Aâ€“Z).
+   - Alphabetical (A–Z).
 5. Clicking on a volunteer entry shall navigate to the **volunteer's detailed profile page**, showing:
    - Full bio and skills description.
    - Complete review history (from Module 1.3).
@@ -528,7 +534,7 @@
 
 ---
 
-#### 2.4 Visual Evidence Gallery â€” *Ishaq Ahnaf Khan*
+#### 2.4 Visual Evidence Gallery — *Ishaq Ahnaf Khan*
 
 | Aspect | Detail |
 |:---|:---|
@@ -553,38 +559,38 @@
    - All metadata (timestamp, uploader, location, linked report ID).
    - Navigation arrows to browse through the gallery sequentially.
 6. **AI-Generated Recommendations:**
-   - The gallery page shall include a **"Recommendations" panel** that provides contextual advisories generated by sending a summary of the crisis event and evidence descriptions to the **Text Analysis API (Qwen 3.5-4B)**.
+   - The gallery page shall include a **"Recommendations" panel** that provides contextual advisories generated by sending a summary of the crisis event and evidence descriptions to the **Groq LLM API (Qwen 3-32B)**.
    - Recommendations may include: safety precautions, damage assessment observations, suggested next steps for responders, or resource needs inferred from visual evidence patterns.
 7. Users shall be able to **filter** the gallery by: media type (photos only, videos only), date range, and uploader.
 8. Users shall be able to **report** inappropriate or irrelevant media to the admin for removal.
 
 ---
 
-### Module 3 â€” Operations, Coordination & Advanced Features
+### Module 3 — Operations, Coordination & Advanced Features
 
 > *This module enables active crisis management operations, resource coordination, volunteer engagement, and advanced AI/OCR-powered tools.*
 
 ---
 
-#### 3.1 Live Crisis Updates â€” *Farhan Zarif*
+#### 3.1 Live Crisis Updates — *Farhan Zarif*
 
 | Aspect | Detail |
 |:---|:---|
 | **Description** | Volunteers can update the details and operational status of an active crisis event. Status changes trigger the AI to regenerate a revised live situation summary, ensuring the community stays informed with a concise, up-to-date overview without being overwhelmed by raw data. |
 | **Actors** | Volunteer, Admin. |
-| **External APIs** | Text Analysis API (Qwen 3.5-4B) (revised situation summary generation). |
+| **External APIs** | Groq LLM API (Qwen 3-32B) (revised situation summary generation). |
 
 **Functional Details:**
 
 1. On the detailed incident view page, authorized users (Volunteers and Admin) shall see an **"Update Crisis"** panel with the following editable fields:
-   - **Status** (dropdown): `Reported` â†’ `Verified` â†’ `Under Investigation` â†’ `Response in Progress` â†’ `Contained` â†’ `Resolved` â†’ `Closed`.
+   - **Status** (dropdown): `Reported` → `Verified` → `Under Investigation` → `Response in Progress` → `Contained` → `Resolved` → `Closed`.
    - **Situation Update Note** (text area, required when changing status, max 1000 characters): a brief description of what has changed.
    - **Updated Severity** (optional re-classification): Critical, High, Medium, Low.
    - **Affected Area Update** (optional): revised radius or boundary description.
    - **Casualty / Impact Estimates** (optional): fields for injured count, displaced count, structural damage notes.
 2. Upon submitting an update, the system shall:
    - Log the update as a new entry in the crisis event's **update timeline/history** with the updater's User ID, timestamp, and all changed fields.
-   - Send the complete crisis event data (original report + all updates) to the **Text Analysis API (Qwen 3.5-4B)** to generate a **revised live situation summary** (150â€“300 words).
+   - Send the complete crisis event data (original report + all updates) to the **Groq LLM API (Qwen 3-32B)** to generate a **revised live situation summary** (150–300 words).
    - Replace the previous summary on the incident's detail page and the dashboard SitRep.
 3. If the status is changed to **`Resolved`** or **`Closed`**:
    - The incident marker shall be removed from the active crisis map layer (or moved to a "Resolved" layer).
@@ -595,7 +601,7 @@
 
 ---
 
-#### 3.2 Resource Status Management â€” *Al Irfan Alve*
+#### 3.2 Resource Status Management — *Al Irfan Alve*
 
 | Aspect | Detail |
 |:---|:---|
@@ -606,8 +612,8 @@
 
 1. From the **"My Resources"** section in the user's profile, the owner shall be able to select any of their registered resources and access an **"Update Resource"** form.
 2. The form shall allow the following updates:
-   - **Status** (dropdown): `Available` â†’ `Low Stock` â†’ `Reserved` â†’ `Depleted` â†’ `Unavailable`.
-   - **Remaining Quantity** (numeric input): the updated count of available units. Must be â‰¤ the original registered quantity.
+   - **Status** (dropdown): `Available` → `Low Stock` → `Reserved` → `Depleted` → `Unavailable`.
+   - **Remaining Quantity** (numeric input): the updated count of available units. Must be ≤ the original registered quantity.
    - **Updated Availability Window** (optional): modify the start or end date-time.
    - **Notes** (text area, optional, max 300 characters): e.g., "Only distributing to families with children."
 3. Upon saving the update, the system shall:
@@ -619,7 +625,7 @@
 
 ---
 
-#### 3.3 Automated Dispatch SMS â€” *Mahia Mahzabin*
+#### 3.3 Automated Dispatch SMS — *Mahia Mahzabin*
 
 | Aspect | Detail |
 |:---|:---|
@@ -629,7 +635,7 @@
 
 **Functional Details:**
 
-1. The system shall display a visible **"ðŸ”” Dispatch Alert" bell button** in the navigation bar for users with the `Volunteer` role only.
+1. The system shall display a visible **"🔔 Dispatch Alert" bell button** in the navigation bar for users with the `Volunteer` role only.
 2. Clicking the bell button shall **toggle** the user's dispatch opt-in status:
    - **Opted In** (bell highlighted/active): the volunteer will receive SMS alerts.
    - **Opted Out** (bell muted/inactive): the volunteer will not receive SMS alerts.
@@ -650,11 +656,11 @@
 
 ---
 
-#### 3.4 NGO Summary Reports â€” *Ishaq Ahnaf Khan*
+#### 3.4 NGO Summary Reports — *Ishaq Ahnaf Khan*
 
 | Aspect | Detail |
 |:---|:---|
-| **Description** | The Admin can generate a compiled, professionally formatted PDF summary report for a resolved or closed crisis event. The report aggregates all relevant data â€” incident details, timeline of updates, resource usage, volunteer involvement, and visual evidence â€” into a document suitable for submission to NGOs, government agencies, or donor organizations. |
+| **Description** | The Admin can generate a compiled, professionally formatted PDF summary report for a resolved or closed crisis event. The report aggregates all relevant data — incident details, timeline of updates, resource usage, volunteer involvement, and visual evidence — into a document suitable for submission to NGOs, government agencies, or donor organizations. |
 | **Actors** | Admin. |
 
 **Functional Details:**
@@ -663,7 +669,7 @@
 2. Clicking the button shall trigger the system to compile a PDF report containing the following sections:
    - **Cover Page:** CORE platform logo, report title (crisis event name), date range of the event, generated date, generated by (admin name).
    - **Executive Summary:** A concise overview of the crisis (auto-generated from the most recent AI situation summary).
-   - **Incident Details:** Original report data â€” type, severity, location, description, reporter info.
+   - **Incident Details:** Original report data — type, severity, location, description, reporter info.
    - **Timeline of Events:** A chronological list of all status updates (from Module 3.1) with timestamps, updater names, and situation notes.
    - **Resource Utilization:** A table of all resources that were linked to or reserved for this crisis (from Modules 1.2, 3.2, 3.6), including quantities distributed and remaining.
    - **Volunteer Involvement:** A list of volunteers who were dispatched or logged hours for this crisis (from Modules 3.3, 3.7), including total hours contributed.
@@ -679,27 +685,27 @@
 
 ---
 
-#### 3.5 Targeted Push Notifications â€” *Farhan Zarif*
+#### 3.5 Targeted Push Notifications — *Farhan Zarif*
 
 | Aspect | Detail |
 |:---|:---|
 | **Description** | Users can subscribe to specific crisis categories (e.g., Flood, Fire, Earthquake) and geographic areas to receive targeted push notifications. When a new incident matching their subscription criteria is reported locally, they receive a notification containing AI-generated, context-aware survival instructions such as hazard warnings, evacuation tips, or safety precautions. |
 | **Actors** | User, Volunteer. |
-| **External APIs** | Text Analysis API (Qwen 3.5-4B) (context-aware survival instruction generation). |
+| **External APIs** | Groq LLM API (Qwen 3-32B) (context-aware survival instruction generation). |
 
 **Functional Details:**
 
 1. The system shall provide a **"Notification Preferences"** page accessible from the user's profile settings.
 2. On this page, the user shall be able to:
    - **Subscribe to crisis categories** via multi-select checkboxes: Flood, Fire, Earthquake, Building Collapse, Road Accident, Violence, Medical Emergency, Other.
-   - **Set a notification radius** (slider: 5 km â€“ 50 km from their location).
+   - **Set a notification radius** (slider: 5 km – 50 km from their location).
    - **Enable/disable** push notifications globally with a master toggle.
 3. When a new incident is reported and passes credibility screening (Module 1.1):
    - The system shall query all users whose subscribed categories include the incident's type **AND** whose location is within their configured notification radius of the incident.
    - For each matching user, the system shall:
-     - Send the incident type, severity, and location context to the **Text Analysis API (Qwen 3.5-4B)** with a prompt to generate a **concise survival instruction** (50â€“150 words) tailored to the specific disaster type and local conditions.
+     - Send the incident type, severity, and location context to the **Groq LLM API (Qwen 3-32B)** with a prompt to generate a **concise survival instruction** (50–150 words) tailored to the specific disaster type and local conditions.
      - Deliver a **push notification** (browser notification or in-app notification) containing:
-       - Notification title: `âš  [Severity] [Incident Type] Alert`
+       - Notification title: `⚠ [Severity] [Incident Type] Alert`
        - Body: Brief incident summary + AI-generated survival instruction.
        - Action button: "View Details" linking to the incident page.
 4. The system shall maintain a **notification inbox** (accessible from the bell icon in the navbar) showing all past notifications with:
@@ -711,7 +717,7 @@
 
 ---
 
-#### 3.6 Resource Reservation â€” *Al Irfan Alve*
+#### 3.6 Resource Reservation — *Al Irfan Alve*
 
 | Aspect | Detail |
 |:---|:---|
@@ -729,7 +735,7 @@
    - Create a reservation record with status **`Pending`**, linked to the requester's User ID, the resource ID, and the requested quantity.
    - **Temporarily hold** the requested quantity (deducted from the "available to reserve" count but not from actual stock until confirmed).
    - Send an **in-app notification** to the resource owner about the new reservation request.
-4. The resource owner shall be able to view all incoming reservations in their **"My Resources" â†’ "Reservations"** tab and take one of the following actions:
+4. The resource owner shall be able to view all incoming reservations in their **"My Resources" → "Reservations"** tab and take one of the following actions:
    - **Approve:** Confirms the reservation. The requested quantity is formally deducted from the resource's remaining stock. The requester is notified with pickup instructions.
    - **Decline:** Rejects the reservation with an optional reason. The held quantity is released back to the available pool. The requester is notified of the decline.
 5. **Fair Distribution Rules:**
@@ -740,11 +746,11 @@
 
 ---
 
-#### 3.7 Volunteer Timesheet & Gamification â€” *Mahia Mahzabin*
+#### 3.7 Volunteer Timesheet & Gamification — *Mahia Mahzabin*
 
 | Aspect | Detail |
 |:---|:---|
-| **Description** | Volunteers can log their completed helping tasks and hours into a digital community service timesheet. The system uses these logs to power a gamification engine that awards points, ranks volunteers on a public leaderboard, and grants achievement badges â€” incentivizing sustained community participation. |
+| **Description** | Volunteers can log their completed helping tasks and hours into a digital community service timesheet. The system uses these logs to power a gamification engine that awards points, ranks volunteers on a public leaderboard, and grants achievement badges — incentivizing sustained community participation. |
 | **Actors** | Volunteer (for logging tasks); Admin (for verifying tasks); All authenticated users (for viewing leaderboard). |
 
 **Functional Details:**
@@ -762,10 +768,10 @@
    - Set the task status to **`Pending Verification`**.
    - An Admin can verify the task from the Admin Panel, changing its status to **`Verified`** or **`Rejected`**.
 3. **Points System:**
-   - Each **verified** task shall award points based on: `Hours Spent Ã— Category Multiplier`.
+   - Each **verified** task shall award points based on: `Hours Spent × Category Multiplier`.
    - Category Multipliers: Rescue = 3x, Medical Aid = 2.5x, Supply Distribution = 2x, Shelter Setup = 2x, Cleanup = 1.5x, Counseling = 2x, Transportation = 1.5x, Other = 1x.
    - Base point rate: **10 points per hour**.
-   - Example: 4 hours of Rescue work = 4 Ã— 10 Ã— 3 = **120 points**.
+   - Example: 4 hours of Rescue work = 4 × 10 × 3 = **120 points**.
 4. **Leaderboard:**
    - The system shall maintain a **public leaderboard** page displaying the top-ranked volunteers sorted by total points.
    - The leaderboard shall show: Rank, Volunteer Name, Avatar, Total Points, Total Verified Hours, Number of Badges, and Trust Rating.
@@ -776,24 +782,24 @@
 
    | Badge Name | Criteria |
    |:---|:---|
-   | ðŸŒ± First Responder | Complete first verified task |
-   | â­ Rising Star | Accumulate 100 points |
-   | ðŸ”¥ Crisis Hero | Log 50+ verified hours |
-   | ðŸ›¡ï¸ Community Guardian | Maintain a trust rating â‰¥ 4.5 with 10+ reviews |
-   | ðŸ† Elite Volunteer | Reach Top 10 on the all-time leaderboard |
-   | ðŸ’¯ Century | Complete 100 verified tasks |
-   | ðŸ¤ Team Player | Log tasks across 5+ different crisis events |
+   | 🌱 First Responder | Complete first verified task |
+   | ⭐ Rising Star | Accumulate 100 points |
+   | 🔥 Crisis Hero | Log 50+ verified hours |
+   | 🛡️ Community Guardian | Maintain a trust rating ≥ 4.5 with 10+ reviews |
+   | 🏆 Elite Volunteer | Reach Top 10 on the all-time leaderboard |
+   | 💯 Century | Complete 100 verified tasks |
+   | 🤝 Team Player | Log tasks across 5+ different crisis events |
 
    - Earned badges shall be displayed on the volunteer's profile page and on leaderboard entries.
 6. Volunteers shall have a **"My Timesheet"** page showing a log of all submitted tasks with statuses, points earned, and a summary of total hours and points.
 
 ---
 
-#### 3.8 Disaster Damage OCR â€” *Ishaq Ahnaf Khan*
+#### 3.8 Disaster Damage OCR — *Ishaq Ahnaf Khan*
 
 | Aspect | Detail |
 |:---|:---|
-| **Description** | Users can upload images of disaster-damaged areas or objects, and the system will automatically extract vital text data visible in the images â€” such as license plate numbers, hazard warning labels, building addresses, road signs, or any other readable text. This uses the Google Vision OCR API and provides structured extracted data that can be attached to incident reports or documentation. |
+| **Description** | Users can upload images of disaster-damaged areas or objects, and the system will automatically extract vital text data visible in the images — such as license plate numbers, hazard warning labels, building addresses, road signs, or any other readable text. This uses the Google Vision OCR API and provides structured extracted data that can be attached to incident reports or documentation. |
 | **Actors** | User, Volunteer. |
 | **External APIs** | Google Vision OCR API (optical character recognition). |
 
@@ -828,9 +834,9 @@
 
 | Category | Requirement |
 |:---|:---|
-| **Performance** | The dashboard and map shall load initial data within 3 seconds on a standard broadband connection. API responses for non-AI features shall return within 500ms. Text analysis/classification responses are expected at ~7–8 seconds per request. |
+| **Performance** | The dashboard and map shall load initial data within 3 seconds on a standard broadband connection. API responses for non-AI features shall return within 500ms. Text analysis/classification responses are expected at ~7�8 seconds per request. |
 | **Scalability** | The system architecture shall support up to 10,000 concurrent users without degradation, leveraging MongoDB's horizontal scalability. |
-| **Security** | All passwords shall be hashed using bcrypt (salt rounds â‰¥ 10). All API communication shall occur over HTTPS. JWTs shall expire within 24 hours (extendable with "Remember Me"). Sensitive data (OCR results, secure documents) shall be access-controlled. |
+| **Security** | All passwords shall be hashed using bcrypt (salt rounds ≥ 10). All API communication shall occur over HTTPS. JWTs shall expire within 24 hours (extendable with "Remember Me"). Sensitive data (OCR results, secure documents) shall be access-controlled. |
 | **Availability** | The deployed application on Render shall target 99% uptime during the academic demonstration period. |
 | **Usability** | The UI shall be fully responsive (mobile, tablet, desktop). All forms shall provide real-time validation feedback. Error messages shall be user-friendly and non-technical. |
 | **Internationalization** | The Groq Whisper voice pipeline shall support Bangla and Banglish voice input with transcription and conditional English translation fallback. The UI shall be in English with potential for future localization. |

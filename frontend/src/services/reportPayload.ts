@@ -1,0 +1,28 @@
+import type { EmergencyReportSubmissionInput } from "../types";
+
+export function buildEmergencyReportFormData(
+  payload: EmergencyReportSubmissionInput
+) {
+  const formData = new FormData();
+
+  formData.append("incidentTitle", payload.incidentTitle.trim());
+  formData.append("description", payload.description.trim());
+  formData.append("incidentType", payload.incidentType);
+  formData.append("locationText", payload.locationText.trim());
+
+  for (const file of payload.mediaFiles) {
+    formData.append("media", file);
+  }
+
+  if (payload.uploadedAudioFile) {
+    formData.append("voiceNote", payload.uploadedAudioFile);
+  } else if (payload.recordedAudioBlob) {
+    formData.append(
+      "voiceNote",
+      payload.recordedAudioBlob,
+      payload.recordedAudioFilename ?? `recorded-${Date.now()}.webm`
+    );
+  }
+
+  return formData;
+}

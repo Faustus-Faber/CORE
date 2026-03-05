@@ -6,6 +6,11 @@ import {
   setUserBanStatusByAdmin,
   setUserRoleByAdmin
 } from "../services/authService.js";
+import {
+  listUnderReviewIncidentReports,
+  updateIncidentReportStatusByAdmin
+} from "../services/reportService.js";
+import { validateReportListQueryInput } from "../utils/validation.js";
 
 const roleSchema = z.object({
   role: z.enum(["USER", "VOLUNTEER"])
@@ -13,6 +18,10 @@ const roleSchema = z.object({
 
 const banSchema = z.object({
   isBanned: z.boolean()
+});
+
+const reportStatusSchema = z.object({
+  status: z.enum(["PUBLISHED", "UNDER_REVIEW"])
 });
 
 export async function listUsers(
@@ -55,5 +64,37 @@ export async function updateUserBanStatus(
       id: updated.id,
       isBanned: updated.isBanned
     }
+  });
+}
+
+export async function listUnpublishedReports(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const query = validateReportListQueryInput(request.query);
+  const reports = await listUnderReviewIncidentReports({
+    search: query.search,
+    severity: query.severity,
+    sortBy: query.sortBy,
+    order: query.order
+  });
+
+  return response.status(200).json({ reports });
+}
+
+export async function updateReportStatus(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const { status } = reportStatusSchema.parse(request.body);
+  const reportId = String(request.params.reportId);
+  const updated = await updateIncidentReportStatusByAdmin(reportId, status);
+
+  return response.status(200).json({
+    message:
+      status === "PUBLISHED" ? "Report published successfully" : "Report kept under review",
+    report: updated
   });
 }

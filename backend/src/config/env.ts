@@ -35,5 +35,12 @@ for (const origin of [...corsOrigins]) {
 export const env = {
   port: Number(process.env.PORT ?? 5000),
   corsOrigins,
-  jwtSecret: process.env.JWT_SECRET ?? "test-secret"
+  jwtSecret: process.env.JWT_SECRET ?? "test-secret",
+  voiceApiBaseUrl:
+    process.env.VOICE_API_BASE_URL ??
+    "https://dervishlike-nilda-hiply.ngrok-free.dev",
+  textAnalysisApiBaseUrl:
+    process.env.TEXT_ANALYSIS_API_BASE_URL ??
+    "https://lintiest-alissa-brigandishly.ngrok-free.dev",
+  aiRequestTimeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 20000)
 };

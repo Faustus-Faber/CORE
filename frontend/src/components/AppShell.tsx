@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
 
@@ -23,19 +23,41 @@ function buildNavItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
   }
 
   if (role === "ADMIN") {
-    return [...commonItems, { to: "/admin", label: "Admin Panel" }, { to: "/reports", label: "Generate Reports" }];
+    return [...commonItems, { to: "/admin", label: "Admin Panel" }];
   }
 
   return commonItems;
 }
 
+function buildReportMenuItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
+  const items: NavItem[] = [
+    { to: "/report-incident", label: "Submit Incident" },
+    { to: "/reports/explore", label: "Browse Reports" }
+  ];
+
+  if (role === "ADMIN") {
+    items.push({ to: "/reports/review", label: "Review Unpublished" });
+    items.push({ to: "/reports/generate", label: "Generate Reports" });
+  }
+
+  return items;
+}
+
 export function AppShell() {
   const { user, logoutUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reportsMenuOpen, setReportsMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const navItems = user ? buildNavItems(user.role) : [];
+  const reportMenuItems = user ? buildReportMenuItems(user.role) : [];
+  const isReportRoute = location.pathname.startsWith("/report");
+
+  useEffect(() => {
+    setReportsMenuOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -76,7 +98,10 @@ export function AppShell() {
             <>
               <button
                 type="button"
-                onClick={() => setMenuOpen((value) => !value)}
+                onClick={() => {
+                  setMenuOpen((value) => !value);
+                  setReportsMenuOpen(false);
+                }}
                 className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium md:hidden"
               >
                 Menu
@@ -87,6 +112,39 @@ export function AppShell() {
                     {item.label}
                   </NavLink>
                 ))}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setReportsMenuOpen((value) => !value)}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+                      isReportRoute
+                        ? "bg-tide text-white"
+                        : "text-ink hover:bg-white/60"
+                    }`}
+                  >
+                    Reports
+                  </button>
+                  {reportsMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-52 rounded-lg border border-slate-200 bg-white p-2 shadow-panel">
+                      {reportMenuItems.map((item) => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          onClick={() => setReportsMenuOpen(false)}
+                          className={({ isActive }) =>
+                            `block rounded-md px-3 py-2 text-sm font-medium ${
+                              isActive
+                                ? "bg-tide text-white"
+                                : "text-ink hover:bg-slate-50"
+                            }`
+                          }
+                        >
+                          {item.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
                   className="rounded-md px-3 py-2 text-sm font-semibold text-ink hover:bg-white/60"
@@ -125,6 +183,21 @@ export function AppShell() {
                 {item.label}
               </NavLink>
             ))}
+            <div className="mt-1 border-t border-slate-200 pt-2">
+              <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Reports
+              </p>
+              {reportMenuItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={linkClass}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
             <button
               type="button"
               onClick={() => void handleLogout()}

@@ -12,6 +12,32 @@ const passwordSchema = z
   );
 
 const roleSchema = z.enum(["USER", "VOLUNTEER", "ADMIN"]);
+const incidentTypeSchema = z.enum([
+  "FLOOD",
+  "FIRE",
+  "EARTHQUAKE",
+  "BUILDING_COLLAPSE",
+  "ROAD_ACCIDENT",
+  "VIOLENCE",
+  "MEDICAL_EMERGENCY",
+  "OTHER"
+]);
+
+const incidentSeveritySchema = z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
+
+const voiceMimeTypes = [
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/webm"
+] as const;
+
+const uploadedFileSchema = z.object({
+  originalname: z.string().min(1),
+  mimetype: z.string().min(1),
+  size: z.number().int().positive()
+});
 
 export const registrationSchema = z
   .object({
@@ -104,4 +130,98 @@ export const changePasswordSchema = z
 
 export function validateRegistrationInput(payload: unknown) {
   return registrationSchema.parse(payload);
+}
+
+export const reportSubmissionSchema = z
+  .object({
+    incidentTitle: z
+      .string()
+      .trim()
+      .min(1, "Incident title is required")
+      .max(120, "Incident title must be at most 120 characters"),
+    description: z
+      .string()
+      .trim()
+      .max(2000, "Description must be at most 2000 characters")
+      .optional()
+      .default(""),
+    incidentType: incidentTypeSchema,
+    locationText: z
+      .string()
+      .trim()
+      .min(2, "Location is required")
+      .max(300, "Location must be at most 300 characters"),
+    mediaFiles: z.array(uploadedFileSchema).max(5).default([]),
+    voiceFile: uploadedFileSchema.optional()
+  })
+  .superRefine((payload, context) => {
+    const hasDescription = payload.description.trim().length > 0;
+
+    if (!hasDescription && !payload.voiceFile) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["description"],
+        message: "Description or voice note is required"
+      });
+    }
+
+    for (const mediaFile of payload.mediaFiles) {
+      if (mediaFile.size > 10 * 1024 * 1024) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["mediaFiles"],
+          message: "Each media file must be 10MB or less"
+        });
+      }
+
+      const isAllowedMedia =
+        mediaFile.mimetype.startsWith("image/") ||
+        mediaFile.mimetype.startsWith("video/");
+      if (!isAllowedMedia) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["mediaFiles"],
+          message: "Media files must be images or videos"
+        });
+      }
+    }
+
+    if (payload.voiceFile) {
+      if (payload.voiceFile.size > 10 * 1024 * 1024) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["voiceFile"],
+          message: "Voice note must be 10MB or less"
+        });
+      }
+
+      if (!voiceMimeTypes.includes(payload.voiceFile.mimetype as never)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["voiceFile"],
+          message: "Voice note format is not supported"
+        });
+      }
+    }
+  });
+
+export function validateReportSubmissionInput(payload: unknown) {
+  return reportSubmissionSchema.parse(payload);
+}
+
+export const reportListQuerySchema = z.object({
+  search: z.coerce.string().trim().max(120).optional().default(""),
+  severity: z
+    .union([incidentSeveritySchema, z.literal("ALL")])
+    .optional()
+    .default("ALL"),
+  sortBy: z
+    .enum(["createdAt", "severity", "credibility"])
+    .optional()
+    .default("createdAt"),
+  order: z.enum(["asc", "desc"]).optional().default("desc")
+});
+
+export function validateReportListQueryInput(payload: unknown) {
+  return reportListQuerySchema.parse(payload);
 }

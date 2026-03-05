@@ -4,6 +4,7 @@ import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { RoleRoute } from "./components/RoleRoute";
 import { AdminPanelPage } from "./pages/AdminPanelPage";
+import { AdminReportModerationPage } from "./pages/AdminReportModerationPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { LandingPage } from "./pages/LandingPage";
@@ -11,6 +12,8 @@ import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { ReportIncidentPage } from "./pages/ReportIncidentPage";
+import { ReportsExplorerPage } from "./pages/ReportsExplorerPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 
@@ -26,6 +29,8 @@ export default function App() {
 
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/report-incident" element={<ReportIncidentPage />} />
+          <Route path="/reports/explore" element={<ReportsExplorerPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/map"
@@ -79,7 +84,15 @@ export default function App() {
           <Route element={<RoleRoute allowedRoles={["ADMIN"]} />}>
             <Route path="/admin" element={<AdminPanelPage />} />
             <Route
+              path="/reports/review"
+              element={<AdminReportModerationPage />}
+            />
+            <Route
               path="/reports"
+              element={<Navigate to="/reports/review" replace />}
+            />
+            <Route
+              path="/reports/generate"
               element={
                 <PlaceholderPage
                   title="Generate Reports"

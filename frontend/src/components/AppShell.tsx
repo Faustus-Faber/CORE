@@ -8,11 +8,15 @@ type NavItem = {
   label: string;
 };
 
+type DropdownItem = {
+  to: string;
+  label: string;
+};
+
 function buildNavItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
   const commonItems: NavItem[] = [
     { to: "/dashboard", label: "Dashboard" },
     { to: "/map", label: "Map" },
-    { to: "/resources", label: "Resources" },
     { to: "/volunteers", label: "Volunteers" },
     { to: "/profile", label: "Profile" },
     { to: "/leaderboard", label: "Leaderboard" }
@@ -29,10 +33,16 @@ function buildNavItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
   return commonItems;
 }
 
+const resourcesDropdown: DropdownItem[] = [
+  { to: "/resources/add", label: "Add Resource" },
+  { to: "/resources/my", label: "My Resources" }
+];
+
 export function AppShell() {
   const { user, logoutUser } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [resourcesDropdownOpen, setResourcesDropdownOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const navItems = user ? buildNavItems(user.role) : [];
@@ -87,6 +97,45 @@ export function AppShell() {
                     {item.label}
                   </NavLink>
                 ))}
+                
+                {/* Resources Dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setResourcesDropdownOpen((value) => !value)}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+                      resourcesDropdownOpen
+                        ? "bg-tide text-white"
+                        : "text-ink hover:bg-white/60"
+                    }`}
+                  >
+                    Resources ▾
+                  </button>
+                  
+                  {resourcesDropdownOpen && (
+                    <div className="absolute left-0 z-10 mt-2 w-48 rounded-md border border-slate-200 bg-white shadow-lg">
+                      <div className="py-1">
+                        {resourcesDropdown.map((item) => (
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            className={({ isActive }) =>
+                              `block px-4 py-2 text-sm font-medium ${
+                                isActive
+                                  ? "bg-tide text-white"
+                                  : "text-slate-700 hover:bg-slate-100"
+                              }`
+                            }
+                            onClick={() => setResourcesDropdownOpen(false)}
+                          >
+                            {item.label}
+                          </NavLink>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <button
                   type="button"
                   className="rounded-md px-3 py-2 text-sm font-semibold text-ink hover:bg-white/60"
@@ -125,6 +174,24 @@ export function AppShell() {
                 {item.label}
               </NavLink>
             ))}
+            
+            {/* Mobile Resources Submenu */}
+            <div className="border-l-2 border-slate-200 pl-4">
+              <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Resources
+              </p>
+              {resourcesDropdown.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={linkClass}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+            
             <button
               type="button"
               onClick={() => void handleLogout()}

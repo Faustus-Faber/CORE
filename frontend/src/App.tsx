@@ -13,6 +13,10 @@ import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import AddResource from "./pages/AddResource";
+import MapPage from "./pages/MapPage";
+import MyResourcesPage from "./pages/MyResourcesPage";
+
 
 export default function App() {
   return (
@@ -23,28 +27,14 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
-
+        
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route
-            path="/map"
-            element={
-              <PlaceholderPage
-                title="Interactive Crisis Map"
-                description="Module 2 map view placeholder. Route is secured by authentication."
-              />
-            }
-          />
-          <Route
-            path="/resources"
-            element={
-              <PlaceholderPage
-                title="Resource Hub"
-                description="Resource registration and reservation routes are protected."
-              />
-            }
-          />
+          <Route path="/map" element={<MapPage />} />
+          <Route path="/resources" element={<Navigate to="/resources/add" replace />} />
+          <Route path="/resources/add" element={<AddResource />} />
+          <Route path="/resources/my" element={<MyResourcesPage />} />
           <Route
             path="/volunteers"
             element={

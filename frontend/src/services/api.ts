@@ -74,10 +74,12 @@ export async function registerUser(payload: RegisterPayload) {
 }
 
 export async function loginUser(payload: LoginPayload) {
-  return request<{ message: string; user: AuthUser }>("/auth/login", {
+  const res = await request<{ message: string; user: AuthUser; token: string }>("/auth/login", {
     method: "POST",
-    body: payload
+    body: payload,
   });
+  localStorage.setItem("token", res.token);
+  return { user: res.user };
 }
 
 export async function getCurrentUser() {

@@ -102,6 +102,72 @@ export const changePasswordSchema = z
     }
   });
 
+// Resource validation schemas
+const resourceCategorySchema = z.enum([
+  "Medical Supplies",
+  "Food & Water",
+  "Shelter",
+  "Clothing",
+  "Transportation",
+  "Tools & Equipment",
+  "Other"
+]);
+
+const resourceUnitSchema = z.enum([
+  "pieces",
+  "packs",
+  "liters",
+  "kg",
+  "units",
+  "seats",
+  "other"
+]);
+
+const resourceConditionSchema = z.enum(["New", "Good", "Fair"]);
+
+const resourceContactPreferenceSchema = z.enum(["Phone", "SMS", "In-App"]);
+
+export const createResourceSchema = z.object({
+  name: z.string().min(1, "Resource name is required").max(100),
+  category: resourceCategorySchema,
+  quantity: z.number().min(1, "Quantity must be at least 1"),
+  unit: resourceUnitSchema,
+  condition: resourceConditionSchema,
+  address: z.string().min(1, "Address is required").max(500),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  availabilityStart: z.string().datetime().optional().or(z.literal("")),
+  availabilityEnd: z.string().datetime().optional().or(z.literal("")),
+  contactPreference: resourceContactPreferenceSchema,
+  notes: z.string().max(500, "Notes cannot exceed 500 characters").optional().or(z.literal("")),
+  photos: z.array(z.string()).optional()
+});
+
+export const updateResourceSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  category: resourceCategorySchema.optional(),
+  quantity: z.number().min(1).optional(),
+  unit: resourceUnitSchema.optional(),
+  condition: resourceConditionSchema.optional(),
+  address: z.string().min(1).max(500).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  contactPreference: resourceContactPreferenceSchema.optional(),
+  availabilityStart: z.string().datetime().optional().or(z.literal("")),
+  availabilityEnd: z.string().datetime().optional().or(z.literal("")),
+  notes: z.string().max(500).optional().or(z.literal("")),
+  photos: z.array(z.string()).optional(),
+  status: z.enum(["Available", "Low Stock", "Reserved", "Depleted", "Unavailable"]).optional()
+});
+
+export function validateCreateResourceInput(payload: unknown) {
+  return createResourceSchema.parse(payload);
+}
+
+export function validateUpdateResourceInput(payload: unknown) {
+  return updateResourceSchema.parse(payload);
+}
+
 export function validateRegistrationInput(payload: unknown) {
   return registrationSchema.parse(payload);
 }

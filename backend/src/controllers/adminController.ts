@@ -6,6 +6,19 @@ import {
   setUserBanStatusByAdmin,
   setUserRoleByAdmin
 } from "../services/authService.js";
+import {
+  listUnderReviewIncidentReports,
+  updateIncidentReportStatusByAdmin
+} from "../services/reportService.js";
+import {
+  approveReview,
+  approveVolunteer,
+  banVolunteer,
+  deleteReview,
+  listFlaggedReviews,
+  listFlaggedVolunteers
+} from "../services/reviewService.js";
+import { validateReportListQueryInput } from "../utils/validation.js";
 
 const roleSchema = z.object({
   role: z.enum(["USER", "VOLUNTEER"])
@@ -13,6 +26,10 @@ const roleSchema = z.object({
 
 const banSchema = z.object({
   isBanned: z.boolean()
+});
+
+const reportStatusSchema = z.object({
+  status: z.enum(["PUBLISHED", "UNDER_REVIEW"])
 });
 
 export async function listUsers(
@@ -56,4 +73,98 @@ export async function updateUserBanStatus(
       isBanned: updated.isBanned
     }
   });
+}
+
+export async function listUnpublishedReports(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const query = validateReportListQueryInput(request.query);
+  const reports = await listUnderReviewIncidentReports({
+    search: query.search,
+    severity: query.severity,
+    sortBy: query.sortBy,
+    order: query.order,
+    page: query.page,
+    limit: query.limit
+  });
+
+  return response.status(200).json({ reports });
+}
+
+export async function updateReportStatus(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const { status } = reportStatusSchema.parse(request.body);
+  const reportId = String(request.params.reportId);
+  const updated = await updateIncidentReportStatusByAdmin(reportId, status);
+
+  return response.status(200).json({
+    message:
+      status === "PUBLISHED" ? "Report published successfully" : "Report kept under review",
+    report: updated
+  });
+}
+
+// ── Review Moderation ───────────────────────────────────────────────────────
+
+export async function getFlaggedReviewsHandler(
+  _request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const reviews = await listFlaggedReviews();
+  return response.status(200).json({ reviews });
+}
+
+export async function getFlaggedVolunteersHandler(
+  _request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const volunteers = await listFlaggedVolunteers();
+  return response.status(200).json({ volunteers });
+}
+
+export async function approveReviewHandler(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const reviewId = String(request.params.id);
+  await approveReview(reviewId);
+  return response.status(200).json({ message: "Review approved" });
+}
+
+export async function deleteReviewHandler(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const reviewId = String(request.params.id);
+  await deleteReview(reviewId);
+  return response.status(200).json({ message: "Review deleted" });
+}
+
+export async function approveVolunteerHandler(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const volunteerId = String(request.params.id);
+  await approveVolunteer(volunteerId);
+  return response.status(200).json({ message: "Volunteer flag cleared" });
+}
+
+export async function banVolunteerHandler(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const volunteerId = String(request.params.id);
+  await banVolunteer(volunteerId);
+  return response.status(200).json({ message: "Volunteer banned" });
 }

@@ -4,15 +4,25 @@ import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { RoleRoute } from "./components/RoleRoute";
 import { AdminPanelPage } from "./pages/AdminPanelPage";
+import { AdminReportModerationPage } from "./pages/AdminReportModerationPage";
+import AddResource from "./pages/AddResource";
 import { DashboardPage } from "./pages/DashboardPage";
+import { FolderDetailsPage } from "./pages/FolderDetailsPage"; // Feature 4
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
+import MapPage from "./pages/MapPage";
+import { MyDocumentsPage } from "./pages/MyDocumentsPage"; // Feature 4
+import MyResourcesPage from "./pages/MyResourcesPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { ReportIncidentPage } from "./pages/ReportIncidentPage";
+import { ReportsExplorerPage } from "./pages/ReportsExplorerPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { VolunteerDirectoryPage } from "./pages/VolunteerDirectoryPage";
+import { VolunteerProfilePage } from "./pages/VolunteerProfilePage";
 
 export default function App() {
   return (
@@ -26,34 +36,20 @@ export default function App() {
 
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/report-incident" element={<ReportIncidentPage />} />
+          <Route path="/reports/explore" element={<ReportsExplorerPage />} />
           <Route path="/profile" element={<ProfilePage />} />
-          <Route
-            path="/map"
-            element={
-              <PlaceholderPage
-                title="Interactive Crisis Map"
-                description="Module 2 map view placeholder. Route is secured by authentication."
-              />
-            }
-          />
-          <Route
-            path="/resources"
-            element={
-              <PlaceholderPage
-                title="Resource Hub"
-                description="Resource registration and reservation routes are protected."
-              />
-            }
-          />
-          <Route
-            path="/volunteers"
-            element={
-              <PlaceholderPage
-                title="Volunteer Directory"
-                description="Volunteer directory and reviews are available to authenticated users."
-              />
-            }
-          />
+          <Route path="/map" element={<MapPage />} />
+          <Route path="/resources" element={<Navigate to="/resources/add" replace />} />
+          <Route path="/resources/add" element={<AddResource />} />
+          <Route path="/resources/my" element={<MyResourcesPage />} />
+          <Route path="/volunteers" element={<VolunteerDirectoryPage />} />
+          <Route path="/volunteers/:volunteerId" element={<VolunteerProfilePage />} />
+          
+          {/* Feature 4: Secure Documentation Routes */}
+          <Route path="/docs" element={<MyDocumentsPage />} />
+          <Route path="/docs/:folderId" element={<FolderDetailsPage />} />
+          
           <Route
             path="/leaderboard"
             element={
@@ -79,7 +75,15 @@ export default function App() {
           <Route element={<RoleRoute allowedRoles={["ADMIN"]} />}>
             <Route path="/admin" element={<AdminPanelPage />} />
             <Route
+              path="/reports/review"
+              element={<AdminReportModerationPage />}
+            />
+            <Route
               path="/reports"
+              element={<Navigate to="/reports/review" replace />}
+            />
+            <Route
+              path="/reports/generate"
               element={
                 <PlaceholderPage
                   title="Generate Reports"

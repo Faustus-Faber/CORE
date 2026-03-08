@@ -13,6 +13,37 @@ enum Role {
   ADMIN
 }
 
+enum IncidentSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum IncidentStatus {
+  PUBLISHED
+  UNDER_REVIEW
+}
+
+enum IncidentType {
+  FLOOD
+  FIRE
+  EARTHQUAKE
+  BUILDING_COLLAPSE
+  ROAD_ACCIDENT
+  VIOLENCE
+  MEDICAL_EMERGENCY
+  OTHER
+}
+
+enum InteractionContext {
+  RESCUE_OPERATION
+  MEDICAL_AID
+  SUPPLY_DISTRIBUTION
+  SHELTER_MANAGEMENT
+  OTHER
+}
+
 model User {
   id                String   @id @default(auto()) @map("_id") @db.ObjectId
   fullName          String
@@ -27,8 +58,150 @@ model User {
   certifications    String?
   dispatchOptIn     Boolean  @default(false)
   isBanned          Boolean  @default(false)
+  isFlagged         Boolean  @default(false)
+  volunteerFlagReasons String[]
   resetTokenHash    String?
   resetTokenExpiry  DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+
+  reviewsGiven    Review[] @relation("ReviewsGiven")
+  reviewsReceived Review[] @relation("ReviewsReceived")
+  folders         SecureFolder[] // Feature 4: Secure Documentation
+
+  @@index([role, isBanned])
+  @@index([role, isFlagged])
+}
+
+model IncidentReport {
+  id                    String           @id @default(auto()) @map("_id") @db.ObjectId
+  reporterId            String           @db.ObjectId
+  incidentTitle         String
+  description           String
+  incidentType          IncidentType
+  locationText          String
+  mediaFilenames        String[]
+  sourceAudioFilename   String?
+  detectedLanguage      String?
+  languageProbability   Float?
+  translatedDescription String?
+  credibilityScore      Int
+  severityLevel         IncidentSeverity
+  classifiedIncidentType IncidentType
+  classifiedIncidentTitle String
+  spamFlagged           Boolean          @default(false)
+  status                IncidentStatus   @default(PUBLISHED)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([reporterId, createdAt(sort: Desc)])
+  @@index([status, severityLevel])
+}
+
+model Review {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  reviewerId        String   @db.ObjectId
+  volunteerId       String   @db.ObjectId
+  rating            Int
+  text              String
+  interactionContext InteractionContext @default(OTHER)
+  interactionDate DateTime
+  wouldWorkAgain  Boolean
+  crisisEventId   String?
+  isFlagged       Boolean  @default(false)
+  flagReasons     String[]
+  createdAt       DateTime @default(now())
+
+  reviewer  User @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  volunteer User @relation("ReviewsReceived", fields: [volunteerId], references: [id])
+
+  @@index([volunteerId, createdAt(sort: Desc)])
+  @@index([reviewerId, createdAt(sort: Desc)])
+  @@index([isFlagged])
+}
+
+model Resource {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  name              String
+  category          String
+  quantity          Int
+  unit              String
+  condition         String
+  address           String
+  latitude          Float
+  longitude         Float
+  availabilityStart DateTime?
+  availabilityEnd   DateTime?
+  contactPreference String
+  photos            String[]
+  notes             String?
+  status            String   @default("Available")
+  userId            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([latitude, longitude])
+}
+
+// Feature 4: Secure Documentation
+model SecureFolder {
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  crisisId    String?      @db.ObjectId // Optional link to a crisis event
+  ownerId     String       @db.ObjectId
+  owner       User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  files       FolderFile[]
+  notes       FolderNote[]
+  shareLinks  ShareLink[]
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model FolderFile {
+  id         String       @id @default(auto()) @map("_id") @db.ObjectId
+  folderId   String       @db.ObjectId
+  folder     SecureFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  uploaderId String       @db.ObjectId // To track who uploaded it
+
+  fileUrl   String // URL from your storage provider (e.g., AWS S3)
+  fileType  String // e.g., 'image/jpeg', 'video/mp4'
+  sizeBytes Int
+  gpsLat    Float?
+  gpsLng    Float?
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model FolderNote {
+  id       String       @id @default(auto()) @map("_id") @db.ObjectId
+  folderId String       @db.ObjectId
+  folder   SecureFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  authorId String       @db.ObjectId
+
+  content String
+  gpsLat  Float?
+  gpsLng  Float?
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model ShareLink {
+  id       String       @id @default(auto()) @map("_id") @db.ObjectId
+  folderId String       @db.ObjectId
+  folder   SecureFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  token     String    @unique
+  expiresAt DateTime? // Null means no expiry
+  isRevoked Boolean   @default(false)
+
+  createdAt DateTime @default(now())
 }

@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import express from "express";
@@ -24,6 +26,7 @@ app.use(
 app.use(cookieParser());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
 app.get("/", (_request, response) => {
   response.status(200).json({

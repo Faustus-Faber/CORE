@@ -1,120 +1,177 @@
 # CORE - Community Organization for Response & Emergency
 
-CORE is a crisis-response web platform for community-led emergency coordination.  
-It is based on the SRS in [docs/SRS.md](./docs/SRS.md), with Module 0 implemented as the current working milestone.
+> A crisis-response web platform for community-led emergency coordination and resource management.
 
-## Technology Stack
-- Frontend: React + TypeScript + Tailwind CSS + Vite
-- Backend: Express + TypeScript
-- Database: MongoDB (Atlas/local) via Prisma
-- Auth: JWT in httpOnly cookies
+[![Status](https://img.shields.io/badge/status-active-success)]()
+[![Node](https://img.shields.io/badge/node-%3E%3D22-green)]()
+[![React](https://img.shields.io/badge/react-19-blue)]()
+[![MongoDB](https://img.shields.io/badge/mongodb-atlas-green)]()
 
-## Implemented Right Now (Module 0)
+---
 
-### 0.1 Public Landing Page
-- Public, responsive landing page with:
-  - Hero + CTA (`Sign Up`, `Login`)
-  - Core capabilities section
-  - How-it-works summary
-  - Impact stats + footer
+## Table of Contents
 
-### 0.2 Registration (User/Volunteer)
-- Sign up fields:
-  - Full name, email, phone, password + confirm, location, role
-- Volunteer-specific fields:
-  - Skills, availability, certifications
-- Server-side validation:
-  - Email/phone format checks
-  - Password policy (8+ chars, upper/lower/number/symbol)
-  - Duplicate email/phone rejection
-- Password hashing with bcrypt
+- [Overview](#overview)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the Application](#running-the-application)
+- [Demo Accounts](#demo-accounts)
+- [Testing Features](#testing-features)
+- [API Endpoints](#api-endpoints)
+- [Troubleshooting](#troubleshooting)
+- [Roadmap](#roadmap)
 
-### 0.3 Login & Authentication
-- Login with email/phone + password
-- JWT issuance with `Remember Me` duration support
-- Session cookie stored as httpOnly cookie
-- Role-aware redirect behavior on login
+---
 
-### 0.4 Password Recovery
-- Forgot password flow
-- Reset token generation and expiry (15 minutes)
-- Reset password endpoint + UI
+## Overview
 
-### 0.5 Profile Management
-- Authenticated profile view/edit
-- Update name, phone, location, avatar URL
-- Volunteer metadata updates (skills/availability/certifications)
-- Change password with current-password verification
+CORE enables communities to coordinate emergency response efforts through real-time incident reporting, resource management, volunteer coordination, and secure evidence documentation. The platform integrates AI-powered credibility assessment and fraud detection to ensure reliable information during crisis situations.
 
-### 0.6 Role-Based Access Control (RBAC)
-- Auth middleware (`requireAuth`)
-- Role middleware (`requireRole`)
-- Permission model utility for Module 0 RBAC baseline
-- Protected and role-restricted frontend routes
+**Full Specification:** [Software Requirements Specification](./docs/SRS.md)
 
-### 0.7 Admin Seed Account
-- Prisma seed script creates default admin
-- Admin-only endpoints:
-  - List users
-  - Promote/demote User <-> Volunteer
-  - Ban/unban users
+---
 
-### 0.8 Logout
-- Logout endpoint clears auth cookie
-- Frontend logout action in navigation
+## Features
 
-### 0.9 Responsive Navigation & Layout Shell
-- Navbar adapts by auth state and role:
-  - Guest: Home/Login/Sign Up
-  - User/Volunteer/Admin: role-specific menu
-- Mobile menu support
+### ✅ Module 0: Foundation (Complete)
+- Public landing page with responsive design
+- Complete authentication system (signup, login, logout, password reset)
+- User profile management
+- Role-Based Access Control (RBAC)
+- Admin user management dashboard
 
-## Current Non-Module-0 Scope
-- Modules 1-3 are not fully implemented yet.
-- Placeholder/protected routes are present for later modules.
+### ✅ Module 1, Feature 1: Emergency Reporting (Complete)
+- Multi-format incident submission (text, images, video, voice notes)
+- AI-powered analysis via Groq (Whisper + Qwen models)
+  - Voice transcription and translation
+  - Credibility scoring, severity classification, spam detection
+- Reports Explorer with advanced filtering and sorting
+- Admin moderation workflow for unpublished reports
+
+### ✅ Module 1, Feature 2: Resource Registration (Complete)
+- Emergency resource cataloging with GPS coordinates
+- Interactive crisis map (Google Maps integration)
+- Resource status tracking (Available, Reserved, Depleted, etc.)
+- Owner-managed resource editing and deactivation
+
+### ✅ Module 1, Feature 3: Volunteer Reviews & Fraud Detection (Complete)
+- Volunteer directory with public profiles
+- Review system with fraud detection algorithms
+  - Account age verification
+  - Review velocity monitoring
+  - Keyword-based fraud flagging
+  - Rating anomaly detection
+- Admin moderation for flagged content
+
+### ✅ Module 1, Feature 4: Secure Documentation (Complete)
+- Private digital evidence folders
+- Secure file upload with GPS/timestamp metadata
+- Shareable links with configurable expiration
+- Soft-delete with 30-day recovery window
+- Operational notes with audit trail
+
+---
+
+## Tech Stack
+
+| Layer | Technologies |
+|-------|--------------|
+| **Frontend** | React 19, TypeScript, Tailwind CSS, Vite, React Router |
+| **Backend** | Express, TypeScript, Multer |
+| **Database** | MongoDB (Atlas), Prisma ORM |
+| **Authentication** | JWT (httpOnly cookies), bcryptjs |
+| **Maps** | Google Maps API (@react-google-maps/api) |
+| **AI Services** | Groq API (Whisper, Qwen) |
+| **Testing** | Vitest, Supertest |
+
+### Key Dependencies
+
+**Backend**
+```json
+{
+  "@prisma/client": "^6.5.0",
+  "express": "^4.21.2",
+  "multer": "^2.1.1",
+  "jsonwebtoken": "^9.0.2",
+  "bcryptjs": "^2.4.3",
+  "zod": "^3.24.2"
+}
+```
+
+**Frontend**
+```json
+{
+  "react": "^19.0.0",
+  "react-router-dom": "^7.2.0",
+  "axios": "^1.7.9",
+  "@react-google-maps/api": "^2.20.8",
+  "tailwindcss": "^3.4.17"
+}
+```
+
+---
 
 ## Project Structure
-- `backend/` - API, auth, profile, admin controls, Prisma schema/seed, tests
-- `frontend/` - Landing/auth/profile/admin UI + route protection
-- `docs/` - SRS and design notes
 
-## Environment Setup
-
-### 1. Backend env
-Create `backend/.env`:
-
-```env
-DATABASE_URL="mongodb+srv://<user>:<pass>@<cluster>/core?retryWrites=true&w=majority"
-PORT=5000
-CORS_ORIGIN="http://localhost:5173"
-JWT_SECRET="replace-with-strong-random-secret"
-ADMIN_EMAIL="admin@core.local"
-ADMIN_PHONE="+8801700000000"
-ADMIN_PASSWORD="Admin@12345"
-ADMIN_NAME="CORE Admin"
-ADMIN_LOCATION="Dhaka"
+```
+CORE/
+├── backend/
+│   ├── src/
+│   │   ├── controllers/     # Request handlers
+│   │   ├── services/        # Business logic
+│   │   ├── middleware/      # Auth, upload, error handling
+│   │   ├── routes/          # API route definitions
+│   │   ├── utils/           # Validation, helpers
+│   │   └── server.ts        # Entry point
+│   ├── prisma/
+│   │   ├── schema.prisma    # Database schema
+│   │   └── seed.ts          # Test data seeder
+│   ├── uploads/             # Static file storage
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── pages/           # Route components
+│   │   ├── components/      # Reusable UI components
+│   │   ├── services/        # API client
+│   │   ├── context/         # React context (Auth)
+│   │   ├── types/           # TypeScript types
+│   │   └── App.tsx          # Root component
+│   └── package.json
+├── docs/
+│   └── SRS.md               # Software Requirements Specification
+└── README.md
 ```
 
-### 2. Frontend env
-Create `frontend/.env`:
+---
 
-```env
-VITE_API_URL=http://localhost:5000/api
-```
+## Prerequisites
 
-## How To Run The Project Cleanly (Windows PowerShell)
+| Software | Version | Download |
+|----------|---------|----------|
+| Node.js | 22+ | [nodejs.org](https://nodejs.org) |
+| npm | 10+ | Included with Node.js |
+| MongoDB | Atlas or Local | [mongodb.com/cloud/atlas](https://mongodb.com/cloud/atlas) |
 
-### Step A: Install deps
+---
+
+## Installation
+
+### Quick Start
+
 ```powershell
-cd backend
-npm install
-cd ../frontend
-npm install
+# Navigate to project directory
+cd "D:\CSE471 Project\CORE\Module 1\Merged"
+
+# Install all dependencies
+cd backend && npm install
+cd ../frontend && npm install
 cd ..
-```
 
-### Step B: Prepare database
-```powershell
+# Initialize database
 cd backend
 npm run prisma:generate
 npm run prisma:push
@@ -122,32 +179,364 @@ npm run seed
 cd ..
 ```
 
-### Step C: Ensure no old dev servers are running
-```powershell
-$conn5000 = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue
-if ($conn5000) { Stop-Process -Id $conn5000.OwningProcess -Force }
-$conn5173 = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue
-if ($conn5173) { Stop-Process -Id $conn5173.OwningProcess -Force }
+### Detailed Steps
+
+1. **Clone or download** the repository
+2. **Install backend dependencies:**
+   ```powershell
+   cd backend
+   npm install
+   ```
+3. **Install frontend dependencies:**
+   ```powershell
+   cd ../frontend
+   npm install
+   cd ..
+   ```
+4. **Generate Prisma client:**
+   ```powershell
+   cd backend
+   npm run prisma:generate
+   ```
+5. **Sync database schema:**
+   ```powershell
+   npm run prisma:push
+   ```
+6. **Seed test data:**
+   ```powershell
+   npm run seed
+   ```
+
+---
+
+## Configuration
+
+### Backend Environment Variables
+
+Create `backend/.env`:
+
+```env
+# Database
+DATABASE_URL="mongodb+srv://<user>:<pass>@<cluster>/core?retryWrites=true&w=majority"
+
+# Server
+PORT=5000
+CORS_ORIGIN="http://localhost:5173"
+
+# Authentication
+JWT_SECRET="generate-a-strong-random-secret-here"
+
+# Admin Account (seeded)
+ADMIN_EMAIL="admin@core.local"
+ADMIN_PHONE="+8801700000000"
+ADMIN_PASSWORD="Admin@12345"
+ADMIN_NAME="CORE Admin"
+ADMIN_LOCATION="Dhaka"
+
+# Groq AI API
+GROQ_API_KEY="your-groq-api-key"
+GROQ_BASE_URL="https://api.groq.com/openai/v1"
+GROQ_WHISPER_MODEL="whisper-large-v3"
+GROQ_QWEN_MODEL="qwen/qwen3-32b"
+AI_REQUEST_TIMEOUT_MS=15000
 ```
 
-### Step D: Start servers
-Terminal 1:
+### Frontend Environment Variables
+
+Create `frontend/.env`:
+
+```env
+VITE_API_URL=http://localhost:5000/api
+VITE_GOOGLE_MAPS_API_KEY=your-google-maps-api-key
+```
+
+> **Obtain Google Maps API Key:** [Google Cloud Console](https://console.cloud.google.com/)
+
+---
+
+## Running the Application
+
+### Start Development Servers
+
+**Terminal 1 - Backend:**
 ```powershell
 cd backend
 npm run dev
 ```
+Backend runs on: `http://localhost:5000`
 
-Terminal 2:
+**Terminal 2 - Frontend:**
 ```powershell
 cd frontend
 npm run dev
 ```
+Frontend runs on: `http://localhost:5173`
 
-### Step E: Open app
-- Frontend: `http://localhost:5173`
-- Backend health: `http://localhost:5000/api/health`
+### Stop Existing Processes
+
+If ports are occupied:
+
+```powershell
+$conn5000 = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue
+if ($conn5000) { Stop-Process -Id $conn5000.OwningProcess -Force }
+
+$conn5173 = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue
+if ($conn5173) { Stop-Process -Id $conn5173.OwningProcess -Force }
+```
+
+### Access Points
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Frontend | http://localhost:5173 | Main application |
+| Backend API | http://localhost:5000/api | REST API |
+| Health Check | http://localhost:5000/api/health | API status |
+| Static Files | http://localhost:5000/uploads/ | Uploaded media |
+
+---
+
+## Demo Accounts
+
+After running `npm run seed`, the following accounts are available:
+
+### Administrator
+
+| Credential | Value |
+|------------|-------|
+| Email | `admin@core.local` |
+| Phone | `+8801700000000` |
+| Password | `Admin@12345` |
+| Access | Full admin privileges |
+
+### Standard Users (Password: `User@12345`)
+
+| Email | Purpose |
+|-------|---------|
+| `alice@core.local` | Trusted reviewer (60-day account) |
+| `bob@core.local` | Trusted reviewer (60-day account) |
+| `carol@core.local` | Trusted reviewer (60-day account) |
+| `frank@core.local` | Fraud testing (<24hr account) |
+| `grace@core.local` | Active emergency reporter |
+
+### Volunteers (Password: `Volunteer@12345`)
+
+| Email | Status | Description |
+|-------|--------|-------------|
+| `sarah@core.local` | ✅ Good | 5★ rating, positive reviews |
+| `mike@core.local` | ⚠️ Flagged | Low average rating (1.6★) |
+| `tom@core.local` | ⚠️ Flagged | Fraud keywords detected |
+| `emma@core.local` | ✅ Active | No reviews yet |
+
+---
+
+## Testing Features
+
+### Emergency Reporting Workflow
+
+1. **Submit Report:**
+   - Login: `grace@core.local` / `User@12345`
+   - Navigate: Report Incident
+   - Complete: Title, description, type, location
+   - Optional: Attach media or voice note
+   - Submit → Redirects to Reports Explorer
+
+2. **Browse Reports:**
+   - Navigate: Reports Explorer (`/reports/explore`)
+   - Filter: Severity, credibility, time
+   - Toggle: Community Reports / My Submissions
+
+3. **Admin Moderation:**
+   - Login: Admin account
+   - Navigate: Admin Panel → Moderate Reports
+   - Action: Publish or Keep Under Review
+
+### Volunteer Review & Fraud Detection
+
+| Test Case | Steps | Expected |
+|-----------|-------|----------|
+| New Account Flag | Login as `frank@core.local` → Submit review | Review flagged |
+| Short Text Flag | Submit review with text <20 chars | Review flagged |
+| Fraud Keywords | Include "scam", "fake", "fraud" | Review flagged |
+| Low Rating Flag | View Mike Wilson profile | Volunteer flagged |
+| Admin Moderation | Admin Panel → Flagged Reviews | Approve/Delete options |
+
+### Resource Management
+
+1. **Add Resource:**
+   - Login: Any user
+   - Navigate: Resources → Add Resource
+   - Complete: Name, category, quantity, location (map)
+   - Optional: Photos (max 3), availability window
+   - Submit → My Resources
+
+2. **Interactive Map:**
+   - Navigate: Map
+   - View: Resource markers
+   - Click: Info window with details
+
+---
+
+## API Endpoints
+
+### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/signup` | Register new user |
+| POST | `/api/auth/login` | User login |
+| POST | `/api/auth/logout` | User logout |
+| POST | `/api/auth/forgot-password` | Request password reset |
+| POST | `/api/auth/reset-password` | Reset password with token |
+
+### Reports
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/reports` | Submit incident report |
+| GET | `/api/reports` | List community reports |
+| GET | `/api/reports/my` | List user submissions |
+| PUT | `/api/reports/:id/status` | Update report status (Admin) |
+
+### Volunteers
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/volunteers` | List volunteers |
+| GET | `/api/volunteers/:id` | Get volunteer profile |
+| POST | `/api/volunteers/:id/reviews` | Submit review |
+| GET | `/api/volunteers/:id/reviews` | Get volunteer reviews |
+
+### Resources
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/resources` | Register resource |
+| GET | `/api/resources` | List resources |
+| GET | `/api/resources/my` | List user resources |
+| PUT | `/api/resources/:id` | Update resource |
+| DELETE | `/api/resources/:id` | Delete resource |
+
+### Documents (Secure Folders)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/docs` | List user folders |
+| POST | `/api/docs` | Create folder |
+| GET | `/api/docs/:id` | Get folder details |
+| POST | `/api/docs/:id/files` | Upload file |
+| POST | `/api/docs/:id/notes` | Add note |
+| POST | `/api/docs/:id/share` | Generate share link |
+| DELETE | `/api/docs/:id` | Soft-delete folder |
+
+### Admin
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/users` | List all users |
+| PUT | `/api/admin/users/:id/role` | Update user role |
+| PUT | `/api/admin/users/:id/ban` | Ban/unban user |
+| GET | `/api/admin/flagged-reviews` | Get flagged reviews |
+| GET | `/api/admin/flagged-volunteers` | Get flagged volunteers |
+
+---
+
+## Troubleshooting
+
+### Port Conflicts
+
+**Error:** Port 5000 or 5173 already in use
+
+**Solution:**
+```powershell
+# Kill process on port 5000
+$conn = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue
+if ($conn) { Stop-Process -Id $conn.OwningProcess -Force }
+
+# Kill process on port 5173
+$conn = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue
+if ($conn) { Stop-Process -Id $conn.OwningProcess -Force }
+```
+
+### File Upload Failures
+
+| Issue | Solution |
+|-------|----------|
+| Upload directory missing | Ensure `backend/uploads` exists |
+| File too large | Max size: 20MB (images/video), 10MB (audio) |
+| Invalid format | Supported: JPG, PNG, WEBP, MP4, WEBM |
+| Images not loading | Backend must be running (serves `/uploads/`) |
+
+### Database Errors
+
+| Issue | Solution |
+|-------|----------|
+| Connection failed | Verify `DATABASE_URL` in `.env` |
+| Schema mismatch | Run `npm run prisma:generate` then `npm run prisma:push` |
+| Seed failed | Drop database and re-run `npm run seed` |
+
+### Google Maps Issues
+
+| Issue | Solution |
+|-------|----------|
+| Blank map | Verify `VITE_GOOGLE_MAPS_API_KEY` |
+| API error | Enable Maps JavaScript API in Cloud Console |
+| Billing required | Add payment method to Google Cloud project |
+
+### Build Errors
+
+```powershell
+# Clear cache and rebuild
+cd backend
+rm -r node_modules
+rm package-lock.json
+npm install
+
+cd ../frontend
+rm -r node_modules
+rm package-lock.json
+npm install
+```
+
+---
 
 ## Verification Commands
-- Backend tests: `cd backend && npm test`
-- Backend build: `cd backend && npm run build`
-- Frontend build: `cd frontend && npm run build`
+
+```powershell
+# Backend tests
+cd backend && npm test
+
+# Backend build
+cd backend && npm run build
+
+# Frontend build
+cd frontend && npm run build
+```
+
+---
+
+## Roadmap
+
+### ✅ Completed (Module 1)
+- [x] Feature 1: Emergency Reporting
+- [x] Feature 2: Resource Registration
+- [x] Feature 3: Volunteer Reviews & Fraud Detection
+- [x] Feature 4: Secure Documentation
+
+### 📋 Module 2 (Planned)
+- [ ] Real-Time Dashboard with AI duplicate clustering
+- [ ] Interactive Crisis Map (enhanced)
+- [ ] Advanced Volunteer Directory Search
+- [ ] Visual Evidence Gallery
+
+### 📋 Module 3 (Planned)
+- [ ] Live Crisis Updates
+- [ ] Resource Status Management
+- [ ] Automated SMS Dispatch (Twilio)
+- [ ] NGO Summary Reports (PDF)
+- [ ] Resource Reservation System
+- [ ] Volunteer Gamification (leaderboards, badges)
+- [ ] Disaster Damage OCR (Google Vision API)
+
+---
+
+## License
+
+This project is part of CSE471 Coursework. All rights reserved.
+
+## Contributors
+
+Community Organization for Response & Emergency (CORE) Development Team

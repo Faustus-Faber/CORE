@@ -44,8 +44,8 @@
 
 | Service | Purpose |
 |:---|:---|
-| **OpenAI API** | Incident credibility evaluation, severity classification, AI-generated situation summaries, context-aware survival instructions |
-| **OpenAI Whisper API** | Multilingual voice-note transcription and translation (Bangla / Banglish → English) |
+| **Groq LLM API (Qwen 3-32B)** | Incident credibility evaluation, severity classification, incident-type/title extraction via `POST /chat/completions` using model `qwen/qwen3-32b`, with future task-specific prompts for summary/advisory generation |
+| **Groq Speech API (Whisper Large v3)** | Multilingual voice-note transcription with optional English translation fallback (`/audio/transcriptions`, `/audio/translations`) |
 | **Google Maps API** | Interactive geolocation mapping of active crises and available resources |
 | **Google Vision OCR API** | Optical character recognition for extracting text data from disaster-damage images |
 | **Twilio API** | Automated SMS dispatch for emergency coordination alerts |
@@ -252,9 +252,9 @@
 **Functional Details:**
 
 - **Unauthenticated state:** The navbar shall display: Logo, Home, About, Login, Sign Up.
-- **Authenticated state (User):** The navbar shall display: Logo, Dashboard, Map, Resources, Volunteers, Profile, Notifications Bell, Logout.
-- **Authenticated state (Volunteer):** All User nav items plus: "My Tasks", "Leaderboard", and the "🔔 Dispatch Alert" bell button.
-- **Authenticated state (Admin):** All User nav items plus: "Admin Panel", "Generate Reports".
+- **Authenticated state (User):** The navbar shall display: Logo, Dashboard, Map, Resources, Volunteers, Profile, Leaderboard, a **Reports dropdown** ("Submit Incident", "Browse Reports"), Notifications Bell, Logout.
+- **Authenticated state (Volunteer):** All User nav items plus: "My Tasks" and the "🔔 Dispatch Alert" bell button.
+- **Authenticated state (Admin):** All User nav items plus: "Admin Panel" and extra Reports dropdown options: "Review Unpublished" and "Generate Reports".
 - The layout shall include a mobile-responsive hamburger menu.
 - A global **notification badge** shall indicate unread push notifications.
 
@@ -270,31 +270,73 @@
 
 | Aspect | Detail |
 |:---|:---|
-| **Description** | Authenticated users can submit incident reports describing an ongoing or imminent crisis. Reports can be submitted via structured text forms or multilingual voice notes (supporting Bangla and Banglish). The system automatically processes each submission through an AI pipeline that transcribes audio, translates non-English content, evaluates credibility to filter spam or false reports, and classifies the incident by severity level and disaster type. |
+| **Description** | Authenticated users can submit incident reports describing an ongoing or imminent crisis. Reports can be submitted via structured text forms or multilingual voice notes (supporting Bangla and Banglish). The system automatically processes each submission through an AI pipeline that transcribes audio with Groq Whisper Large v3, conditionally translates non-English content to English, evaluates credibility to filter spam or false reports, and classifies the incident by severity level and disaster type. |
 | **Actors** | User, Volunteer. |
-| **External APIs** | OpenAI API (credibility scoring, severity classification), OpenAI Whisper API (voice transcription & translation). |
+| **External APIs** | Groq LLM API (Qwen 3-32B) (credibility scoring, severity classification), Groq Speech API (Whisper Large v3 transcription with translation fallback). |
+
+**API Integration Contracts (Updated):**
+
+| API | Value |
+|:---|:---|
+| **Groq Base URL** | `https://api.groq.com/openai/v1` |
+| **Groq Transcription Endpoint** | `POST /audio/transcriptions` |
+| **Groq Translation Endpoint** | `POST /audio/translations` (used when detected language is not English) |
+| **Groq Request** | `FormData { file: File, model: "whisper-large-v3" }` (+ `response_format: "verbose_json"` for transcription) |
+| **Normalized Voice Metadata** | `{ status, filename, detected_language, language_probability, translated_description }` where `language_probability` may be `null` because Groq Whisper does not provide confidence probability in this flow |
+| **Voice Constraints** | `.mp3`, `.wav`, `.webm`; max 5 minutes; <= 10 MB |
+| **Text Classification Base URL** | `https://api.groq.com/openai/v1` |
+| **Text Classification Endpoint** | `POST /chat/completions` |
+| **Text Classification Request** | `{ model: "qwen/qwen3-32b", messages: [...], response_format: { type: "json_object" } }` |
+| **Text Analysis Response** | `{ credibility_score, severity_level, incident_type, incident_title, spam_flagged }` |
+| **Expected AI Latency** | ~7�8 seconds per analysis request |
 
 **Functional Details:**
 
 1. The system shall present a report-submission form with the following fields:
    - **Incident Title** (text, required, max 120 characters)
-   - **Description** (text area, required, max 2000 characters)
+   - **Description** (text area, max 2000 characters; required only when no voice note is attached)
    - **Incident Type** (dropdown: Flood, Fire, Earthquake, Building Collapse, Road Accident, Violence, Medical Emergency, Other)
    - **Location** (text input with optional GPS auto-detect via browser geolocation)
    - **Photo / Video Upload** (optional, max 5 files, each ≤ 10 MB)
-   - **Voice Note Upload** (optional, audio file ≤ 5 minutes, formats: .mp3, .wav, .webm)
-2. If a voice note is uploaded, the system shall:
-   - Send the audio to the **Whisper API** for transcription.
-   - Detect the source language; if Bangla or Banglish, translate the transcript to English.
-   - Auto-populate the **Description** field with the translated transcript and store the original transcript as metadata.
-3. Upon submission, the system shall send the report text to the **OpenAI API** with a structured prompt to:
-   - Assign a **Credibility Score** (0–100). Reports scoring below 30 shall be flagged as `Suspected Spam` and held for admin review rather than published.
-   - Assign a **Severity Level**: `Critical`, `High`, `Medium`, or `Low`.
-   - Confirm or adjust the **Incident Type** classification.
+   - **Voice Note Input** with two options:
+     - **Record Voice** (in-browser start/stop recording button)
+     - **Upload Voice File** (audio file ≤ 5 minutes, formats: .mp3, .wav, .webm)
+2. If a voice note is recorded or uploaded, the system shall:
+   - Send the audio file to `POST https://api.groq.com/openai/v1/audio/transcriptions` as `FormData` with keys `file`, `model=whisper-large-v3`, and `response_format=verbose_json`.
+   - Parse transcription text and detected language from Groq.
+   - If detected language is non-English, send the same audio file to `POST https://api.groq.com/openai/v1/audio/translations` to get English text.
+   - Persist normalized voice metadata fields: `filename`, `detected_language`, `language_probability` (`null` when unavailable), and `translated_description` (final text used for downstream classification).
+3. Upon submission, the system shall send the final report text to `POST https://api.groq.com/openai/v1/chat/completions` using model `qwen/qwen3-32b` and a strict JSON-output prompt, then parse and use the response to:
+   - Set `credibility_score` (0–100). If `spam_flagged = true` or score < 30, mark as `Suspected Spam` and hold for admin review.
+   - Set `severity_level` as one of `Critical`, `High`, `Medium`, `Low`.
+   - Set `incident_type` and `incident_title` from model output.
 4. The processed report shall be saved to the database with the following stored fields:
-   - Reporter's User ID, timestamp, location, all form inputs, AI-generated metadata (credibility score, severity, classified type), and processing status.
+   - Reporter's User ID, timestamp, location, all form inputs, voice metadata (`filename`, `detected_language`, `language_probability`, `translated_description`), AI metadata (`credibility_score`, `severity_level`, `incident_type`, `incident_title`, `spam_flagged`), and processing status.
+   - Uploaded media evidence paths persisted in backend storage and linked to each report record.
 5. Reports that pass credibility screening shall immediately appear on the **Real-Time Dashboard** (Module 2.1) and **Interactive Crisis Map** (Module 2.2).
-6. The reporter shall receive an on-screen confirmation with a summary of the submitted report and its assigned severity.
+6. After successful submission, the reporter shall be redirected to a **Reports Explorer** page (`Browse Reports`) and see a submission-summary banner (classified title, severity, credibility, status).
+7. The Reports Explorer page shall be available from the navbar **Reports dropdown** and shall provide:
+   - **Community Reports** tab (published reports visible to authenticated users)
+   - **My Submissions** tab (includes the reporter's own reports, including `Under Review` entries)
+8. Reports Explorer shall support:
+   - Keyword search (title/classified title/location/description)
+   - Severity filter (`Critical`, `High`, `Medium`, `Low`, `All`)
+   - Sorting by `Created Time`, `Severity`, or `Credibility` (ascending/descending)
+   - Pagination with query parameters (`page`, `limit`) to avoid loading all reports at once.
+9. Reports Explorer cards shall prioritize readability and performance:
+   - Display a high-visibility credibility indicator (circular score wheel).
+   - Keep media evidence collapsed by default and expand on user action.
+   - Defer media-heavy rendering until evidence is expanded.
+10. The backend shall expose protected list endpoints for the explorer:
+   - `GET /api/reports` for community-visible published reports
+   - `GET /api/reports/mine` for the authenticated reporter's own submissions
+11. The system shall provide an **Admin Report Moderation** page for unpublished reports, available only to the `Admin` role from the Reports dropdown ("Review Unpublished").
+12. Admin moderation shall support:
+    - Listing unpublished (`UNDER_REVIEW`) reports with search, severity filter, and sorting controls.
+    - Publishing an unpublished report, which changes status to `PUBLISHED` so it appears in community listings.
+13. The backend shall expose admin-only moderation endpoints:
+    - `GET /api/admin/reports/unpublished`
+    - `PATCH /api/admin/reports/:reportId/status` with body `{ status: "PUBLISHED" | "UNDER_REVIEW" }`
 
 ---
 
@@ -400,7 +442,7 @@
 |:---|:---|
 | **Description** | Authenticated users can access a localized, real-time feed of incident reports relevant to their community. The system uses AI to cluster duplicate or overlapping reports about the same incident into a single "Master Incident" card, reducing information noise. Additionally, the dashboard dynamically generates and displays a Situation Report (SitRep) summarizing the current crisis landscape for the user's locality. |
 | **Actors** | User, Volunteer, Admin. |
-| **External APIs** | OpenAI API (duplicate clustering, SitRep generation). |
+| **External APIs** | Groq LLM API (Qwen 3-32B) (duplicate clustering, SitRep generation). |
 
 **Functional Details:**
 
@@ -411,12 +453,12 @@
    - Location name, time since report, number of clustered reports, reporter count.
    - Thumbnail of attached media (if any).
 3. **AI Duplicate Clustering:**
-   - When a new report is submitted, the system shall compare it against existing active incidents using the **OpenAI API** (semantic similarity analysis on title + description + location proximity).
+   - When a new report is submitted, the system shall compare it against existing active incidents using the **Groq LLM API (Qwen 3-32B)** (semantic similarity analysis on title + description + location proximity).
    - If the similarity score exceeds a threshold (≥ 0.80), the new report shall be **merged** into the existing Master Incident rather than creating a new card.
    - The Master Incident card shall display a **"X reports merged"** indicator and allow users to expand and view individual contributing reports.
 4. **Situation Report (SitRep):**
    - The dashboard shall feature a prominent **SitRep panel** at the top.
-   - The SitRep shall be generated by sending all active local incident summaries to the **OpenAI API** with a prompt to produce a concise (200–400 word), structured community briefing.
+   - The SitRep shall be generated by sending all active local incident summaries to the **Groq LLM API (Qwen 3-32B)** with a prompt to produce a concise (200–400 word), structured community briefing.
    - The SitRep shall include: current active incident count, most critical ongoing events, areas to avoid, resources available nearby, and general safety advisories.
    - The SitRep shall **auto-refresh** every 10 minutes or when a new Critical-severity incident is reported in the user's area.
 5. Users shall be able to **filter** the feed by: incident type, severity level, and time range (last 1 hour, 6 hours, 24 hours, 7 days).
@@ -517,7 +559,7 @@
    - All metadata (timestamp, uploader, location, linked report ID).
    - Navigation arrows to browse through the gallery sequentially.
 6. **AI-Generated Recommendations:**
-   - The gallery page shall include a **"Recommendations" panel** that provides contextual advisories generated by sending a summary of the crisis event and evidence descriptions to the **OpenAI API**.
+   - The gallery page shall include a **"Recommendations" panel** that provides contextual advisories generated by sending a summary of the crisis event and evidence descriptions to the **Groq LLM API (Qwen 3-32B)**.
    - Recommendations may include: safety precautions, damage assessment observations, suggested next steps for responders, or resource needs inferred from visual evidence patterns.
 7. Users shall be able to **filter** the gallery by: media type (photos only, videos only), date range, and uploader.
 8. Users shall be able to **report** inappropriate or irrelevant media to the admin for removal.
@@ -536,7 +578,7 @@
 |:---|:---|
 | **Description** | Volunteers can update the details and operational status of an active crisis event. Status changes trigger the AI to regenerate a revised live situation summary, ensuring the community stays informed with a concise, up-to-date overview without being overwhelmed by raw data. |
 | **Actors** | Volunteer, Admin. |
-| **External APIs** | OpenAI API (revised situation summary generation). |
+| **External APIs** | Groq LLM API (Qwen 3-32B) (revised situation summary generation). |
 
 **Functional Details:**
 
@@ -548,7 +590,7 @@
    - **Casualty / Impact Estimates** (optional): fields for injured count, displaced count, structural damage notes.
 2. Upon submitting an update, the system shall:
    - Log the update as a new entry in the crisis event's **update timeline/history** with the updater's User ID, timestamp, and all changed fields.
-   - Send the complete crisis event data (original report + all updates) to the **OpenAI API** to generate a **revised live situation summary** (150–300 words).
+   - Send the complete crisis event data (original report + all updates) to the **Groq LLM API (Qwen 3-32B)** to generate a **revised live situation summary** (150–300 words).
    - Replace the previous summary on the incident's detail page and the dashboard SitRep.
 3. If the status is changed to **`Resolved`** or **`Closed`**:
    - The incident marker shall be removed from the active crisis map layer (or moved to a "Resolved" layer).
@@ -649,7 +691,7 @@
 |:---|:---|
 | **Description** | Users can subscribe to specific crisis categories (e.g., Flood, Fire, Earthquake) and geographic areas to receive targeted push notifications. When a new incident matching their subscription criteria is reported locally, they receive a notification containing AI-generated, context-aware survival instructions such as hazard warnings, evacuation tips, or safety precautions. |
 | **Actors** | User, Volunteer. |
-| **External APIs** | OpenAI API (context-aware survival instruction generation). |
+| **External APIs** | Groq LLM API (Qwen 3-32B) (context-aware survival instruction generation). |
 
 **Functional Details:**
 
@@ -661,7 +703,7 @@
 3. When a new incident is reported and passes credibility screening (Module 1.1):
    - The system shall query all users whose subscribed categories include the incident's type **AND** whose location is within their configured notification radius of the incident.
    - For each matching user, the system shall:
-     - Send the incident type, severity, and location context to the **OpenAI API** with a prompt to generate a **concise survival instruction** (50–150 words) tailored to the specific disaster type and local conditions.
+     - Send the incident type, severity, and location context to the **Groq LLM API (Qwen 3-32B)** with a prompt to generate a **concise survival instruction** (50–150 words) tailored to the specific disaster type and local conditions.
      - Deliver a **push notification** (browser notification or in-app notification) containing:
        - Notification title: `⚠ [Severity] [Incident Type] Alert`
        - Body: Brief incident summary + AI-generated survival instruction.
@@ -792,11 +834,12 @@
 
 | Category | Requirement |
 |:---|:---|
-| **Performance** | The dashboard and map shall load initial data within 3 seconds on a standard broadband connection. API responses for non-AI features shall return within 500ms. |
+| **Performance** | The dashboard and map shall load initial data within 3 seconds on a standard broadband connection. API responses for non-AI features shall return within 500ms. Text analysis/classification responses are expected at ~7�8 seconds per request. |
 | **Scalability** | The system architecture shall support up to 10,000 concurrent users without degradation, leveraging MongoDB's horizontal scalability. |
 | **Security** | All passwords shall be hashed using bcrypt (salt rounds ≥ 10). All API communication shall occur over HTTPS. JWTs shall expire within 24 hours (extendable with "Remember Me"). Sensitive data (OCR results, secure documents) shall be access-controlled. |
 | **Availability** | The deployed application on Render shall target 99% uptime during the academic demonstration period. |
 | **Usability** | The UI shall be fully responsive (mobile, tablet, desktop). All forms shall provide real-time validation feedback. Error messages shall be user-friendly and non-technical. |
-| **Internationalization** | The Whisper API integration shall support Bangla and Banglish voice input. The UI shall be in English with potential for future localization. |
+| **Internationalization** | The Groq Whisper voice pipeline shall support Bangla and Banglish voice input with transcription and conditional English translation fallback. The UI shall be in English with potential for future localization. |
 | **Data Integrity** | All crisis updates and resource changes shall use append-only logs to maintain a complete audit trail. Soft-delete shall be used for user-facing deletions. |
 | **Compliance** | User location data shall only be collected with explicit browser permission. Users shall be informed of data usage in a privacy notice accessible from the landing page. |
+

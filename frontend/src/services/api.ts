@@ -1,4 +1,14 @@
-import type { AuthUser, Role } from "../types";
+import type {
+  AuthUser,
+  IncidentReportListItem,
+  EmergencyReportSubmissionInput,
+  EmergencyReportSummary,
+  ReportListQuery,
+  Role,
+  Review,
+  FlaggedVolunteer
+} from "../types";
+import { buildEmergencyReportFormData } from "./reportPayload";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
 
@@ -18,13 +28,22 @@ type ApiErrorPayload = {
 };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const isFormData = options.body instanceof FormData;
+  const headers = isFormData
+    ? undefined
+    : {
+        "Content-Type": "application/json"
+      };
+
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers,
     credentials: "include",
-    body: options.body ? JSON.stringify(options.body) : undefined
+    body: options.body
+      ? isFormData
+        ? (options.body as FormData)
+        : JSON.stringify(options.body)
+      : undefined
   });
 
   const payload = (await response.json().catch(() => ({}))) as ApiErrorPayload;
@@ -148,5 +167,172 @@ export async function updateUserBanStatus(userId: string, isBanned: boolean) {
   return request<{ message: string }>(`/admin/users/${userId}/ban`, {
     method: "PATCH",
     body: { isBanned }
+  });
+}
+
+export async function createEmergencyReport(
+  payload: EmergencyReportSubmissionInput
+) {
+  const formData = buildEmergencyReportFormData(payload);
+  return request<{ message: string; report: EmergencyReportSummary }>("/reports", {
+    method: "POST",
+    body: formData
+  });
+}
+
+function toQueryString(query: ReportListQuery) {
+  const params = new URLSearchParams();
+
+  if (query.search?.trim()) {
+    params.set("search", query.search.trim());
+  }
+
+  if (query.severity && query.severity !== "ALL") {
+    params.set("severity", query.severity);
+  }
+
+  if (query.sortBy) {
+    params.set("sortBy", query.sortBy);
+  }
+
+  if (query.order) {
+    params.set("order", query.order);
+  }
+
+  if (typeof query.page === "number") {
+    params.set("page", String(query.page));
+  }
+
+  if (typeof query.limit === "number") {
+    params.set("limit", String(query.limit));
+  }
+
+  const queryString = params.toString();
+  return queryString ? `?${queryString}` : "";
+}
+
+export async function listCommunityReports(query: ReportListQuery = {}) {
+  return request<{ reports: IncidentReportListItem[] }>(
+    `/reports${toQueryString(query)}`
+  );
+}
+
+export async function listMyReports(query: ReportListQuery = {}) {
+  return request<{ reports: IncidentReportListItem[] }>(
+    `/reports/mine${toQueryString(query)}`
+  );
+}
+
+export async function listAdminUnpublishedReports(query: ReportListQuery = {}) {
+  return request<{ reports: IncidentReportListItem[] }>(
+    `/admin/reports/unpublished${toQueryString(query)}`
+  );
+}
+
+export async function updateReportStatusByAdmin(
+  reportId: string,
+  status: "PUBLISHED" | "UNDER_REVIEW"
+) {
+  return request<{
+    message: string;
+    report: {
+      id: string;
+      status: "PUBLISHED" | "UNDER_REVIEW";
+      spamFlagged: boolean;
+    };
+  }>(`/admin/reports/${reportId}/status`, {
+    method: "PATCH",
+    body: { status }
+  });
+}
+
+// ── Volunteers ──────────────────────────────────────────────────────────────
+
+export async function listVolunteers() {
+  return request<{
+    volunteers: Array<Pick<AuthUser, "id" | "fullName" | "email" | "location">>;
+  }>("/volunteers");
+}
+
+export async function getVolunteerProfile(volunteerId: string) {
+  return request<{
+    volunteer: Pick<
+      AuthUser,
+      | "id"
+      | "fullName"
+      | "email"
+      | "location"
+      | "role"
+      | "skills"
+      | "availability"
+      | "certifications"
+      | "avatarUrl"
+    > & {
+      isFlagged: boolean;
+      volunteerFlagReasons: string[];
+    };
+  }>(`/volunteers/${volunteerId}`);
+}
+
+// ── Reviews ──────────────────────────────────────────────────────────────────
+
+export async function submitReview(
+  volunteerId: string,
+  rating: number,
+  text: string,
+  interactionContext: string,
+  interactionDate: string,
+  wouldWorkAgain: boolean,
+  crisisEventId?: string | null
+) {
+  return request<{ message: string; review: Review }>("/reviews", {
+    method: "POST",
+    body: {
+      volunteerId,
+      rating,
+      text,
+      interactionContext,
+      interactionDate,
+      wouldWorkAgain,
+      crisisEventId
+    }
+  });
+}
+
+export async function getVolunteerReviews(volunteerId: string) {
+  return request<{ reviews: Review[]; averageRating: number | null }>(
+    `/reviews/volunteer/${volunteerId}`
+  );
+}
+
+export async function getFlaggedReviews() {
+  return request<{ reviews: Review[] }>("/reviews/flagged");
+}
+
+export async function getFlaggedVolunteers() {
+  return request<{ volunteers: FlaggedVolunteer[] }>("/reviews/flagged-volunteers");
+}
+
+export async function approveReview(reviewId: string) {
+  return request<{ message: string }>(`/reviews/${reviewId}/approve`, {
+    method: "PATCH"
+  });
+}
+
+export async function deleteReview(reviewId: string) {
+  return request<{ message: string }>(`/reviews/${reviewId}`, {
+    method: "DELETE"
+  });
+}
+
+export async function approveVolunteer(volunteerId: string) {
+  return request<{ message: string }>(`/reviews/volunteer/${volunteerId}/approve`, {
+    method: "PATCH"
+  });
+}
+
+export async function banVolunteer(volunteerId: string) {
+  return request<{ message: string }>(`/reviews/volunteer/${volunteerId}/ban`, {
+    method: "POST"
   });
 }

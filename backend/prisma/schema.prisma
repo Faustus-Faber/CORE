@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  VOLUNTEER
+  ADMIN
+}
+
+model User {
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  fullName         String
+  email            String         @unique
+  phone            String         @unique
+  passwordHash     String
+  location         String
+  role             Role           @default(USER)
+  avatarUrl        String?
+  skills           String[]
+  availability     String?
+  certifications   String?
+  dispatchOptIn    Boolean        @default(false)
+  isBanned         Boolean        @default(false)
+  resetTokenHash   String?
+  resetTokenExpiry DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  folders          SecureFolder[]
+}
+
+model SecureFolder {
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  crisisId    String?      @db.ObjectId // Optional link to a crisis event
+  ownerId     String       @db.ObjectId
+  owner       User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  files       FolderFile[]
+  notes       FolderNote[]
+  shareLinks  ShareLink[]
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model FolderFile {
+  id         String       @id @default(auto()) @map("_id") @db.ObjectId
+  folderId   String       @db.ObjectId
+  folder     SecureFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  uploaderId String       @db.ObjectId // To track who uploaded it
+
+  fileUrl   String // URL from your storage provider (e.g., AWS S3)
+  fileType  String // e.g., 'image/jpeg', 'video/mp4'
+  sizeBytes Int
+  gpsLat    Float?
+  gpsLng    Float?
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model FolderNote {
+  id       String       @id @default(auto()) @map("_id") @db.ObjectId
+  folderId String       @db.ObjectId
+  folder   SecureFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  authorId String       @db.ObjectId
+
+  content String
+  gpsLat  Float?
+  gpsLng  Float?
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model ShareLink {
+  id       String       @id @default(auto()) @map("_id") @db.ObjectId
+  folderId String       @db.ObjectId
+  folder   SecureFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  token     String    @unique
+  expiresAt DateTime? // Null means no expiry
+  isRevoked Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+}

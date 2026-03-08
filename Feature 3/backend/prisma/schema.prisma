@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  VOLUNTEER
+  ADMIN
+}
+
+enum InteractionContext {
+  RESCUE_OPERATION
+  MEDICAL_AID
+  SUPPLY_DISTRIBUTION
+  SHELTER_MANAGEMENT
+  OTHER
+}
+
+model User {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  fullName          String
+  email             String   @unique
+  phone             String   @unique
+  passwordHash      String
+  location          String
+  role              Role     @default(USER)
+  avatarUrl         String?
+  skills            String[]
+  availability      String?
+  certifications    String?
+  dispatchOptIn     Boolean  @default(false)
+  isBanned          Boolean  @default(false)
+  isFlagged         Boolean  @default(false)
+  volunteerFlagReasons String[]
+  resetTokenHash    String?
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  reviewsGiven    Review[] @relation("ReviewsGiven")
+  reviewsReceived Review[] @relation("ReviewsReceived")
+}
+
+model Review {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  reviewerId        String   @db.ObjectId
+  volunteerId       String   @db.ObjectId
+  rating            Int
+  text              String
+  interactionContext InteractionContext @default(OTHER)
+  interactionDate DateTime
+  wouldWorkAgain  Boolean
+  crisisEventId   String?
+  isFlagged       Boolean  @default(false)
+  flagReasons     String[]
+  createdAt       DateTime @default(now())
+
+  reviewer  User @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  volunteer User @relation("ReviewsReceived", fields: [volunteerId], references: [id])
+}

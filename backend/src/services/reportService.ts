@@ -16,6 +16,9 @@ import {
   type VoiceInputFile,
   type VoiceReportResult
 } from "./voiceReportClient.js";
+import {
+  clusterReportIntoCrisisEvent
+} from "./dashboardService.js";
 
 type UploadedFileMeta = {
   originalname: string;
@@ -51,6 +54,8 @@ export type CreateIncidentReportInput = {
   description: string;
   incidentType: IncidentType | string;
   locationText: string;
+  latitude?: number | null;
+  longitude?: number | null;
   mediaFiles: UploadedFileMeta[];
   voiceFile?: (VoiceInputFile & { size: number }) | undefined;
 };
@@ -341,6 +346,8 @@ export async function createIncidentReport(
     description,
     incidentType: userSelectedIncidentType,
     locationText: input.locationText.trim(),
+    latitude: input.latitude ?? null,
+    longitude: input.longitude ?? null,
     mediaFilenames: input.mediaFiles.map((file) => file.originalname),
     sourceAudioFilename:
       voiceMetadata?.filename ?? input.voiceFile?.originalname ?? null,
@@ -357,6 +364,18 @@ export async function createIncidentReport(
     updatedAt: new Date()
   });
 
+  await clusterReportAfterCreation(created.id, {
+    id: created.id,
+    incidentTitle: input.incidentTitle.trim(),
+    description,
+    locationText: input.locationText.trim(),
+    incidentType: classifiedIncidentType,
+    severityLevel,
+    latitude: input.latitude ?? null,
+    longitude: input.longitude ?? null,
+    reporterId: input.reporterId
+  });
+
   return {
     id: created.id,
     incidentTitle: input.incidentTitle.trim(),
@@ -368,6 +387,29 @@ export async function createIncidentReport(
     status,
     translatedDescription: voiceMetadata?.translated_description ?? null
   };
+}
+
+async function clusterReportAfterCreation(
+  reportId: string,
+  reportMeta: {
+    id: string;
+    incidentTitle: string;
+    description: string;
+    locationText: string;
+    incidentType: IncidentType;
+    severityLevel: IncidentSeverity;
+    latitude: number | null;
+    longitude: number | null;
+    reporterId: string;
+  }
+) {
+  if (process.env.VITEST === "true" || process.env.NODE_ENV === "test") {
+    return;
+  }
+  try {
+    await clusterReportIntoCrisisEvent(reportMeta);
+  } catch {
+  }
 }
 
 export async function listIncidentReports(

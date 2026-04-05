@@ -80,6 +80,8 @@ model IncidentReport {
   description           String
   incidentType          IncidentType
   locationText          String
+  latitude              Float?
+  longitude             Float?
   mediaFilenames        String[]
   sourceAudioFilename   String?
   detectedLanguage      String?
@@ -93,6 +95,8 @@ model IncidentReport {
   status                IncidentStatus   @default(PUBLISHED)
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
+
+  crisisEvents        CrisisEventReport[]
 
   @@index([reporterId, createdAt(sort: Desc)])
   @@index([status, severityLevel])
@@ -200,8 +204,50 @@ model ShareLink {
   folder   SecureFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
 
   token     String    @unique
-  expiresAt DateTime? // Null means no expiry
+  expiresAt DateTime?
   isRevoked Boolean   @default(false)
 
   createdAt DateTime @default(now())
+}
+
+enum CrisisEventStatus {
+  ACTIVE
+  CONTAINED
+  RESOLVED
+  CLOSED
+}
+
+model CrisisEvent {
+  id              String             @id @default(auto()) @map("_id") @db.ObjectId
+  title           String
+  incidentType    IncidentType
+  severityLevel   IncidentSeverity
+  locationText    String
+  latitude        Float?
+  longitude       Float?
+  status          CrisisEventStatus  @default(ACTIVE)
+  sitRepText      String?
+  reportCount     Int                @default(0)
+  reporterCount   Int                @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  reports         CrisisEventReport[]
+
+  @@index([status, severityLevel, createdAt(sort: Desc)])
+  @@index([latitude, longitude])
+}
+
+model CrisisEventReport {
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId    String        @db.ObjectId
+  incidentReportId String        @db.ObjectId
+  createdAt        DateTime      @default(now())
+
+  crisisEvent    CrisisEvent    @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  incidentReport IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+
+  @@unique([crisisEventId, incidentReportId])
+  @@index([incidentReportId])
+  @@index([crisisEventId])
 }

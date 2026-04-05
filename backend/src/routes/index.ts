@@ -2,12 +2,13 @@ import { Router } from "express";
 
 import { adminRoutes } from "./adminRoutes.js";
 import { authRoutes } from "./authRoutes.js";
+import { dashboardRoutes } from "./dashboardRoutes.js";
 import { profileRoutes } from "./profileRoutes.js";
 import { reportRoutes } from "./reportRoutes.js";
 import { reviewRoutes } from "./reviewRoutes.js";
 import { volunteerRoutes } from "./volunteerRoutes.js";
 import { resourceRoutes } from "./resourceRoutes.js";
-import { docRoutes } from "./docRoutes.js"; // Feature 4: Secure Documentation
+import { docRoutes } from "./docRoutes.js";
 
 export const apiRoutes = Router();
 
@@ -22,4 +23,5 @@ apiRoutes.use("/reports", reportRoutes);
 apiRoutes.use("/reviews", reviewRoutes);
 apiRoutes.use("/volunteers", volunteerRoutes);
 apiRoutes.use("/resources", resourceRoutes);
-apiRoutes.use("/docs", docRoutes); // Feature 4: Secure Documentation
+apiRoutes.use("/docs", docRoutes);
+apiRoutes.use("/dashboard", dashboardRoutes);

@@ -99,6 +99,8 @@ export async function createReport(
     description: payload.description,
     incidentType: payload.incidentType,
     locationText: payload.locationText,
+    latitude: request.body.latitude ? parseFloat(request.body.latitude) : null,
+    longitude: request.body.longitude ? parseFloat(request.body.longitude) : null,
     mediaFiles: storedMediaFiles,
     voiceFile: voiceFile
       ? {

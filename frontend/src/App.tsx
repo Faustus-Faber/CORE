@@ -7,6 +7,7 @@ import { AdminPanelPage } from "./pages/AdminPanelPage";
 import { AdminReportModerationPage } from "./pages/AdminReportModerationPage";
 import AddResource from "./pages/AddResource";
 import { DashboardPage } from "./pages/DashboardPage";
+import { IncidentDetailPage } from "./pages/IncidentDetailPage";
 import { FolderDetailsPage } from "./pages/FolderDetailsPage"; // Feature 4
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { LandingPage } from "./pages/LandingPage";
@@ -36,6 +37,7 @@ export default function App() {
 
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/dashboard/incidents/:id" element={<IncidentDetailPage />} />
           <Route path="/report-incident" element={<ReportIncidentPage />} />
           <Route path="/reports/explore" element={<ReportsExplorerPage />} />
           <Route path="/profile" element={<ProfilePage />} />

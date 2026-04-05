@@ -35,8 +35,11 @@ export type IncidentType =
 
 export type IncidentSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 export type IncidentStatus = "PUBLISHED" | "UNDER_REVIEW";
+export type CrisisEventStatus = "ACTIVE" | "CONTAINED" | "RESOLVED" | "CLOSED";
 export type ReportSortBy = "createdAt" | "severity" | "credibility";
 export type SortOrder = "asc" | "desc";
+export type DashboardSortBy = "mostRecent" | "highestSeverity" | "mostReports";
+export type DashboardTimeRange = 1 | 6 | 24 | 168 | 0;
 
 export type ReportListQuery = {
   search?: string;
@@ -163,3 +166,133 @@ export interface SecureFolder {
   files?: FolderFile[];
   notes?: FolderNote[];
 }
+
+export interface CrisisEventCard {
+  id: string;
+  title: string;
+  classifiedIncidentTitle: string;
+  incidentType: IncidentType;
+  severityLevel: IncidentSeverity;
+  status: CrisisEventStatus;
+  locationText: string;
+  latitude: number | null;
+  longitude: number | null;
+  reportCount: number;
+  reporterCount: number;
+  credibilityScore: number;
+  createdAt: string;
+  mediaFilenames: string[];
+  descriptionExcerpt: string;
+}
+
+export interface SitRepResponse {
+  blueprint: SitRepBlueprint;
+}
+
+export type ThreatLevel = "GREEN" | "AMBER" | "RED" | "CRITICAL";
+export type MetricColor = "critical" | "high" | "medium" | "low" | "neutral";
+export type PulseIntensity = "critical" | "high" | "medium" | "low";
+
+export interface SitRepMetric {
+  label: string;
+  value: number;
+  trend?: string;
+  color: MetricColor;
+}
+
+export interface SitRepPulsePoint {
+  lat: number;
+  lng: number;
+  intensity: PulseIntensity;
+  label: string;
+}
+
+export interface SitRepTimelineEvent {
+  time: string;
+  event: string;
+  severity: string;
+}
+
+export interface SitRepWarning {
+  zone: string;
+  reason: string;
+  until: string;
+}
+
+export interface SitRepResource {
+  name: string;
+  qty: string;
+  location: string;
+  eta: string;
+}
+
+export interface SitRepBlueprint {
+  version: string;
+  generatedAt: string;
+  threatLevel: ThreatLevel;
+  metrics: SitRepMetric[];
+  pulseMap: SitRepPulsePoint[];
+  timeline: SitRepTimelineEvent[];
+  warnings: SitRepWarning[];
+  resources: SitRepResource[];
+  advisories: string[];
+}
+
+export interface ContributingReport {
+  id: string;
+  reporterId: string;
+  reporterName: string;
+  incidentTitle: string;
+  classifiedIncidentTitle: string;
+  incidentType: IncidentType;
+  classifiedIncidentType: IncidentType;
+  description: string;
+  locationText: string;
+  latitude: number | null;
+  longitude: number | null;
+  mediaFilenames: string[];
+  credibilityScore: number;
+  severityLevel: IncidentSeverity;
+  status: string;
+  spamFlagged: boolean;
+  createdAt: string;
+}
+
+export interface ResourceSummary {
+  id: string;
+  name: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  status: string;
+  address: string;
+  distanceKm?: number;
+}
+
+export interface IncidentDetailResponse {
+  crisisEvent: {
+    id: string;
+    title: string;
+    incidentType: IncidentType;
+    severityLevel: IncidentSeverity;
+    locationText: string;
+    latitude: number | null;
+    longitude: number | null;
+    status: CrisisEventStatus;
+    sitRepText: string | null;
+    reportCount: number;
+    reporterCount: number;
+    createdAt: string;
+    updatedAt: string;
+  };
+  contributingReports: ContributingReport[];
+  nearbyResources: ResourceSummary[];
+}
+
+export type DashboardFeedFilters = {
+  incidentType: IncidentType | "ALL";
+  severity: IncidentSeverity | "ALL";
+  timeRange: DashboardTimeRange;
+  sortBy: DashboardSortBy;
+  sortOrder: SortOrder;
+};

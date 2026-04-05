@@ -74,6 +74,24 @@ CORE enables communities to coordinate emergency response efforts through real-t
 - Soft-delete with 30-day recovery window
 - Operational notes with audit trail
 
+### ✅ Module 2, Feature 1: Real-Time Dashboard (Complete)
+- AI-powered duplicate report clustering into Master Incident cards
+  - Groq LLM semantic similarity analysis (≥0.80 threshold)
+  - Real-time clustering triggered on each new report submission
+- Intelligence Briefing dashboard with structured JSON blueprint
+  - Dynamic threat level indicator (GREEN → AMBER → RED → CRITICAL)
+  - Animated metric counters (Active Incidents, Reports Merged, Critical count)
+  - Google Maps-based pulse map with severity-colored markers
+  - Incident timeline with severity-coded dots
+  - Warning cards for high/critical areas
+  - Resource tiles showing available nearby supplies
+  - AI-generated safety advisories contextual to active crises
+- Dashboard feed with location-based filtering (default 10km radius)
+- Advanced filtering by incident type, severity, and time range (1h, 6h, 24h, 7d)
+- Sorting by most recent, highest severity, or most reports merged
+- Detailed incident view with embedded map, contributing reports, and nearby resources
+- Collapsible SitRep panel with auto-refresh every 10 minutes
+
 ---
 
 ## Tech Stack
@@ -122,23 +140,38 @@ CORE/
 ├── backend/
 │   ├── src/
 │   │   ├── controllers/     # Request handlers
+│   │   │   ├── dashboardController.ts    # Dashboard feed, SitRep, incident detail
+│   │   │   └── ...
 │   │   ├── services/        # Business logic
+│   │   │   ├── dashboardService.ts       # AI clustering, SitRep generation
+│   │   │   └── ...
 │   │   ├── middleware/      # Auth, upload, error handling
 │   │   ├── routes/          # API route definitions
+│   │   │   ├── dashboardRoutes.ts        # Dashboard API routes
+│   │   │   └── ...
 │   │   ├── utils/           # Validation, helpers
 │   │   └── server.ts        # Entry point
 │   ├── prisma/
-│   │   ├── schema.prisma    # Database schema
-│   │   └── seed.ts          # Test data seeder
+│   │   ├── schema.prisma    # Database schema (includes CrisisEvent, CrisisEventReport)
+│   │   ├── seed.ts          # Test data seeder
+│   │   └── seed-additional-clusters.ts   # Additional crisis events for demo
 │   ├── uploads/             # Static file storage
 │   └── package.json
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/           # Route components
+│   │   │   ├── DashboardPage.tsx         # Real-time dashboard with filters
+│   │   │   ├── IncidentDetailPage.tsx    # Detailed incident view
+│   │   │   └── ...
 │   │   ├── components/      # Reusable UI components
+│   │   │   ├── SitRepPanel.tsx           # Intelligence Briefing panel
+│   │   │   ├── IncidentCard.tsx          # Clustered incident card
+│   │   │   ├── IncidentFeed.tsx          # Scrollable incident list
+│   │   │   ├── DashboardFilters.tsx      # Filter controls
+│   │   │   └── ...
 │   │   ├── services/        # API client
 │   │   ├── context/         # React context (Auth)
-│   │   ├── types/           # TypeScript types
+│   │   ├── types.ts         # TypeScript types
 │   │   └── App.tsx          # Root component
 │   └── package.json
 ├── docs/
@@ -176,6 +209,7 @@ cd backend
 npm run prisma:generate
 npm run prisma:push
 npm run seed
+npm run seed:clusters
 cd ..
 ```
 
@@ -205,6 +239,10 @@ cd ..
 6. **Seed test data:**
    ```powershell
    npm run seed
+   ```
+7. **Seed additional dashboard demo data:**
+   ```powershell
+   npm run seed:clusters
    ```
 
 ---
@@ -350,6 +388,31 @@ After running `npm run seed`, the following accounts are available:
    - Navigate: Admin Panel → Moderate Reports
    - Action: Publish or Keep Under Review
 
+### Real-Time Dashboard Workflow
+
+1. **View Intelligence Briefing:**
+   - Login: Any user account
+   - Navigate: Dashboard (`/dashboard`)
+   - View: Threat level indicator, animated metrics, SitRep panel
+   - Expand: SitRep to see AI-generated community briefing
+
+2. **Explore Incident Feed:**
+   - View: Clustered Master Incident cards with merged report counts
+   - Filter: Incident type, severity, time range (1h, 6h, 24h, 7d)
+   - Sort: Most recent, highest severity, most reports merged
+   - Click: Any incident card to view details
+
+3. **Incident Detail View:**
+   - View: Full incident information with embedded Google Map
+   - See: All contributing reports from different users
+   - Check: Nearby available resources
+   - Hover: Map markers to see incident names
+
+4. **Test AI Clustering:**
+   - Submit: A new report similar to an existing incident
+   - Observe: Report merges into existing Master Incident
+   - Verify: Report count increases on dashboard card
+
 ### Volunteer Review & Fraud Detection
 
 | Test Case | Steps | Expected |
@@ -422,6 +485,13 @@ After running `npm run seed`, the following accounts are available:
 | POST | `/api/docs/:id/notes` | Add note |
 | POST | `/api/docs/:id/share` | Generate share link |
 | DELETE | `/api/docs/:id` | Soft-delete folder |
+
+### Dashboard
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/dashboard/feed` | Get clustered incident feed with filters |
+| GET | `/api/dashboard/sitrep` | Get AI-generated Situation Report |
+| GET | `/api/dashboard/incidents/:id` | Get incident detail with contributing reports |
 
 ### Admin
 | Method | Endpoint | Description |
@@ -516,11 +586,11 @@ cd frontend && npm run build
 - [x] Feature 3: Volunteer Reviews & Fraud Detection
 - [x] Feature 4: Secure Documentation
 
-### 📋 Module 2 (Planned)
-- [ ] Real-Time Dashboard with AI duplicate clustering
-- [ ] Interactive Crisis Map (enhanced)
-- [ ] Advanced Volunteer Directory Search
-- [ ] Visual Evidence Gallery
+### 📋 Module 2 (In Progress)
+- [x] Feature 1: Real-Time Dashboard with AI duplicate clustering
+- [ ] Feature 2: Interactive Crisis Map (enhanced)
+- [ ] Feature 3: Advanced Volunteer Directory Search
+- [ ] Feature 4: Visual Evidence Gallery
 
 ### 📋 Module 3 (Planned)
 - [ ] Live Crisis Updates

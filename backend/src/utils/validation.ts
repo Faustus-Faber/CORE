@@ -339,5 +339,48 @@ export const addNoteSchema = z.object({
 });
 
 export const shareFolderSchema = z.object({
-  expiresInHours: z.enum(["1", "24", "168", "0"]).optional() // 0 for no expiry
+  expiresInHours: z.enum(["1", "24", "168", "0"]).optional()
 });
+
+export function validateDashboardFeedQuery(raw: unknown) {
+  const schema = z.object({
+    lat: z.coerce.number().optional(),
+    lng: z.coerce.number().optional(),
+    radiusKm: z.coerce.number().min(1).max(100).default(10),
+    incidentType: z.enum(["ALL", "FLOOD", "FIRE", "EARTHQUAKE", "BUILDING_COLLAPSE", "ROAD_ACCIDENT", "VIOLENCE", "MEDICAL_EMERGENCY", "OTHER"]).optional(),
+    severity: z.enum(["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
+    timeRangeHours: z.coerce.number().min(0).max(168).optional(),
+    sortBy: z.enum(["mostRecent", "highestSeverity", "mostReports"]).optional(),
+    sortOrder: z.enum(["asc", "desc"]).optional()
+  });
+
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      radiusKm: 10,
+      incidentType: "ALL" as const,
+      severity: "ALL" as const,
+      timeRangeHours: undefined,
+      sortBy: "mostRecent" as const,
+      sortOrder: "desc" as const
+    };
+  }
+
+  return {
+    lat: parsed.data.lat,
+    lng: parsed.data.lng,
+    radiusKm: parsed.data.radiusKm,
+    incidentType: parsed.data.incidentType ?? "ALL",
+    severity: parsed.data.severity ?? "ALL",
+    timeRangeHours: parsed.data.timeRangeHours,
+    sortBy: parsed.data.sortBy ?? "mostRecent",
+    sortOrder: parsed.data.sortOrder ?? "desc"
+  };
+}
+
+export function validateIncidentId(id: string): string {
+  if (!id || !/^[a-fA-F0-9]{24}$/.test(id)) {
+    throw new Error("Invalid incident ID format");
+  }
+  return id;
+}

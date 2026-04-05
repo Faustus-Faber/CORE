@@ -6,7 +6,11 @@ import type {
   ReportListQuery,
   Role,
   Review,
-  FlaggedVolunteer
+  FlaggedVolunteer,
+  CrisisEventCard,
+  SitRepResponse,
+  IncidentDetailResponse,
+  DashboardFeedFilters
 } from "../types";
 import { buildEmergencyReportFormData } from "./reportPayload";
 
@@ -335,4 +339,46 @@ export async function banVolunteer(volunteerId: string) {
   return request<{ message: string }>(`/reviews/volunteer/${volunteerId}/ban`, {
     method: "POST"
   });
+}
+
+export async function getDashboardFeed(
+  filters: Partial<DashboardFeedFilters> & { lat?: number; lng?: number; radiusKm?: number } = {}
+) {
+  const defaults: DashboardFeedFilters = {
+    incidentType: "ALL",
+    severity: "ALL",
+    timeRange: 0,
+    sortBy: "mostRecent",
+    sortOrder: "desc"
+  };
+
+  const merged = { ...defaults, ...filters };
+
+  const params = new URLSearchParams();
+
+  if (filters.lat != null) params.set("lat", String(filters.lat));
+  if (filters.lng != null) params.set("lng", String(filters.lng));
+  if (filters.radiusKm != null) params.set("radiusKm", String(filters.radiusKm));
+  if (merged.incidentType !== "ALL") params.set("incidentType", merged.incidentType);
+  if (merged.severity !== "ALL") params.set("severity", merged.severity);
+  if (merged.timeRange > 0) params.set("timeRangeHours", String(merged.timeRange));
+  if (merged.sortBy) params.set("sortBy", merged.sortBy);
+  if (merged.sortOrder) params.set("sortOrder", merged.sortOrder);
+
+  const qs = params.toString();
+  return request<{ feed: CrisisEventCard[] }>(`/dashboard/feed${qs ? `?${qs}` : ""}`);
+}
+
+export async function getSitRep(lat?: number, lng?: number, radiusKm?: number) {
+  const params = new URLSearchParams();
+  if (lat != null) params.set("lat", String(lat));
+  if (lng != null) params.set("lng", String(lng));
+  if (radiusKm != null) params.set("radius", String(radiusKm));
+
+  const qs = params.toString();
+  return request<SitRepResponse>(`/dashboard/sitrep${qs ? `?${qs}` : ""}`);
+}
+
+export async function getIncidentDetail(incidentId: string) {
+  return request<{ incident: IncidentDetailResponse }>(`/dashboard/incidents/${incidentId}`);
 }

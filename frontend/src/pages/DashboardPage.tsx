@@ -1,59 +1,105 @@
-import { useAuth } from "../context/AuthContext";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { SitRepPanel } from "../components/SitRepPanel";
+import { IncidentFeed } from "../components/IncidentFeed";
+import { DashboardFilters } from "../components/DashboardFilters";
+import { getDashboardFeed } from "../services/api";
+import type { CrisisEventCard, DashboardFeedFilters, IncidentType, IncidentSeverity, DashboardTimeRange } from "../types";
 
-function getRoleSummary(role: "USER" | "VOLUNTEER" | "ADMIN") {
-  switch (role) {
-    case "ADMIN":
-      return "Admin Panel access, moderation tools, and NGO report controls are enabled.";
-    case "VOLUNTEER":
-      return "Volunteer dashboard includes task log, dispatch opt-in, and leaderboard access.";
-    default:
-      return "Community dashboard access is enabled for incident reporting and resource coordination.";
+function getUserLocation(): { lat: number; lng: number } | null {
+  if (!navigator.geolocation) return null;
+  try {
+    const cached = sessionStorage.getItem("core_user_location");
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Date.now() - parsed.timestamp < 300000) {
+        return { lat: parsed.lat, lng: parsed.lng };
+      }
+    }
+  } catch {
   }
+  return null;
 }
 
 export function DashboardPage() {
-  const { user } = useAuth();
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [events, setEvents] = useState<CrisisEventCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [filters, setFilters] = useState<DashboardFeedFilters>({
+    incidentType: "ALL",
+    severity: "ALL",
+    timeRange: 0,
+    sortBy: "mostRecent",
+    sortOrder: "desc"
+  });
 
-  if (!user) {
-    return null;
-  }
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setLocation(loc);
+          sessionStorage.setItem("core_user_location", JSON.stringify({ ...loc, timestamp: Date.now() }));
+        },
+        () => {
+          setLocation(null);
+        },
+        { enableHighAccuracy: false, timeout: 5000 }
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    const fetchFeed = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await getDashboardFeed({
+          ...filters,
+          lat: location?.lat,
+          lng: location?.lng,
+          radiusKm: 10
+        });
+        setEvents(response.feed);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load dashboard feed");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void fetchFeed();
+  }, [filters, location]);
+
+  const stats = useMemo(() => {
+    const active = events.filter((e) => e.status === "ACTIVE" || e.status === "CONTAINED").length;
+    const totalReports = events.reduce((sum, e) => sum + e.reportCount, 0);
+    const critical = events.filter((e) => e.severityLevel === "CRITICAL").length;
+    return { active, totalReports, critical };
+  }, [events]);
 
   return (
     <div className="space-y-5">
-      <section className="rounded-xl bg-white p-6 shadow-panel ring-1 ring-slate-200">
-        <h1 className="text-3xl font-bold text-ink">Welcome, {user.fullName}</h1>
-        <p className="mt-2 text-slate-700">{getRoleSummary(user.role)}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link
-            to="/report-incident"
-            className="inline-flex rounded-md bg-tide px-4 py-2 text-sm font-semibold text-white"
-          >
-            Submit New Incident
-          </Link>
-          <Link
-            to="/reports/explore"
-            className="inline-flex rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-          >
-            Browse Reports
-          </Link>
+      <SitRepPanel lat={location?.lat} lng={location?.lng} radiusKm={10} />
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider text-red-600">Active Incidents</p>
+          <p className="mt-1 text-2xl font-bold text-red-700">{stats.active}</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Reports Merged</p>
+          <p className="mt-1 text-2xl font-bold text-slate-700">{stats.totalReports}</p>
+        </div>
+        <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">Critical</p>
+          <p className="mt-1 text-2xl font-bold text-orange-700">{stats.critical}</p>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <article className="rounded-lg bg-white p-5 shadow-panel ring-1 ring-slate-200">
-          <h2 className="text-lg font-semibold text-ink">Active Alerts</h2>
-          <p className="mt-3 text-3xl font-bold text-ember">4</p>
-        </article>
-        <article className="rounded-lg bg-white p-5 shadow-panel ring-1 ring-slate-200">
-          <h2 className="text-lg font-semibold text-ink">Nearby Resources</h2>
-          <p className="mt-3 text-3xl font-bold text-tide">12</p>
-        </article>
-        <article className="rounded-lg bg-white p-5 shadow-panel ring-1 ring-slate-200">
-          <h2 className="text-lg font-semibold text-ink">Unread Notifications</h2>
-          <p className="mt-3 text-3xl font-bold text-moss">3</p>
-        </article>
-      </section>
+      <DashboardFilters filters={filters} onChange={setFilters} />
+
+      <IncidentFeed events={events} loading={loading} error={error} />
     </div>
   );
 }

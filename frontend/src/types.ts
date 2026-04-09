@@ -21,6 +21,11 @@ export type AuthUser = {
   dispatchOptIn?: boolean;
   isFlagged?: boolean;
   volunteerFlagReasons?: string[];
+  latitude?: number | null;
+  longitude?: number | null;
+  avgRating?: number;
+  reviewCount?: number;
+  distance?: number;
 };
 
 export type IncidentType =

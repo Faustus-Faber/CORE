@@ -252,10 +252,33 @@ export async function updateReportStatusByAdmin(
 
 // ── Volunteers ──────────────────────────────────────────────────────────────
 
-export async function listVolunteers() {
+export type VolunteerFilterQuery = {
+  search?: string;
+  skills?: string[];
+  availability?: string[];
+  minRating?: number;
+  lat?: number | null;
+  lng?: number | null;
+  radiusKm?: number;
+  sortBy?: string;
+};
+
+export async function listVolunteers(query: VolunteerFilterQuery = {}) {
+  const params = new URLSearchParams();
+  if (query.search) params.set("search", query.search);
+  if (query.skills && query.skills.length > 0) params.set("skills", query.skills.join(","));
+  if (query.availability && query.availability.length > 0) params.set("availability", query.availability.join(","));
+  if (query.minRating != null) params.set("minRating", String(query.minRating));
+  if (query.lat != null) params.set("lat", String(query.lat));
+  if (query.lng != null) params.set("lng", String(query.lng));
+  if (query.radiusKm != null) params.set("radiusKm", String(query.radiusKm));
+  if (query.sortBy) params.set("sortBy", query.sortBy);
+
+  const queryString = params.toString() ? `?${params.toString()}` : "";
+
   return request<{
-    volunteers: Array<Pick<AuthUser, "id" | "fullName" | "email" | "location">>;
-  }>("/volunteers");
+    volunteers: AuthUser[];
+  }>(`/volunteers${queryString}`);
 }
 
 export async function getVolunteerProfile(volunteerId: string) {

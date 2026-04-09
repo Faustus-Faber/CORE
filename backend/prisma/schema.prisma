@@ -51,6 +51,8 @@ model User {
   phone             String   @unique
   passwordHash      String
   location          String
+  latitude          Float?
+  longitude         Float?
   role              Role     @default(USER)
   avatarUrl         String?
   skills            String[]

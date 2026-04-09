@@ -48,7 +48,9 @@ describe("createIncidentReport", () => {
 
     expect(submitVoiceReport).toHaveBeenCalledOnce();
     expect(classifyIncidentText).toHaveBeenCalledWith(
-      "Severe flood near the north market."
+      "Severe flood near the north market.",
+      undefined,
+      undefined
     );
     expect(output.spamFlagged).toBe(false);
   });
@@ -82,7 +84,9 @@ describe("createIncidentReport", () => {
 
     expect(submitVoiceReport).not.toHaveBeenCalled();
     expect(classifyIncidentText).toHaveBeenCalledWith(
-      "Power lines have fallen near school."
+      "Power lines have fallen near school.",
+      undefined,
+      undefined
     );
   });
 

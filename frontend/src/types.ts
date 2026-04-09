@@ -60,6 +60,8 @@ export type EmergencyReportSubmissionInput = {
   description: string;
   incidentType: IncidentType;
   locationText: string;
+  latitude?: number | null;
+  longitude?: number | null;
   mediaFiles: File[];
   uploadedAudioFile?: File | null;
   recordedAudioBlob?: Blob | null;

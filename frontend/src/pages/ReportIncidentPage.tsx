@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import LocationPicker from "../components/LocationPicker";
 import { createEmergencyReport } from "../services/api";
 import type { IncidentType } from "../types";
 
@@ -29,6 +30,8 @@ export function ReportIncidentPage() {
   const [description, setDescription] = useState("");
   const [incidentType, setIncidentType] = useState<IncidentType>("FLOOD");
   const [locationText, setLocationText] = useState("");
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
   const [recordedAudioBlob, setRecordedAudioBlob] = useState<Blob | null>(null);
@@ -162,6 +165,8 @@ export function ReportIncidentPage() {
         description,
         incidentType,
         locationText,
+        latitude,
+        longitude,
         mediaFiles,
         uploadedAudioFile,
         recordedAudioBlob,
@@ -235,15 +240,26 @@ export function ReportIncidentPage() {
               className="w-full rounded-md border border-slate-300 px-3 py-2"
             />
           </label>
-          <label className="space-y-1 text-sm font-medium md:col-span-2">
-            Location
-            <input
-              required
-              value={locationText}
-              onChange={(event) => setLocationText(event.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2"
+          <div className="space-y-1 md:col-span-2">
+            <p className="text-sm font-medium text-ink">
+              Location
+            </p>
+            <p className="text-xs text-slate-500">
+              Pin the incident on the map or search for an address. GPS auto-detect available.
+            </p>
+            <LocationPicker
+              onLocationSelect={(lat, lng, address) => {
+                setLatitude(lat);
+                setLongitude(lng);
+                setLocationText(address ?? `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+              }}
             />
-          </label>
+            {latitude != null && longitude != null && (
+              <p className="text-xs text-slate-500">
+                📍 {latitude.toFixed(6)}, {longitude.toFixed(6)}
+              </p>
+            )}
+          </div>
           <label className="space-y-1 text-sm font-medium md:col-span-2">
             Photos / Videos (max 5)
             <input

@@ -46,9 +46,11 @@ CORE enables communities to coordinate emergency response efforts through real-t
 
 ### ✅ Module 1, Feature 1: Emergency Reporting (Complete)
 - Multi-format incident submission (text, images, video, voice notes)
+- Map-based location picker with Google Maps integration (pin, drag, search, GPS auto-detect)
 - AI-powered analysis via Groq (Whisper + Qwen models)
   - Voice transcription and translation
-  - Credibility scoring, severity classification, spam detection
+  - Credibility scoring with GPS coordinate verification
+  - Severity classification, spam detection, location-mismatch fraud detection
 - Reports Explorer with advanced filtering and sorting
 - Admin moderation workflow for unpublished reports
 
@@ -91,6 +93,12 @@ CORE enables communities to coordinate emergency response efforts through real-t
 - Sorting by most recent, highest severity, or most reports merged
 - Detailed incident view with embedded map, contributing reports, and nearby resources
 - Collapsible SitRep panel with auto-refresh every 10 minutes
+
+### ✅ Module 2, Feature 3: Volunteer Directory Search (Complete)
+- Searchable, paginated volunteer directory with skill tags
+- Filters: text search, proximity radius, availability, minimum rating
+- Sorting: nearest first, highest rated, alphabetical
+- Detailed volunteer profile with reviews, trust rating, and flag warnings
 
 ---
 
@@ -197,7 +205,7 @@ CORE/
 
 ```powershell
 # Navigate to project directory
-cd "D:\CSE471 Project\CORE\Module 1\Merged"
+cd "D:\CSE471 Project\CORE\Test\CORE"
 
 # Install all dependencies
 cd backend && npm install
@@ -221,26 +229,32 @@ cd ..
    cd backend
    npm install
    ```
-3. **Install frontend dependencies:**
+3. **Install tsx (runtime for TypeScript on Node.js):**
+   ```powershell
+   cd backend
+   npm install -D tsx
+   ```
+   > **Important:** The `tsx` package is required to run the backend. Without it, `npm run dev` will fail with `'tsx' is not recognized as an internal or external command`.
+4. **Install frontend dependencies:**
    ```powershell
    cd ../frontend
    npm install
    cd ..
    ```
-4. **Generate Prisma client:**
+5. **Generate Prisma client:**
    ```powershell
    cd backend
    npm run prisma:generate
    ```
-5. **Sync database schema:**
+6. **Sync database schema:**
    ```powershell
    npm run prisma:push
    ```
-6. **Seed test data:**
+7. **Seed test data:**
    ```powershell
    npm run seed
    ```
-7. **Seed additional dashboard demo data:**
+8. **Seed additional dashboard demo data:**
    ```powershell
    npm run seed:clusters
    ```
@@ -374,7 +388,8 @@ After running `npm run seed`, the following accounts are available:
 1. **Submit Report:**
    - Login: `grace@core.local` / `User@12345`
    - Navigate: Report Incident
-   - Complete: Title, description, type, location
+   - Complete: Title, description, type
+   - **Location**: Pin on the interactive Google Map (auto-fills address + GPS coordinates), or search for an address
    - Optional: Attach media or voice note
    - Submit → Redirects to Reports Explorer
 
@@ -561,6 +576,17 @@ rm package-lock.json
 npm install
 ```
 
+### Missing tsx Runtime
+
+**Error:** `'tsx' is not recognized as an internal or external command`
+
+**Solution:**
+```powershell
+cd backend
+npm install -D tsx
+```
+> The `tsx` package is the TypeScript execution engine used by `npm run dev`. It must be installed in the `backend` directory before starting the server.
+
 ---
 
 ## Verification Commands
@@ -580,7 +606,7 @@ cd frontend && npm run build
 
 ## Roadmap
 
-### ✅ Completed (Module 1)
+### ✅ Completed (Module 1 + Module 2 Features)
 - [x] Feature 1: Emergency Reporting
 - [x] Feature 2: Resource Registration
 - [x] Feature 3: Volunteer Reviews & Fraud Detection
@@ -589,7 +615,7 @@ cd frontend && npm run build
 ### 📋 Module 2 (In Progress)
 - [x] Feature 1: Real-Time Dashboard with AI duplicate clustering
 - [ ] Feature 2: Interactive Crisis Map (enhanced)
-- [ ] Feature 3: Advanced Volunteer Directory Search
+- [x] Feature 3: Volunteer Directory Search
 - [ ] Feature 4: Visual Evidence Gallery
 
 ### 📋 Module 3 (Planned)

@@ -64,7 +64,7 @@ type PersistedReportSummary = Pick<IncidentReport, "id">;
 
 export type CreateIncidentReportDependencies = {
   submitVoiceReport: (file: VoiceInputFile) => Promise<VoiceReportResult>;
-  classifyIncidentText: (text: string) => Promise<TextAnalysisResult>;
+  classifyIncidentText: (text: string, latitude?: number | null, longitude?: number | null) => Promise<TextAnalysisResult>;
   createReportRecord: (data: Omit<IncidentReport, "id">) => Promise<PersistedReportSummary>;
 };
 
@@ -330,7 +330,11 @@ export async function createIncidentReport(
     throw new Error("Description or voice note is required");
   }
 
-  const analysis = await dependencies.classifyIncidentText(description);
+  const analysis = await dependencies.classifyIncidentText(
+    description,
+    input.latitude,
+    input.longitude
+  );
   const credibilityScore = clampCredibilityScore(analysis.credibility_score);
   const spamFlagged = analysis.spam_flagged || credibilityScore < 30;
   const status = toIncidentStatus(spamFlagged);

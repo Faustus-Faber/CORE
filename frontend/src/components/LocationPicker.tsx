@@ -19,7 +19,7 @@ const defaultCenter = {
 const libraries: ("places")[] = ["places"];
 
 interface Props {
-  onLocationSelect: (lat: number, lng: number) => void;
+  onLocationSelect: (lat: number, lng: number, address?: string) => void;
 }
 
 export default function LocationPicker({ onLocationSelect }: Props) {
@@ -41,6 +41,7 @@ export default function LocationPicker({ onLocationSelect }: Props) {
     if (!places || places.length === 0) return;
 
     const location = places[0].geometry?.location;
+    const name = places[0].formatted_address ?? places[0].name ?? "";
 
     if (!location) return;
 
@@ -50,7 +51,7 @@ export default function LocationPicker({ onLocationSelect }: Props) {
     setCenter({ lat, lng });
     setMarker({ lat, lng });
 
-    onLocationSelect(lat, lng);
+    onLocationSelect(lat, lng, name);
   };
 
   const handleMapClick = (e: google.maps.MapMouseEvent) => {
@@ -61,7 +62,14 @@ export default function LocationPicker({ onLocationSelect }: Props) {
 
     setMarker({ lat, lng });
 
-    onLocationSelect(lat, lng);
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status === "OK" && results?.[0]) {
+        onLocationSelect(lat, lng, results[0].formatted_address);
+      } else {
+        onLocationSelect(lat, lng);
+      }
+    });
   };
 
   const handleDragEnd = (e: google.maps.MapMouseEvent) => {
@@ -72,7 +80,14 @@ export default function LocationPicker({ onLocationSelect }: Props) {
 
     setMarker({ lat, lng });
 
-    onLocationSelect(lat, lng);
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status === "OK" && results?.[0]) {
+        onLocationSelect(lat, lng, results[0].formatted_address);
+      } else {
+        onLocationSelect(lat, lng);
+      }
+    });
   };
 
   const detectLocation = () => {
@@ -83,7 +98,14 @@ export default function LocationPicker({ onLocationSelect }: Props) {
       setCenter({ lat, lng });
       setMarker({ lat, lng });
 
-      onLocationSelect(lat, lng);
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        if (status === "OK" && results?.[0]) {
+          onLocationSelect(lat, lng, results[0].formatted_address);
+        } else {
+          onLocationSelect(lat, lng);
+        }
+      });
     });
   };
 

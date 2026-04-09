@@ -10,6 +10,13 @@ export function buildEmergencyReportFormData(
   formData.append("incidentType", payload.incidentType);
   formData.append("locationText", payload.locationText.trim());
 
+  if (payload.latitude != null) {
+    formData.append("latitude", String(payload.latitude));
+  }
+  if (payload.longitude != null) {
+    formData.append("longitude", String(payload.longitude));
+  }
+
   for (const file of payload.mediaFiles) {
     formData.append("media", file);
   }

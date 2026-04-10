@@ -269,7 +269,7 @@ export function AppShell() {
         )}
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="relative h-[calc(100vh-64px)] w-full">
         <Outlet />
       </main>
     </div>

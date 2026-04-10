@@ -89,3 +89,20 @@ export async function updateResource(id: string, data: UpdateResourceData) {
     data: prismaData
   }).catch(() => null);
 }
+
+export async function getMapResources() {
+  return prisma.resource.findMany({
+    select: {
+      id: true,
+      name: true,
+      category: true,
+      quantity: true,
+      unit: true,
+      address: true,
+      latitude: true,
+      longitude: true,
+      contactPreference: true,
+      status: true
+    }
+  });
+}

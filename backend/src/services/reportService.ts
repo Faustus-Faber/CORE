@@ -550,3 +550,27 @@ export async function updateIncidentReportStatusByAdmin(
     }
   });
 }
+
+
+export async function getMapIncidentReports(viewerId: string) {
+  return prisma.incidentReport.findMany({
+    where: {
+      status: "PUBLISHED",
+      spamFlagged: false,
+      latitude: { not: null },
+      longitude: { not: null }
+    },
+    select: {
+      id: true,
+      incidentTitle: true,
+      classifiedIncidentTitle: true,
+      incidentType: true,
+      classifiedIncidentType: true,
+      severityLevel: true,
+      description: true,
+      latitude: true,
+      longitude: true,
+      createdAt: true
+    }
+  });
+}

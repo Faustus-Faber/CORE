@@ -167,3 +167,31 @@ export async function listReports(
 
   return response.status(200).json({ reports });
 }
+
+import { getMapIncidentReports } from "../services/reportService.js";
+
+export async function getMapReports(
+  request: Request,
+  response: Response
+) {
+  const viewerId = request.authUser?.userId;
+
+  if (!viewerId) {
+    return response.status(401).json({ message: "Authentication required" });
+  }
+
+  const reports = await getMapIncidentReports(viewerId);
+
+  return response.status(200).json(
+    reports.map((r) => ({
+      id: r.id,
+      title: r.classifiedIncidentTitle || r.incidentTitle,
+      type: r.classifiedIncidentType || r.incidentType,
+      severity: r.severityLevel,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      description: r.description,
+      createdAt: r.createdAt
+    }))
+  );
+}

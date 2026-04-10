@@ -1,6 +1,6 @@
 import multer from "multer";
 import { Router } from "express";
-import { getMapReports } from "../controllers/reportController.js";
+import { getMapReports, getReportDetail } from "../controllers/reportController.js";
 
 import {
   createReport,
@@ -22,6 +22,7 @@ export const reportRoutes = Router();
 reportRoutes.get("/", requireAuth, asyncHandler(listReports));
 reportRoutes.get("/mine", requireAuth, asyncHandler(listMyReports));
 reportRoutes.get("/map", requireAuth, asyncHandler(getMapReports));
+reportRoutes.get("/:id", requireAuth, asyncHandler(getReportDetail));
 
 reportRoutes.post(
   "/",

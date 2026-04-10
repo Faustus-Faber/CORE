@@ -9,6 +9,7 @@ import type {
   FlaggedVolunteer,
   CrisisEventCard,
   SitRepResponse,
+  ReportDetailResponse,
   IncidentDetailResponse,
   DashboardFeedFilters
 } from "../types";
@@ -225,6 +226,10 @@ export async function listMyReports(query: ReportListQuery = {}) {
   return request<{ reports: IncidentReportListItem[] }>(
     `/reports/mine${toQueryString(query)}`
   );
+}
+
+export async function getReportDetail(reportId: string) {
+  return request<ReportDetailResponse>(`/reports/${reportId}`);
 }
 
 export async function listAdminUnpublishedReports(query: ReportListQuery = {}) {

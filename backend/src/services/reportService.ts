@@ -480,6 +480,69 @@ export async function listIncidentReports(
   });
 }
 
+export type IncidentReportDetail = {
+  id: string;
+  reporterId: string;
+  reporterName: string;
+  incidentTitle: string;
+  classifiedIncidentTitle: string;
+  incidentType: IncidentType;
+  classifiedIncidentType: IncidentType;
+  description: string;
+  locationText: string;
+  latitude: number | null;
+  longitude: number | null;
+  mediaFilenames: string[];
+  credibilityScore: number;
+  severityLevel: IncidentSeverity;
+  status: IncidentStatus;
+  spamFlagged: boolean;
+  createdAt: string;
+};
+
+export async function getIncidentReportById(
+  reportId: string,
+  viewerId: string
+): Promise<IncidentReportDetail> {
+  const report = await prisma.incidentReport.findUnique({
+    where: { id: reportId }
+  });
+
+  if (!report) {
+    throw new Error("Report not found");
+  }
+
+  const reporter = await prisma.user.findUnique({
+    where: { id: report.reporterId },
+    select: { id: true, fullName: true }
+  });
+
+  const isMine = report.reporterId === viewerId;
+  const reporterName = isMine
+    ? "You"
+    : reporter?.fullName ?? "Community Member";
+
+  return {
+    id: report.id,
+    reporterId: report.reporterId,
+    reporterName,
+    incidentTitle: report.incidentTitle,
+    classifiedIncidentTitle: report.classifiedIncidentTitle,
+    incidentType: report.incidentType,
+    classifiedIncidentType: report.classifiedIncidentType,
+    description: report.description,
+    locationText: report.locationText,
+    latitude: report.latitude,
+    longitude: report.longitude,
+    mediaFilenames: report.mediaFilenames,
+    credibilityScore: report.credibilityScore,
+    severityLevel: report.severityLevel,
+    status: report.status,
+    spamFlagged: report.spamFlagged,
+    createdAt: report.createdAt.toISOString()
+  };
+}
+
 export async function listUnderReviewIncidentReports(
   input: ListUnderReviewIncidentReportsInput,
   dependencies: ListIncidentReportsDependencies = defaultListDependencies

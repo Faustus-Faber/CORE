@@ -6,6 +6,7 @@ import type {
   EmergencyReportSummary,
   IncidentReportListItem,
   IncidentSeverity,
+  IncidentType,
   ReportListQuery,
   ReportSortBy,
   SortOrder
@@ -50,22 +51,40 @@ const orderOptions: Array<{ value: SortOrder; label: string }> = [
   { value: "asc", label: "Ascending" }
 ];
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString();
-}
+const typeIcons: Record<IncidentType, string> = {
+  FLOOD: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
+  FIRE: "M12 23c-3.6 0-8-2.4-8-7.7 0-3.5 2.3-6.3 4.1-8.2.8-.9 1.5-1.6 1.9-2.3.4.7 1.1 1.4 1.9 2.3C13.7 9 16 11.8 16 15.3 16 20.6 15.6 23 12 23zm0-17.4c-.3.4-.7.8-1.1 1.3C9.3 8.6 7.3 11 7.3 15.3 7.3 19 10.2 20.7 12 20.7s4.7-1.7 4.7-5.4c0-4.3-2-6.7-3.6-8.4-.4-.5-.8-.9-1.1-1.3z",
+  EARTHQUAKE: "M2 18h2v2H2v-2zm4 0h2v2H6v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zM4 12l2 3h12l2-3H4zm16-6H4l-2 4h20l-2-4z",
+  BUILDING_COLLAPSE: "M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z",
+  ROAD_ACCIDENT: "M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z",
+  VIOLENCE: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z",
+  MEDICAL_EMERGENCY: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 11h-4v4h-4v-4H6v-4h4V6h4v4h4v4z",
+  OTHER: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+};
 
-function severityBadgeClass(severity: IncidentSeverity) {
+function severityColor(severity: IncidentSeverity): string {
   switch (severity) {
     case "CRITICAL":
-      return "bg-red-100 text-red-800";
+      return "bg-red-100 text-red-800 ring-red-200";
     case "HIGH":
-      return "bg-orange-100 text-orange-800";
+      return "bg-orange-100 text-orange-800 ring-orange-200";
     case "MEDIUM":
-      return "bg-amber-100 text-amber-800";
+      return "bg-amber-100 text-amber-800 ring-amber-200";
     case "LOW":
-      return "bg-emerald-100 text-emerald-800";
-    default:
-      return "bg-slate-100 text-slate-700";
+      return "bg-emerald-100 text-emerald-800 ring-emerald-200";
+  }
+}
+
+function severityDotColor(severity: IncidentSeverity): string {
+  switch (severity) {
+    case "CRITICAL":
+      return "bg-red-500";
+    case "HIGH":
+      return "bg-orange-500";
+    case "MEDIUM":
+      return "bg-amber-500";
+    case "LOW":
+      return "bg-emerald-500";
   }
 }
 
@@ -77,95 +96,68 @@ function statusBadgeClass(status: "PUBLISHED" | "UNDER_REVIEW") {
 
 function credibilityStyle(score: number) {
   if (score >= 70) {
-    return {
-      stroke: "stroke-emerald-500",
-      track: "stroke-emerald-100",
-      text: "text-emerald-700",
-      label: "Reliable"
-    };
+    return { stroke: "stroke-emerald-500", track: "stroke-emerald-100", text: "text-emerald-700" };
   }
-
   if (score >= 40) {
-    return {
-      stroke: "stroke-amber-500",
-      track: "stroke-amber-100",
-      text: "text-amber-700",
-      label: "Needs Verification"
-    };
+    return { stroke: "stroke-amber-500", track: "stroke-amber-100", text: "text-amber-700" };
   }
-
-  return {
-    stroke: "stroke-red-500",
-    track: "stroke-red-100",
-    text: "text-red-700",
-    label: "Low Confidence"
-  };
+  return { stroke: "stroke-red-500", track: "stroke-red-100", text: "text-red-700" };
 }
 
-function normalizeMediaUrl(filePath: string) {
-  if (!filePath) {
-    return "";
-  }
-
-  if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
-    return filePath;
-  }
-
-  if (filePath.startsWith("/")) {
-    return `${API_ORIGIN}${filePath}`;
-  }
-
-  return `${API_ORIGIN}/uploads/reports/${filePath}`;
-}
-
-function isImageFile(filePath: string) {
-  return /\.(png|jpg|jpeg|webp|gif|bmp|svg)$/i.test(filePath);
-}
-
-function isVideoFile(filePath: string) {
-  return /\.(mp4|mov|webm|m4v|avi|mkv)$/i.test(filePath);
-}
-
-function CredibilityWheel({ score }: { score: number }) {
+function MiniCredibilityWheel({ score }: { score: number }) {
   const safeScore = Math.max(0, Math.min(100, Math.round(score)));
-  const radius = 34;
+  const radius = 18;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (safeScore / 100) * circumference;
   const style = credibilityStyle(safeScore);
 
   return (
-    <div className="flex min-w-[112px] flex-col items-center justify-center rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
-      <div className="relative h-20 w-20">
-        <svg viewBox="0 0 88 88" className="h-20 w-20">
-          <circle
-            cx="44"
-            cy="44"
-            r={radius}
-            strokeWidth="8"
-            className={`fill-none ${style.track}`}
-          />
-          <circle
-            cx="44"
-            cy="44"
-            r={radius}
-            strokeWidth="8"
-            strokeLinecap="round"
-            className={`fill-none ${style.stroke}`}
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            transform="rotate(-90 44 44)"
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`text-base font-bold ${style.text}`}>{safeScore}</span>
-        </div>
+    <div className="relative h-10 w-10 flex-shrink-0">
+      <svg viewBox="0 0 48 48" className="h-10 w-10">
+        <circle cx="24" cy="24" r={radius} strokeWidth="5" className={`fill-none ${style.track}`} />
+        <circle
+          cx="24"
+          cy="24"
+          r={radius}
+          strokeWidth="5"
+          strokeLinecap="round"
+          className={`fill-none ${style.stroke}`}
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          transform="rotate(-90 24 24)"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={`text-xs font-bold ${style.text}`}>{safeScore}</span>
       </div>
-      <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Credibility
-      </p>
-      <p className={`text-[11px] font-semibold ${style.text}`}>{style.label}</p>
     </div>
   );
+}
+
+function timeAgo(dateStr: string): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHr / 24);
+
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return date.toLocaleDateString();
+}
+
+function normalizeMediaUrl(filePath: string) {
+  if (!filePath) return "";
+  if (filePath.startsWith("http://") || filePath.startsWith("https://")) return filePath;
+  if (filePath.startsWith("/")) return `${API_ORIGIN}${filePath}`;
+  return `${API_ORIGIN}/uploads/reports/${filePath}`;
+}
+
+function isImageFile(filePath: string) {
+  return /\.(png|jpg|jpeg|webp|gif|bmp|svg)$/i.test(filePath);
 }
 
 function SummaryBanner({ summary }: { summary: SubmissionState | null }) {
@@ -202,159 +194,82 @@ function SummaryBanner({ summary }: { summary: SubmissionState | null }) {
   );
 }
 
-function ReportCard({
-  report,
-  evidenceExpanded,
-  onToggleEvidence
-}: {
-  report: IncidentReportListItem;
-  evidenceExpanded: boolean;
-  onToggleEvidence: (reportId: string) => void;
-}) {
-  const mediaItems = (report.mediaFilenames ?? []).filter(Boolean);
-  const previewItems = evidenceExpanded ? mediaItems : mediaItems.slice(0, 3);
+function ReportCard({ report }: { report: IncidentReportListItem }) {
+  const mediaThumb = report.mediaFilenames.length > 0 ? report.mediaFilenames[0] : null;
+  const thumbUrl = mediaThumb ? normalizeMediaUrl(mediaThumb) : null;
 
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-        <div>
+    <article
+      className="group cursor-pointer rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100 transition-all hover:shadow-md hover:ring-tide/30"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+          <svg viewBox="0 0 24 24" className="h-6 w-6 fill-current">
+            <path d={typeIcons[report.classifiedIncidentType] ?? typeIcons.OTHER} />
+          </svg>
+        </div>
+
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-semibold text-ink">
+            <h3 className="truncate text-base font-semibold text-ink group-hover:text-tide">
               {report.classifiedIncidentTitle || report.incidentTitle}
             </h3>
-            <span
-              className={`rounded-full px-2 py-1 text-xs font-semibold ${severityBadgeClass(
-                report.severityLevel
-              )}`}
-            >
+            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${severityColor(report.severityLevel)}`}>
               {report.severityLevel}
             </span>
-            <span
-              className={`rounded-full px-2 py-1 text-xs font-semibold ${statusBadgeClass(
-                report.status
-              )}`}
-            >
+            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusBadgeClass(report.status)}`}>
               {report.status === "PUBLISHED" ? "Published" : "Under Review"}
-            </span>
-            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-              {report.classifiedIncidentType.replaceAll("_", " ")}
             </span>
           </div>
 
-          <p className="mt-2 text-sm leading-relaxed text-slate-700">
+          <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-slate-600">
             {report.description}
           </p>
 
-          <div className="mt-3 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
-            <p>
-              <span className="font-semibold">Reporter:</span> {report.reporterName}
-            </p>
-            <p>
-              <span className="font-semibold">Location:</span> {report.locationText}
-            </p>
-            <p>
-              <span className="font-semibold">Type:</span>{" "}
-              {report.incidentType.replaceAll("_", " ")}
-            </p>
-            <p>
-              <span className="font-semibold">Submitted:</span>{" "}
-              {formatDate(report.createdAt)}
-            </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+            <span className="flex items-center gap-1">
+              <span className={`h-1.5 w-1.5 rounded-full ${severityDotColor(report.severityLevel)}`} />
+              {report.locationText}
+            </span>
+            <span>{timeAgo(report.createdAt)}</span>
+            <span className="flex items-center gap-1">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+              </svg>
+              {report.reporterName}
+            </span>
+            {report.mediaFilenames.length > 0 && (
+              <span className="flex items-center gap-1">
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                  <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
+                </svg>
+                {report.mediaFilenames.length}
+              </span>
+            )}
           </div>
         </div>
 
-        <CredibilityWheel score={report.credibilityScore} />
+        <div className="flex flex-shrink-0 items-center gap-2">
+          {thumbUrl && isImageFile(mediaThumb!) && (
+            <img
+              src={thumbUrl}
+              alt=""
+              className="h-14 w-14 flex-shrink-0 rounded-lg object-cover ring-1 ring-slate-200"
+              loading="lazy"
+            />
+          )}
+          <MiniCredibilityWheel score={report.credibilityScore} />
+        </div>
       </div>
 
-      {mediaItems.length > 0 && (
-        <div className="mt-4 border-t border-slate-100 pt-3">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Evidence ({mediaItems.length})
-            </p>
-            <button
-              type="button"
-              onClick={() => onToggleEvidence(report.id)}
-              className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:border-tide hover:text-tide"
-            >
-              {evidenceExpanded ? "Hide Evidence" : "Show Evidence"}
-            </button>
-          </div>
-
-          {!evidenceExpanded && (
-            <p className="mb-2 text-xs text-slate-500">
-              Evidence is collapsed for faster browsing.
-            </p>
-          )}
-
-          {evidenceExpanded && (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {previewItems.map((mediaPath, index) => {
-              const mediaUrl = normalizeMediaUrl(mediaPath);
-
-              if (!mediaUrl) {
-                return null;
-              }
-
-              return (
-                <a
-                  key={`${report.id}-${mediaPath}-${index}`}
-                  href={mediaUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="overflow-hidden rounded-md ring-1 ring-slate-200 transition hover:ring-tide"
-                >
-                  {isVideoFile(mediaPath) ? (
-                    <div className="flex h-28 w-full items-center justify-center bg-slate-900 px-2 text-center text-xs font-semibold text-white">
-                      Open Video Attachment
-                    </div>
-                  ) : isImageFile(mediaPath) ? (
-                    <img
-                      src={mediaUrl}
-                      alt={`Report evidence ${index + 1}`}
-                      loading="lazy"
-                      decoding="async"
-                      className="h-28 w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-28 items-center justify-center bg-slate-100 px-2 text-xs font-medium text-slate-700">
-                      Open Attachment
-                    </div>
-                  )}
-                </a>
-              );
-            })}
-          </div>
-          )}
-
-          {!evidenceExpanded && mediaItems.length > 0 && (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {previewItems.map((mediaPath, index) => {
-                const mediaUrl = normalizeMediaUrl(mediaPath);
-                if (!mediaUrl) {
-                  return null;
-                }
-
-                return (
-                  <a
-                    key={`${report.id}-collapsed-${mediaPath}-${index}`}
-                    href={mediaUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex h-16 items-center justify-center rounded-md bg-slate-100 px-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200"
-                  >
-                    {isVideoFile(mediaPath)
-                      ? "Video Attachment"
-                      : isImageFile(mediaPath)
-                        ? "Image Attachment"
-                        : "File Attachment"}
-                  </a>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+      <div className="mt-3 flex justify-end">
+        <Link
+          to={`/reports/${report.id}`}
+          className="rounded-md bg-tide/10 px-3 py-1.5 text-xs font-semibold text-tide transition hover:bg-tide hover:text-white"
+        >
+          View Details
+        </Link>
+      </div>
     </article>
   );
 }
@@ -375,9 +290,6 @@ export function ReportsExplorerPage() {
   const [filters, setFilters] = useState(defaultFilters);
   const [appliedFilters, setAppliedFilters] = useState(defaultFilters);
   const [reports, setReports] = useState<IncidentReportListItem[]>([]);
-  const [expandedEvidenceByReport, setExpandedEvidenceByReport] = useState<
-    Record<string, boolean>
-  >({});
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -414,13 +326,11 @@ export function ReportsExplorerPage() {
       search: filters.search.trim(),
       page: 1
     });
-    setExpandedEvidenceByReport({});
   };
 
   const handleResetFilters = () => {
     setFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
-    setExpandedEvidenceByReport({});
   };
 
   const switchScope = (nextScope: ReportScope) => {
@@ -433,7 +343,6 @@ export function ReportsExplorerPage() {
       ...previous,
       page: 1
     }));
-    setExpandedEvidenceByReport({});
   };
 
   const handlePageChange = (nextPage: number) => {
@@ -448,14 +357,6 @@ export function ReportsExplorerPage() {
     setAppliedFilters((previous) => ({
       ...previous,
       page: nextPage
-    }));
-    setExpandedEvidenceByReport({});
-  };
-
-  const handleToggleEvidence = (reportId: string) => {
-    setExpandedEvidenceByReport((previous) => ({
-      ...previous,
-      [reportId]: !previous[reportId]
     }));
   };
 
@@ -625,14 +526,12 @@ export function ReportsExplorerPage() {
           </p>
         )}
 
-        {!isLoading && !error && reports.length > 0 && (
+          {!isLoading && !error && reports.length > 0 && (
           <div className="space-y-3">
             {reports.map((report) => (
               <ReportCard
                 key={report.id}
                 report={report}
-                evidenceExpanded={Boolean(expandedEvidenceByReport[report.id])}
-                onToggleEvidence={handleToggleEvidence}
               />
             ))}
           </div>

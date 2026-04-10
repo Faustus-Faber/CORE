@@ -20,6 +20,7 @@ import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { ReportIncidentPage } from "./pages/ReportIncidentPage";
 import { ReportsExplorerPage } from "./pages/ReportsExplorerPage";
+import { ReportDetailPage } from "./pages/ReportDetailPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { VolunteerDirectoryPage } from "./pages/VolunteerDirectoryPage";
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/dashboard/incidents/:id" element={<IncidentDetailPage />} />
           <Route path="/report-incident" element={<ReportIncidentPage />} />
           <Route path="/reports/explore" element={<ReportsExplorerPage />} />
+          <Route path="/reports/:id" element={<ReportDetailPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/resources" element={<Navigate to="/resources/add" replace />} />

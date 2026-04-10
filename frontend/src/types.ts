@@ -303,3 +303,25 @@ export type DashboardFeedFilters = {
   sortBy: DashboardSortBy;
   sortOrder: SortOrder;
 };
+
+export type ReportDetailResponse = {
+  report: {
+    id: string;
+    reporterId: string;
+    reporterName: string;
+    incidentTitle: string;
+    classifiedIncidentTitle: string;
+    incidentType: IncidentType;
+    classifiedIncidentType: IncidentType;
+    description: string;
+    locationText: string;
+    latitude: number | null;
+    longitude: number | null;
+    mediaFilenames: string[];
+    credibilityScore: number;
+    severityLevel: IncidentSeverity;
+    status: IncidentStatus;
+    spamFlagged: boolean;
+    createdAt: string;
+  };
+};

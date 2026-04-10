@@ -2,7 +2,7 @@ import ResourceMap from "../components/ResourceMap";
 
 export default function MapPage() {
   return (
-    <section className="w-full h-full flex flex-col overflow-hidden">
+    <section className="fixed inset-0 top-[64px] flex flex-col overflow-hidden">
       <div className="shrink-0 p-5 bg-white border-b">
         <h1 className="text-2xl font-bold text-ink">🗺️ Emergency Resources Map</h1>
         <p className="mt-2 text-slate-700">

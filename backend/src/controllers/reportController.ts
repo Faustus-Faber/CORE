@@ -6,12 +6,15 @@ import type { NextFunction, Request, Response } from "express";
 
 import {
   createIncidentReport,
-  listIncidentReports
+  listIncidentReports,
+  getIncidentReportById
 } from "../services/reportService.js";
 import {
   validateReportListQueryInput,
   validateReportSubmissionInput
 } from "../utils/validation.js";
+
+const objectIdHexPattern = /^[a-fA-F0-9]{24}$/;
 
 function mapFiles(request: Request) {
   const filesByField = request.files as Record<string, Express.Multer.File[]> | undefined;
@@ -141,6 +144,30 @@ export async function listMyReports(
   });
 
   return response.status(200).json({ reports });
+}
+
+export async function getReportDetail(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const reportId = request.params.id;
+  const viewerId = request.authUser?.userId;
+
+  if (!viewerId) {
+    return response.status(401).json({ message: "Authentication required" });
+  }
+
+  if (!objectIdHexPattern.test(reportId)) {
+    return response.status(400).json({ message: "Invalid report ID" });
+  }
+
+  try {
+    const report = await getIncidentReportById(reportId, viewerId);
+    return response.status(200).json({ report });
+  } catch {
+    return response.status(404).json({ message: "Report not found" });
+  }
 }
 
 export async function listReports(

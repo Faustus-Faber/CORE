@@ -32,7 +32,7 @@ type ApiErrorPayload = {
   issues?: ApiValidationIssue[];
 };
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const isFormData = options.body instanceof FormData;
   const headers = isFormData
     ? undefined

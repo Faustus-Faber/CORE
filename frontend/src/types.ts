@@ -139,11 +139,14 @@ export interface FolderFile {
   folderId: string;
   uploaderId: string;
   fileName: string;
+  description?: string | null;
   fileUrl: string;
   fileType: string;
   sizeBytes: number;
   gpsLat?: number | null;
   gpsLng?: number | null;
+  isDeleted: boolean;
+  deletedAt?: string | null;
   createdAt: string;
 }
 
@@ -154,6 +157,8 @@ export interface FolderNote {
   content: string;
   gpsLat?: number | null;
   gpsLng?: number | null;
+  isDeleted: boolean;
+  deletedAt?: string | null;
   createdAt: string;
 }
 
@@ -164,6 +169,8 @@ export interface SecureFolder {
   crisisId?: string | null;
   ownerId: string;
   isDeleted: boolean;
+  isPinned: boolean;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   _count?: {
@@ -172,6 +179,10 @@ export interface SecureFolder {
   };
   files?: FolderFile[];
   notes?: FolderNote[];
+  shareLinks?: {
+    token: string;
+    expiresAt?: string | null;
+  }[];
 }
 
 export interface CrisisEventCard {

@@ -11,9 +11,12 @@ docRoutes.use(requireAuth);
 
 // Folders
 docRoutes.get("/", asyncHandler(docController.listFolders));
+docRoutes.get("/active-crises", asyncHandler(docController.getActiveCrises));
 docRoutes.post("/", asyncHandler(docController.createFolder));
 docRoutes.get("/:folderId", asyncHandler(docController.getFolder));
 docRoutes.delete("/:folderId", asyncHandler(docController.deleteFolder));
+docRoutes.post("/:folderId/restore", asyncHandler(docController.restoreFolder));
+docRoutes.post("/:folderId/pin", asyncHandler(docController.togglePin));
 
 // Notes & Files
 docRoutes.post("/:folderId/notes", asyncHandler(docController.addNote));
@@ -22,15 +25,11 @@ docRoutes.post("/:folderId/files", upload.single("file"), asyncHandler(docContro
 // Sharing
 docRoutes.post("/:folderId/share", asyncHandler(docController.shareFolder));
 docRoutes.delete("/:folderId/share", asyncHandler(docController.revokeShare));
-// Add these to docRoutes.ts
+
+// Individual Item Operations
 docRoutes.delete("/:folderId/files/:fileId", asyncHandler(docController.deleteFile));
+docRoutes.post("/:folderId/files/:fileId/restore", asyncHandler(docController.restoreFile));
+docRoutes.patch("/:folderId/files/:fileId", asyncHandler(docController.updateFileDescription));
+
 docRoutes.delete("/:folderId/notes/:noteId", asyncHandler(docController.deleteNote));
-// Folders
-docRoutes.get("/", asyncHandler(docController.listFolders));
-docRoutes.delete("/:folderId", asyncHandler(docController.deleteFolder));
-
-// Notes & Files
-docRoutes.post("/:folderId/files", upload.single("file"), asyncHandler(docController.uploadFile));
-
-// ADD THIS LINE HERE:
-docRoutes.delete("/:folderId/files/:fileId", asyncHandler(docController.deleteFile));
+docRoutes.post("/:folderId/notes/:noteId/restore", asyncHandler(docController.restoreNote));

@@ -12,6 +12,7 @@ function buildNavItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
   const commonItems: NavItem[] = [
     { to: "/dashboard", label: "Dashboard" },
     { to: "/map", label: "Map" },
+    { to: "/gallery", label: "Gallery" },
     { to: "/volunteers", label: "Volunteers" },
     { to: "/docs", label: "My Documents" },
     { to: "/profile", label: "Profile" },

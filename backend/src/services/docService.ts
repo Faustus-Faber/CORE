@@ -8,19 +8,43 @@ export async function createFolder(ownerId: string, payload: unknown) {
         data: {
             name: parsed.name,
             description: parsed.description,
-            crisisId: parsed.crisisId,
+            crisisId: parsed.crisisId || null,
             ownerId,
         },
     });
 }
 
-export async function getUserFolders(ownerId: string) {
+export async function getUserFolders(ownerId: string, includeDeleted = false) {
     return prisma.secureFolder.findMany({
-        where: { ownerId, isDeleted: false },
+        where: { ownerId, isDeleted: includeDeleted ? undefined : false },
         include: {
-            _count: { select: { files: true, notes: true } }
+            _count: { select: { files: true, notes: true } },
+            // Include crisis title
+            shareLinks: {
+                where: { isRevoked: false, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+                select: { token: true, expiresAt: true }
+            }
         },
-        orderBy: { updatedAt: 'desc' }
+        orderBy: [
+            { isPinned: 'desc' },
+            { updatedAt: 'desc' }
+        ]
+    });
+}
+
+export async function listActiveCrises() {
+    return prisma.crisisEvent.findMany({
+        where: {
+            status: { in: ["ACTIVE", "CONTAINED"] }
+        },
+        select: {
+            id: true,
+            title: true,
+            status: true
+        },
+        orderBy: {
+            createdAt: 'desc'
+        }
     });
 }
 
@@ -28,8 +52,15 @@ export async function getFolderDetails(ownerId: string, folderId: string) {
     const folder = await prisma.secureFolder.findFirst({
         where: { id: folderId, ownerId, isDeleted: false },
         include: {
-            files: { where: { isDeleted: false } },
-            notes: { where: { isDeleted: false } }
+            files: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
+            notes: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
+            shareLinks: {
+                where: { isRevoked: false, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+                orderBy: { createdAt: 'desc' },
+                take: 1
+            },
+            // SRS requirement: Show Linked Crisis name if possible
+            owner: { select: { fullName: true } }
         }
     });
 
@@ -54,6 +85,14 @@ export async function addNoteToFolder(authorId: string, folderId: string, payloa
 
 export async function generateShareLink(ownerId: string, folderId: string, hours: number) {
     await getFolderDetails(ownerId, folderId);
+    
+    // Requirement: optional expiration time (1 hour, 24 hours, 7 days, or no expiry)
+    // Revoke any previous non-revoked links first to keep it clean (one link per folder)
+    await prisma.shareLink.updateMany({
+        where: { folderId, isRevoked: false },
+        data: { isRevoked: true }
+    });
+
     const token = randomBytes(32).toString("hex");
     const expiresAt = hours > 0 ? new Date(Date.now() + hours * 60 * 60 * 1000) : null;
 
@@ -69,6 +108,34 @@ export async function softDeleteFolder(ownerId: string, folderId: string) {
     });
 }
 
+export async function getFolderByToken(token: string) {
+    const link = await prisma.shareLink.findFirst({
+        where: { 
+            token, 
+            isRevoked: false,
+            OR: [
+                { expiresAt: null },
+                { expiresAt: { gt: new Date() } }
+            ]
+        },
+        include: {
+            folder: {
+                include: {
+                    files: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
+                    notes: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
+                    owner: { select: { fullName: true } }
+                }
+            }
+        }
+    });
+
+    if (!link || link.folder.isDeleted) {
+        throw new Error("Invalid or expired share link");
+    }
+
+    return link.folder;
+}
+
 // --- NEWLY ADDED FUNCTIONS ---
 
 export async function addFileToFolder(ownerId: string, folderId: string, fileData: {
@@ -81,6 +148,12 @@ export async function addFileToFolder(ownerId: string, folderId: string, fileDat
 }) {
     await getFolderDetails(ownerId, folderId);
 
+    // Requirement: maximum 20 files per folder
+    const fileCount = await prisma.folderFile.count({
+        where: { folderId, isDeleted: false }
+    });
+    if (fileCount >= 20) throw new Error("Maximum 20 files per folder reached");
+
     return prisma.folderFile.create({
         data: {
             folderId,
@@ -90,7 +163,7 @@ export async function addFileToFolder(ownerId: string, folderId: string, fileDat
             sizeBytes: fileData.fileSize,
             gpsLat: fileData.lat,
             gpsLng: fileData.lng,
-            // fileName is REMOVED because it's not in your schema
+            fileName: fileData.fileName,
         }
     });
 }
@@ -120,5 +193,45 @@ export async function softDeleteNote(authorId: string, noteId: string) {
     return prisma.folderNote.update({
         where: { id: noteId, authorId },
         data: { isDeleted: true, deletedAt: new Date() }
+    });
+}
+
+export async function togglePinFolder(ownerId: string, folderId: string) {
+    const folder = await prisma.secureFolder.findFirst({
+        where: { id: folderId, ownerId }
+    });
+    if (!folder) throw new Error("Folder not found");
+
+    return prisma.secureFolder.update({
+        where: { id: folderId },
+        data: { isPinned: !folder.isPinned }
+    });
+}
+
+export async function restoreFolder(ownerId: string, folderId: string) {
+    return prisma.secureFolder.update({
+        where: { id: folderId, ownerId },
+        data: { isDeleted: false, deletedAt: null }
+    });
+}
+
+export async function restoreFile(uploaderId: string, fileId: string) {
+    return prisma.folderFile.update({
+        where: { id: fileId, uploaderId },
+        data: { isDeleted: false, deletedAt: null }
+    });
+}
+
+export async function restoreNote(authorId: string, noteId: string) {
+    return prisma.folderNote.update({
+        where: { id: noteId, authorId },
+        data: { isDeleted: false, deletedAt: null }
+    });
+}
+
+export async function updateFileDescription(uploaderId: string, fileId: string, description: string) {
+    return prisma.folderFile.update({
+        where: { id: fileId, uploaderId },
+        data: { description }
     });
 }

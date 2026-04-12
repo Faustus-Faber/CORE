@@ -8,8 +8,14 @@ import {
 
 export async function listFolders(req: Request, res: Response) {
     const userId = req.authUser!.userId;
-    const folders = await docService.getUserFolders(userId);
+    const includeDeleted = req.query.deleted === "true";
+    const folders = await docService.getUserFolders(userId, includeDeleted);
     res.json(folders);
+}
+
+export async function getActiveCrises(req: Request, res: Response) {
+    const crises = await docService.listActiveCrises();
+    res.json(crises);
 }
 
 export async function createFolder(req: Request, res: Response) {
@@ -71,6 +77,12 @@ export async function shareFolder(req: Request, res: Response) {
     });
 }
 
+export async function getSharedFolder(req: Request, res: Response) {
+    const token = req.params.token as string;
+    const folder = await docService.getFolderByToken(token);
+    res.json(folder);
+}
+
 export async function revokeShare(req: Request, res: Response) {
     const folderId = req.params.folderId as string;
     const userId = req.authUser!.userId;
@@ -111,4 +123,40 @@ export async function deleteNote(req: Request, res: Response) {
     // Requirement: Soft-delete individual notes
     await docService.softDeleteNote(userId, noteId);
     res.status(204).send();
+}
+
+export async function togglePin(req: Request, res: Response) {
+    const folderId = req.params.folderId as string;
+    const userId = req.authUser!.userId;
+    const folder = await docService.togglePinFolder(userId, folderId);
+    res.json(folder);
+}
+
+export async function restoreFolder(req: Request, res: Response) {
+    const folderId = req.params.folderId as string;
+    const userId = req.authUser!.userId;
+    await docService.restoreFolder(userId, folderId);
+    res.status(204).send();
+}
+
+export async function restoreFile(req: Request, res: Response) {
+    const fileId = req.params.fileId as string;
+    const userId = req.authUser!.userId;
+    await docService.restoreFile(userId, fileId);
+    res.status(204).send();
+}
+
+export async function restoreNote(req: Request, res: Response) {
+    const noteId = req.params.noteId as string;
+    const userId = req.authUser!.userId;
+    await docService.restoreNote(userId, noteId);
+    res.status(204).send();
+}
+
+export async function updateFileDescription(req: Request, res: Response) {
+    const fileId = req.params.fileId as string;
+    const userId = req.authUser!.userId;
+    const { description } = req.body;
+    const file = await docService.updateFileDescription(userId, fileId, description);
+    res.json(file);
 }

@@ -151,7 +151,7 @@ export async function getReportDetail(
   response: Response,
   _next: NextFunction
 ) {
-  const reportId = request.params.id;
+  const reportId = request.params.id as string;
   const viewerId = request.authUser?.userId;
 
   if (!viewerId) {

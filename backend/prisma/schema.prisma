@@ -45,78 +45,82 @@ enum InteractionContext {
 }
 
 model User {
-  id                String   @id @default(auto()) @map("_id") @db.ObjectId
-  fullName          String
-  email             String   @unique
-  phone             String   @unique
-  passwordHash      String
-  location          String
-  latitude          Float?
-  longitude         Float?
-  role              Role     @default(USER)
-  avatarUrl         String?
-  skills            String[]
-  availability      String?
-  certifications    String?
-  dispatchOptIn     Boolean  @default(false)
-  isBanned          Boolean  @default(false)
-  isFlagged         Boolean  @default(false)
+  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
+  fullName             String
+  email                String    @unique
+  phone                String    @unique
+  passwordHash         String
+  location             String
+  latitude             Float?
+  longitude            Float?
+  role                 Role      @default(USER)
+  avatarUrl            String?
+  skills               String[]
+  availability         String?
+  certifications       String?
+  dispatchOptIn        Boolean   @default(false)
+  isBanned             Boolean   @default(false)
+  isFlagged            Boolean   @default(false)
   volunteerFlagReasons String[]
-  resetTokenHash    String?
-  resetTokenExpiry  DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  resetTokenHash       String?
+  resetTokenExpiry     DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  reviewsGiven    Review[] @relation("ReviewsGiven")
-  reviewsReceived Review[] @relation("ReviewsReceived")
+  reviewsGiven    Review[]       @relation("ReviewsGiven")
+  reviewsReceived Review[]       @relation("ReviewsReceived")
   folders         SecureFolder[] // Feature 4: Secure Documentation
+  evidencePosts   EvidencePost[]
+  comments        Comment[]
+  likes           Like[]
+  evidenceFlags   EvidenceFlag[]
 
   @@index([role, isBanned])
   @@index([role, isFlagged])
 }
 
 model IncidentReport {
-  id                    String           @id @default(auto()) @map("_id") @db.ObjectId
-  reporterId            String           @db.ObjectId
-  incidentTitle         String
-  description           String
-  incidentType          IncidentType
-  locationText          String
-  latitude              Float?
-  longitude             Float?
-  mediaFilenames        String[]
-  sourceAudioFilename   String?
-  detectedLanguage      String?
-  languageProbability   Float?
-  translatedDescription String?
-  credibilityScore      Int
-  severityLevel         IncidentSeverity
-  classifiedIncidentType IncidentType
+  id                      String           @id @default(auto()) @map("_id") @db.ObjectId
+  reporterId              String           @db.ObjectId
+  incidentTitle           String
+  description             String
+  incidentType            IncidentType
+  locationText            String
+  latitude                Float?
+  longitude               Float?
+  mediaFilenames          String[]
+  sourceAudioFilename     String?
+  detectedLanguage        String?
+  languageProbability     Float?
+  translatedDescription   String?
+  credibilityScore        Int
+  severityLevel           IncidentSeverity
+  classifiedIncidentType  IncidentType
   classifiedIncidentTitle String
-  spamFlagged           Boolean          @default(false)
-  status                IncidentStatus   @default(PUBLISHED)
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  spamFlagged             Boolean          @default(false)
+  status                  IncidentStatus   @default(PUBLISHED)
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
 
-  crisisEvents        CrisisEventReport[]
+  crisisEvents CrisisEventReport[]
 
   @@index([reporterId, createdAt(sort: Desc)])
   @@index([status, severityLevel])
 }
 
 model Review {
-  id                String   @id @default(auto()) @map("_id") @db.ObjectId
-  reviewerId        String   @db.ObjectId
-  volunteerId       String   @db.ObjectId
-  rating            Int
-  text              String
+  id                 String             @id @default(auto()) @map("_id") @db.ObjectId
+  reviewerId         String             @db.ObjectId
+  volunteerId        String             @db.ObjectId
+  rating             Int
+  text               String
   interactionContext InteractionContext @default(OTHER)
-  interactionDate DateTime
-  wouldWorkAgain  Boolean
-  crisisEventId   String?
-  isFlagged       Boolean  @default(false)
-  flagReasons     String[]
-  createdAt       DateTime @default(now())
+  interactionDate    DateTime
+  wouldWorkAgain     Boolean
+  crisisEventId      String?
+  isFlagged          Boolean            @default(false)
+  flagReasons        String[]
+  createdAt          DateTime           @default(now())
 
   reviewer  User @relation("ReviewsGiven", fields: [reviewerId], references: [id])
   volunteer User @relation("ReviewsReceived", fields: [volunteerId], references: [id])
@@ -127,7 +131,7 @@ model Review {
 }
 
 model Resource {
-  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
   name              String
   category          String
   quantity          Int
@@ -141,10 +145,10 @@ model Resource {
   contactPreference String
   photos            String[]
   notes             String?
-  status            String   @default("Available")
+  status            String    @default("Available")
   userId            String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([latitude, longitude])
 }
@@ -162,6 +166,7 @@ model SecureFolder {
   shareLinks  ShareLink[]
 
   isDeleted Boolean   @default(false)
+  isPinned  Boolean   @default(false)
   deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -173,11 +178,13 @@ model FolderFile {
   folder     SecureFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
   uploaderId String       @db.ObjectId // To track who uploaded it
 
-  fileUrl   String // URL from your storage provider (e.g., AWS S3)
-  fileType  String // e.g., 'image/jpeg', 'video/mp4'
-  sizeBytes Int
-  gpsLat    Float?
-  gpsLng    Float?
+  fileName    String // The original name of the file
+  description String? // Optional description/caption
+  fileUrl     String // URL from your storage provider (e.g., AWS S3)
+  fileType    String // e.g., 'image/jpeg', 'video/mp4'
+  sizeBytes   Int
+  gpsLat      Float?
+  gpsLng      Float?
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -220,31 +227,31 @@ enum CrisisEventStatus {
 }
 
 model CrisisEvent {
-  id              String             @id @default(auto()) @map("_id") @db.ObjectId
-  title           String
-  incidentType    IncidentType
-  severityLevel   IncidentSeverity
-  locationText    String
-  latitude        Float?
-  longitude       Float?
-  status          CrisisEventStatus  @default(ACTIVE)
-  sitRepText      String?
-  reportCount     Int                @default(0)
-  reporterCount   Int                @default(0)
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  id            String            @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  incidentType  IncidentType
+  severityLevel IncidentSeverity
+  locationText  String
+  latitude      Float?
+  longitude     Float?
+  status        CrisisEventStatus @default(ACTIVE)
+  sitRepText    String?
+  reportCount   Int               @default(0)
+  reporterCount Int               @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
-  reports         CrisisEventReport[]
+  reports CrisisEventReport[]
 
   @@index([status, severityLevel, createdAt(sort: Desc)])
   @@index([latitude, longitude])
 }
 
 model CrisisEventReport {
-  id               String        @id @default(auto()) @map("_id") @db.ObjectId
-  crisisEventId    String        @db.ObjectId
-  incidentReportId String        @db.ObjectId
-  createdAt        DateTime      @default(now())
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId    String   @db.ObjectId
+  incidentReportId String   @db.ObjectId
+  createdAt        DateTime @default(now())
 
   crisisEvent    CrisisEvent    @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
   incidentReport IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
@@ -252,4 +259,62 @@ model CrisisEventReport {
   @@unique([crisisEventId, incidentReportId])
   @@index([incidentReportId])
   @@index([crisisEventId])
+}
+
+model EvidencePost {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+  title       String
+  description String
+  location    String
+  latitude    Float?
+  longitude   Float?
+  mediaUrls   String[] // Local filenames or URLs
+  mediaType   String // 'IMAGE' or 'VIDEO'
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  comments Comment[]
+  likes    Like[]
+  flags    EvidenceFlag[]
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model EvidenceFlag {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  postId    String       @db.ObjectId
+  post      EvidencePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String       @db.ObjectId
+  user      User         @relation(fields: [userId], references: [id])
+  reason    String
+  createdAt DateTime     @default(now())
+
+  @@index([postId])
+}
+
+model Comment {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  postId    String       @db.ObjectId
+  post      EvidencePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String       @db.ObjectId
+  user      User         @relation(fields: [userId], references: [id])
+  content   String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([postId, createdAt(sort: Desc)])
+}
+
+model Like {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  postId    String       @db.ObjectId
+  post      EvidencePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String       @db.ObjectId
+  user      User         @relation(fields: [userId], references: [id])
+  createdAt DateTime     @default(now())
+
+  @@unique([postId, userId])
 }

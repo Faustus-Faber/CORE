@@ -329,7 +329,7 @@ export const createReviewSchema = z.object({
 export const createFolderSchema = z.object({
   name: z.string().min(1, "Folder name is required").max(80, "Folder name must be at most 80 characters"),
   description: z.string().max(500, "Description must be at most 500 characters").optional(),
-  crisisId: z.string().optional()
+  crisisId: z.string().optional().nullable().or(z.literal(""))
 });
 
 export const addNoteSchema = z.object({

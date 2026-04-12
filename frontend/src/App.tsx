@@ -23,6 +23,7 @@ import { ReportsExplorerPage } from "./pages/ReportsExplorerPage";
 import { ReportDetailPage } from "./pages/ReportDetailPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { EvidenceGalleryPage } from "./pages/EvidenceGalleryPage";
 import { VolunteerDirectoryPage } from "./pages/VolunteerDirectoryPage";
 import { VolunteerProfilePage } from "./pages/VolunteerProfilePage";
 
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/reports/:id" element={<ReportDetailPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/map" element={<MapPage />} />
+          <Route path="/gallery" element={<EvidenceGalleryPage />} />
           <Route path="/resources" element={<Navigate to="/resources/add" replace />} />
           <Route path="/resources/add" element={<AddResource />} />
           <Route path="/resources/my" element={<MyResourcesPage />} />

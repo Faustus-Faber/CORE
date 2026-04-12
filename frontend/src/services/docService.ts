@@ -1,32 +1,31 @@
-import axios from 'axios';
-import {SecureFolder, FolderNote, FolderFile} from '../types';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-
-const apiClient = axios.create({
-    baseURL: API_URL,
-    withCredentials: true, // Crucial for sending your auth cookie
-});
+import { request } from './api';
+import { SecureFolder, FolderNote, FolderFile } from '../types';
 
 export const docService = {
-    getFolders: async (): Promise<SecureFolder[]> => {
-        const {data} = await apiClient.get('/docs');
-        return data;
+    getFolders: async (includeDeleted = false): Promise<SecureFolder[]> => {
+        return request(`/docs${includeDeleted ? '?deleted=true' : ''}`);
     },
 
-    createFolder: async (payload: { name: string; description?: string }): Promise<SecureFolder> => {
-        const {data} = await apiClient.post('/docs', payload);
-        return data;
+    createFolder: async (payload: { name: string; description?: string; crisisId?: string | null }): Promise<SecureFolder> => {
+        return request('/docs', {
+            method: 'POST',
+            body: payload
+        });
+    },
+
+    getActiveCrises: async (): Promise<{ id: string; title: string; status: string }[]> => {
+        return request('/docs/active-crises');
     },
 
     getFolderDetails: async (folderId: string): Promise<SecureFolder> => {
-        const {data} = await apiClient.get(`/docs/${folderId}`);
-        return data;
+        return request(`/docs/${folderId}`);
     },
 
     addNote: async (folderId: string, content: string, lat?: number, lng?: number): Promise<FolderNote> => {
-        const {data} = await apiClient.post(`/docs/${folderId}/notes`, {content, lat, lng});
-        return data;
+        return request(`/docs/${folderId}/notes`, {
+            method: 'POST',
+            body: { content, lat, lng }
+        });
     },
 
     uploadFile: async (folderId: string, file: File, lat?: number, lng?: number): Promise<FolderFile> => {
@@ -35,29 +34,74 @@ export const docService = {
         if (lat) formData.append('lat', lat.toString());
         if (lng) formData.append('lng', lng.toString());
 
-        const {data} = await apiClient.post(`/docs/${folderId}/files`, formData, {
-            headers: {'Content-Type': 'multipart/form-data'},
+        return request(`/docs/${folderId}/files`, {
+            method: 'POST',
+            body: formData
         });
-        return data;
     },
 
     shareFolder: async (folderId: string, expiresInHours: string): Promise<{
         shareUrl: string;
         expiresAt: string | null
     }> => {
-        const {data} = await apiClient.post(`/docs/${folderId}/share`, {expiresInHours});
-        return data;
+        return request(`/docs/${folderId}/share`, {
+            method: 'POST',
+            body: { expiresInHours }
+        });
     },
-    // Add to frontend docService
-    deleteFile: async (folderId: string, fileId: string) => {
-        return apiClient.delete(`/docs/${folderId}/files/${fileId}`);
-    },
-    deleteNote: async (folderId: string, noteId: string) => {
-        return apiClient.delete(`/docs/${folderId}/notes/${noteId}`);
-    },
-    deleteFolder: async (folderId: string): Promise<void> => {
-        // By default, your backend controller handles the soft-delete logic
-        await apiClient.delete(`/docs/${folderId}`);
 
+    revokeShare: async (folderId: string): Promise<void> => {
+        return request(`/docs/${folderId}/share`, {
+            method: 'DELETE'
+        });
+    },
+
+    deleteFile: async (folderId: string, fileId: string) => {
+        return request(`/docs/${folderId}/files/${fileId}`, {
+            method: 'DELETE'
+        });
+    },
+
+    restoreFile: async (folderId: string, fileId: string) => {
+        return request(`/docs/${folderId}/files/${fileId}/restore`, {
+            method: 'POST'
+        });
+    },
+
+    updateFileDescription: async (folderId: string, fileId: string, description: string) => {
+        return request(`/docs/${folderId}/files/${fileId}`, {
+            method: 'PATCH',
+            body: { description }
+        });
+    },
+
+    deleteNote: async (folderId: string, noteId: string) => {
+        return request(`/docs/${folderId}/notes/${noteId}`, {
+            method: 'DELETE'
+        });
+    },
+
+    restoreNote: async (folderId: string, noteId: string) => {
+        return request(`/docs/${folderId}/notes/${noteId}/restore`, {
+            method: 'POST'
+        });
+    },
+
+    deleteFolder: async (folderId: string, permanent = false): Promise<void> => {
+        return request(`/docs/${folderId}${permanent ? '?permanent=true' : ''}`, {
+            method: 'DELETE'
+        });
+    },
+
+    restoreFolder: async (folderId: string): Promise<void> => {
+        return request(`/docs/${folderId}/restore`, {
+            method: 'POST'
+        });
+    },
+
+    togglePin: async (folderId: string): Promise<SecureFolder> => {
+        return request(`/docs/${folderId}/pin`, {
+            method: 'POST'
+        });
     }
 };

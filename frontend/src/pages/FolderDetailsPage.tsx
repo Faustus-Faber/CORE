@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { docService } from '../services/docService';
 import { getCurrentPosition } from '../utils/geo';
-import { SecureFolder } from '../types';
+import { SecureFolder, FolderFile } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 type Tab = 'files' | 'notes' | 'metadata' | 'sharing';
@@ -23,20 +23,37 @@ export function FolderDetailsPage() {
     // --- NEW: Image Popup State ---
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
+    // View State
+    const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    const [editingFileId, setEditingFileId] = useState<string | null>(null);
+    const [editDescription, setEditDescription] = useState('');
+
     // Sharing State
     const [expiration, setExpiration] = useState('24');
+    const [shareUrl, setShareUrl] = useState<string | null>(null);
 
     useEffect(() => {
-        if (folderId) docService.getFolderDetails(folderId).then(setFolder);
+        if (folderId) docService.getFolderDetails(folderId).then((data) => {
+            setFolder(data);
+            if (data.shareLinks && data.shareLinks.length > 0) {
+                // Approximate the URL since we don't have the full path stored
+                const baseUrl = window.location.origin;
+                setShareUrl(`${baseUrl}/shared/${data.shareLinks[0].token}`);
+            }
+        });
     }, [folderId]);
 
     const handleAddNote = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!noteContent.trim() || !folderId) return;
-        const geo = await getCurrentPosition();
-        const newNote = await docService.addNote(folderId, noteContent, geo?.lat, geo?.lng);
-        setFolder((prev) => prev ? { ...prev, notes: [newNote, ...(prev.notes || [])] } : null);
-        setNoteContent('');
+        try {
+            const geo = await getCurrentPosition();
+            const newNote = await docService.addNote(folderId, noteContent, geo?.lat, geo?.lng);
+            setFolder((prev) => prev ? { ...prev, notes: [newNote, ...(prev.notes || [])] } : null);
+            setNoteContent('');
+        } catch (err) {
+            alert("Failed to add note");
+        }
     };
 
     const handleDeleteFile = async (fileId: string) => {
@@ -53,14 +70,32 @@ export function FolderDetailsPage() {
         }
     };
 
+    const handleUpdateFileDescription = async (fileId: string) => {
+        if (!folderId) return;
+        try {
+            const updated = await docService.updateFileDescription(folderId, fileId, editDescription);
+            setFolder((prev) => {
+                if (!prev) return null;
+                const updatedFiles = prev.files?.map(f => f.id === fileId ? updated : f) as FolderFile[];
+                return {
+                    ...prev,
+                    files: updatedFiles
+                };
+            });
+            setEditingFileId(null);
+        } catch (err) {
+            alert("Failed to update description");
+        }
+    };
+
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !folderId) return;
         if (file.size > 20 * 1024 * 1024) return alert('File must be smaller than 20MB');
 
         setUploading(true);
-        const geo = await getCurrentPosition();
         try {
+            const geo = await getCurrentPosition();
             const newFile = await docService.uploadFile(folderId, file, geo?.lat, geo?.lng);
             setFolder((prev) => prev ? { ...prev, files: [newFile, ...(prev.files || [])] } : null);
         } catch (err) {
@@ -73,8 +108,24 @@ export function FolderDetailsPage() {
 
     const handleShare = async () => {
         if (!folderId) return;
-        const res = await docService.shareFolder(folderId, expiration);
-        prompt('Shareable read-only link generated:', res.shareUrl);
+        try {
+            const res = await docService.shareFolder(folderId, expiration);
+            setShareUrl(res.shareUrl);
+            alert(`Shareable read-only link generated: ${res.shareUrl}`);
+        } catch (err) {
+            alert("Failed to generate share link");
+        }
+    };
+
+    const handleRevoke = async () => {
+        if (!folderId || !window.confirm("Revoke all active share links for this folder?")) return;
+        try {
+            await docService.revokeShare(folderId);
+            setShareUrl(null);
+            alert("All share links revoked.");
+        } catch (err) {
+            alert("Failed to revoke share link");
+        }
     };
 
     if (!folder) return <div className="p-10 text-slate-500">Loading folder data...</div>;
@@ -128,9 +179,26 @@ export function FolderDetailsPage() {
                 ))}
             </div>
 
-            {/* TAB CONTENT: FILES */}
             {activeTab === 'files' && (
                 <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-sm font-semibold text-slate-900">Uploaded Files ({folder.files?.length || 0})</h3>
+                        <div className="flex bg-slate-100 p-1 rounded-lg">
+                            <button 
+                                onClick={() => setViewMode('grid')}
+                                className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                            </button>
+                            <button 
+                                onClick={() => setViewMode('list')}
+                                className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                            </button>
+                        </div>
+                    </div>
+
                     <div
                         onClick={() => fileInputRef.current?.click()}
                         className="border-2 border-dashed border-slate-300 rounded-2xl p-10 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all flex flex-col items-center justify-center group"
@@ -149,44 +217,146 @@ export function FolderDetailsPage() {
                     </div>
 
                     <div>
-                        <h3 className="text-sm font-semibold text-slate-900 mb-3">Uploaded Files ({folder.files?.length || 0})</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {folder.files?.map(file => (
-                                <div key={file.id} className="border border-slate-200 rounded-xl overflow-hidden bg-white hover:shadow-sm transition-shadow">
-                                    <div
-                                        className="h-32 bg-slate-50 border-b border-slate-100 flex items-center justify-center text-4xl overflow-hidden">
-                                        {file.fileType.startsWith('image/') ? (
-                                            <img
-                                                src={`${import.meta.env.VITE_API_URL?.replace('/api', '')}${file.fileUrl}`}
-                                                alt={file.fileName}
-                                                // --- NEW: Added onClick and cursor-pointer to trigger the popup ---
-                                                className="w-full h-full object-cover hover:scale-105 transition-transform duration-300 cursor-pointer"
-                                                onClick={() => setSelectedImage(`${import.meta.env.VITE_API_URL?.replace('/api', '')}${file.fileUrl}`)}
-                                            />
-                                        ) : (
-                                            '🎥'
-                                        )}
-                                    </div>
-                                    <div className="p-3">
-                                        <p className="text-sm font-medium text-slate-800 truncate"
-                                           title={file.fileName}>{file.fileName}</p>
-                                        <div className="flex justify-between items-center mt-1">
-                                            <p className="text-xs text-slate-500">{(file.sizeBytes / 1024 / 1024).toFixed(1)} MB</p>
-                                            <button
-                                                onClick={() => handleDeleteFile(file.id)}
-                                                className="text-slate-400 hover:text-red-500 transition-colors"
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor"
-                                                     viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                                </svg>
-                                            </button>
+                        {viewMode === 'grid' ? (
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                {folder.files?.map(file => (
+                                    <div key={file.id} className="border border-slate-200 rounded-xl overflow-hidden bg-white hover:shadow-md transition-shadow flex flex-col">
+                                        <div
+                                            className="h-32 bg-slate-50 border-b border-slate-100 flex items-center justify-center text-4xl overflow-hidden">
+                                            {file.fileType.startsWith('image/') ? (
+                                                <img
+                                                    src={`http://localhost:5000${file.fileUrl}`}
+                                                    alt={file.fileName}
+                                                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-300 cursor-pointer"
+                                                    onClick={() => setSelectedImage(`http://localhost:5000${file.fileUrl}`)}
+                                                />
+                                            ) : (
+                                                <video
+                                                    src={`http://localhost:5000${file.fileUrl}`}
+                                                    className="w-full h-full object-cover"
+                                                    controls
+                                                />
+                                            )}
+                                        </div>
+                                        <div className="p-3 flex-grow flex flex-col">
+                                            <p className="text-sm font-semibold text-slate-800 truncate mb-1" title={file.fileName}>
+                                                {file.fileName}
+                                            </p>
+                                            {editingFileId === file.id ? (
+                                                <div className="mt-1">
+                                                    <textarea 
+                                                        className="w-full text-xs p-1.5 border border-blue-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
+                                                        value={editDescription}
+                                                        onChange={(e) => setEditDescription(e.target.value)}
+                                                        rows={2}
+                                                        autoFocus
+                                                    />
+                                                    <div className="flex gap-2 mt-1">
+                                                        <button onClick={() => handleUpdateFileDescription(file.id)} className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded">Save</button>
+                                                        <button onClick={() => setEditingFileId(null)} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded">Cancel</button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <p 
+                                                    className="text-xs text-slate-500 italic mb-2 line-clamp-2 cursor-pointer hover:text-blue-600"
+                                                    onClick={() => {
+                                                        setEditingFileId(file.id);
+                                                        setEditDescription(file.description || '');
+                                                    }}
+                                                >
+                                                    {file.description || 'Add description...'}
+                                                </p>
+                                            )}
+                                            
+                                            <div className="mt-auto flex justify-between items-end pt-2 border-t border-slate-50">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <p className="text-[9px] text-slate-400">{(file.sizeBytes / 1024 / 1024).toFixed(1)} MB</p>
+                                                    <p className="text-[9px] text-slate-400">UID: {file.uploaderId}</p>
+                                                    <p className="text-[9px] text-slate-400" title="UTC">🕒 {new Date(file.createdAt).toISOString().replace('T', ' ').substring(0, 16)} UTC</p>
+                                                    {file.gpsLat && (
+                                                        <p className="text-[9px] text-blue-500 font-medium">📍 GPS: {file.gpsLat.toFixed(4)}, {file.gpsLng?.toFixed(4)}</p>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => handleDeleteFile(file.id)}
+                                                    className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-50 border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-4 py-3 font-semibold text-slate-700">Name</th>
+                                            <th className="px-4 py-3 font-semibold text-slate-700">Description</th>
+                                            <th className="px-4 py-3 font-semibold text-slate-700">Size</th>
+                                            <th className="px-4 py-3 font-semibold text-slate-700">Date</th>
+                                            <th className="px-4 py-3"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {folder.files?.map(file => (
+                                            <tr key={file.id} className="hover:bg-slate-50 transition-colors group">
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 overflow-hidden rounded bg-slate-50 flex items-center justify-center shrink-0">
+                                                            {file.fileType.startsWith('image/') ? (
+                                                                <img 
+                                                                    src={`http://localhost:5000${file.fileUrl}`} 
+                                                                    alt="" 
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-xl">🎥</span>
+                                                            )}
+                                                        </div>
+                                                        <span className="font-medium text-slate-800 truncate max-w-[150px]" title={file.fileName}>{file.fileName}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {editingFileId === file.id ? (
+                                                        <div className="flex gap-2">
+                                                            <input 
+                                                                className="text-xs p-1 border border-blue-300 rounded"
+                                                                value={editDescription}
+                                                                onChange={(e) => setEditDescription(e.target.value)}
+                                                            />
+                                                            <button onClick={() => handleUpdateFileDescription(file.id)} className="text-blue-600 font-bold">✓</button>
+                                                        </div>
+                                                    ) : (
+                                                        <span 
+                                                            className="text-slate-500 text-xs truncate max-w-[200px] block cursor-pointer"
+                                                            onClick={() => {
+                                                                setEditingFileId(file.id);
+                                                                setEditDescription(file.description || '');
+                                                            }}
+                                                        >
+                                                            {file.description || '-'}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-500 text-xs">{(file.sizeBytes / 1024 / 1024).toFixed(1)} MB</td>
+                                                <td className="px-4 py-3 text-slate-500 text-xs">{new Date(file.createdAt).toLocaleDateString()}</td>
+                                                <td className="px-4 py-3 text-right">
+                                                    <button
+                                                        onClick={() => handleDeleteFile(file.id)}
+                                                        className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -216,12 +386,36 @@ export function FolderDetailsPage() {
 
                     <div className="space-y-4">
                         {folder.notes?.map(note => (
-                            <div key={note.id} className="bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 transition-colors">
-                                <div className="flex items-center gap-2 mb-3 text-xs text-slate-500 font-medium bg-slate-50 w-fit px-3 py-1.5 rounded-lg border border-slate-100">
-                                    <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                    <span>{new Date(note.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</span>
+                            <div key={note.id} className="bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 transition-colors group relative">
+                                <div className="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
+                                    <div className="flex flex-col">
+                                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                            Author ID: {note.authorId}
+                                        </div>
+                                        {note.gpsLat && (
+                                            <div className="flex items-center gap-2 text-[10px] font-medium text-blue-600 mt-1">
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                GPS: {note.gpsLat.toFixed(4)}, {note.gpsLng?.toFixed(4)}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            if (folderId) docService.deleteNote(folderId, note.id).then(() => {
+                                                setFolder(prev => prev ? { ...prev, notes: prev.notes?.filter(n => n.id !== note.id) } : null);
+                                            });
+                                        }}
+                                        className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"
+                                        title="Delete note"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-3 text-[10px] text-slate-500 mb-3 font-mono bg-slate-50 w-fit px-3 py-1 rounded-lg">
+                                    <span title="Local">{new Date(note.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</span>
                                     <span className="text-slate-300">|</span>
-                                    <span>UTC: {new Date(note.createdAt).toISOString().replace('T', ' ').substring(0, 19)} UTC</span>
+                                    <span title="UTC">{new Date(note.createdAt).toISOString().replace('T', ' ').substring(0, 16)} UTC</span>
                                 </div>
                                 <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">{note.content}</p>
                             </div>
@@ -243,6 +437,7 @@ export function FolderDetailsPage() {
                             { label: 'Created (UTC)', value: new Date(folder.createdAt).toISOString().replace('T', ' ').substring(0, 19) + ' UTC' },
                             { label: 'Created (Local)', value: new Date(folder.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }) },
                             { label: 'Last Modified (UTC)', value: new Date(folder.updatedAt).toISOString().replace('T', ' ').substring(0, 19) + ' UTC' },
+                            { label: 'Owner Name', value: (folder as any).owner?.fullName || 'Unknown' },
                             { label: 'Uploader User ID', value: folder.ownerId },
                             { label: 'Linked Crisis', value: folder.crisisId || 'None assigned' },
                         ].map((row, i) => (
@@ -303,9 +498,39 @@ export function FolderDetailsPage() {
                                     })}
                                 </div>
 
-                                <button onClick={handleShare} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm">
-                                    Generate Shareable Link
-                                </button>
+                                {shareUrl && (
+                                    <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                        <label className="block text-xs font-bold text-green-700 uppercase mb-2">Active Share Link</label>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                readOnly 
+                                                value={shareUrl} 
+                                                className="flex-1 bg-white border border-green-300 rounded px-3 py-1.5 text-sm font-mono text-slate-700"
+                                            />
+                                            <button 
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(shareUrl);
+                                                    alert("Copied to clipboard!");
+                                                }}
+                                                className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-green-700 transition-colors"
+                                            >
+                                                Copy
+                                            </button>
+                                        </div>
+                                        <p className="mt-2 text-xs text-green-600 italic">Anyone with this link can view this folder as a read-only guest.</p>
+                                    </div>
+                                )}
+
+                                <div className="flex gap-3">
+                                    <button onClick={handleShare} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm">
+                                        {shareUrl ? 'Regenerate Link' : 'Generate Shareable Link'}
+                                    </button>
+                                    {shareUrl && (
+                                        <button onClick={handleRevoke} className="bg-white border border-red-200 text-red-600 hover:bg-red-50 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+                                            Revoke Link
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>

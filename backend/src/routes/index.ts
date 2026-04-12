@@ -9,6 +9,7 @@ import { reviewRoutes } from "./reviewRoutes.js";
 import { volunteerRoutes } from "./volunteerRoutes.js";
 import { resourceRoutes } from "./resourceRoutes.js";
 import { docRoutes } from "./docRoutes.js";
+import { evidenceRoutes } from "./evidenceRoutes.js";
 
 export const apiRoutes = Router();
 
@@ -24,4 +25,5 @@ apiRoutes.use("/reviews", reviewRoutes);
 apiRoutes.use("/volunteers", volunteerRoutes);
 apiRoutes.use("/resources", resourceRoutes);
 apiRoutes.use("/docs", docRoutes);
+apiRoutes.use("/evidence", evidenceRoutes);
 apiRoutes.use("/dashboard", dashboardRoutes);

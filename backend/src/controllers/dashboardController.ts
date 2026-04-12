@@ -10,18 +10,29 @@ import {
   validateIncidentId
 } from "../utils/validation.js";
 
+function requireUserId(request: Request, response: Response): string | null {
+  const userId = request.authUser?.userId;
+  if (!userId) {
+    response.status(401).json({ message: "Authentication required" });
+    return null;
+  }
+  return userId;
+}
+
+function parseOptionalFloat(raw: unknown): number | undefined {
+  if (raw == null || raw === "") return undefined;
+  const parsed = parseFloat(String(raw));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export async function getFeed(
   request: Request,
   response: Response,
   _next: NextFunction
 ) {
-  const userId = request.authUser?.userId;
-  if (!userId) {
-    return response.status(401).json({ message: "Authentication required" });
-  }
+  if (!requireUserId(request, response)) return;
 
   const filters = validateDashboardFeedQuery(request.query);
-
   const feed = await getDashboardFeed(filters);
 
   return response.status(200).json({ feed });
@@ -32,16 +43,11 @@ export async function getSitRep(
   response: Response,
   _next: NextFunction
 ) {
-  const userId = request.authUser?.userId;
-  if (!userId) {
-    return response.status(401).json({ message: "Authentication required" });
-  }
+  if (!requireUserId(request, response)) return;
 
-  const lat = request.query.lat ? parseFloat(request.query.lat as string) : undefined;
-  const lng = request.query.lng ? parseFloat(request.query.lng as string) : undefined;
-  const radius = request.query.radius
-    ? parseFloat(request.query.radius as string)
-    : undefined;
+  const lat = parseOptionalFloat(request.query.lat);
+  const lng = parseOptionalFloat(request.query.lng);
+  const radius = parseOptionalFloat(request.query.radius);
 
   const sitrep = await generateSitRep(lat, lng, radius);
 
@@ -53,13 +59,9 @@ export async function getIncidentById(
   response: Response,
   _next: NextFunction
 ) {
-  const userId = request.authUser?.userId;
-  if (!userId) {
-    return response.status(401).json({ message: "Authentication required" });
-  }
+  if (!requireUserId(request, response)) return;
 
   const incidentId = validateIncidentId(request.params.id as string);
-
   const detail = await getIncidentDetail(incidentId);
 
   if (!detail) {

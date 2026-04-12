@@ -16,37 +16,23 @@ import {
   type VoiceInputFile,
   type VoiceReportResult
 } from "./voiceReportClient.js";
+import { clusterReportIntoCrisisEvent } from "./dashboardService.js";
 import {
-  clusterReportIntoCrisisEvent
-} from "./dashboardService.js";
+  clampCredibilityScore,
+  severityRanking,
+  toIncidentSeverity,
+  toIncidentType
+} from "../utils/incidentMapping.js";
+import {
+  buildReporterMap,
+  fetchReporters
+} from "../utils/reporterLookup.js";
 
 type UploadedFileMeta = {
   originalname: string;
   mimetype: string;
   size: number;
 };
-
-const severityRanking: Record<IncidentSeverity, number> = {
-  CRITICAL: 4,
-  HIGH: 3,
-  MEDIUM: 2,
-  LOW: 1
-};
-
-const allIncidentTypes: IncidentType[] = [
-  "FLOOD",
-  "FIRE",
-  "EARTHQUAKE",
-  "BUILDING_COLLAPSE",
-  "ROAD_ACCIDENT",
-  "VIOLENCE",
-  "MEDICAL_EMERGENCY",
-  "OTHER"
-];
-
-const allSeverities: IncidentSeverity[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-const allStatuses: IncidentStatus[] = ["PUBLISHED", "UNDER_REVIEW"];
-const objectIdHexPattern = /^[a-fA-F0-9]{24}$/;
 
 export type CreateIncidentReportInput = {
   reporterId: string;
@@ -73,9 +59,7 @@ type ReportSortBy = "createdAt" | "severity" | "credibility";
 type ReportSortOrder = "asc" | "desc";
 type SeverityFilter = IncidentSeverity | "ALL";
 
-export type ListIncidentReportsInput = {
-  viewerId: string;
-  scope: ReportListScope;
+type BaseListInput = {
   search: string;
   severity: SeverityFilter;
   sortBy: ReportSortBy;
@@ -84,14 +68,12 @@ export type ListIncidentReportsInput = {
   limit: number;
 };
 
-export type ListUnderReviewIncidentReportsInput = {
-  search: string;
-  severity: SeverityFilter;
-  sortBy: ReportSortBy;
-  order: ReportSortOrder;
-  page: number;
-  limit: number;
+export type ListIncidentReportsInput = BaseListInput & {
+  viewerId: string;
+  scope: ReportListScope;
 };
+
+export type ListUnderReviewIncidentReportsInput = BaseListInput;
 
 type ReportRecordForList = Pick<
   IncidentReport,
@@ -110,11 +92,6 @@ type ReportRecordForList = Pick<
   | "classifiedIncidentType"
   | "createdAt"
 >;
-
-type ReporterRecord = {
-  id: string;
-  fullName: string;
-};
 
 export type IncidentReportListItem = {
   id: string;
@@ -141,156 +118,68 @@ export type ListIncidentReportsDependencies = {
     scope: ReportListScope;
     severity: SeverityFilter;
   }) => Promise<ReportRecordForList[]>;
-  listUsers: (userIds: string[]) => Promise<ReporterRecord[]>;
+  listUsers: (userIds: string[]) => Promise<Array<{ id: string; fullName: string }>>;
 };
+
+const REPORT_LIST_SELECT = {
+  id: true,
+  reporterId: true,
+  incidentTitle: true,
+  classifiedIncidentTitle: true,
+  description: true,
+  locationText: true,
+  mediaFilenames: true,
+  credibilityScore: true,
+  severityLevel: true,
+  status: true,
+  spamFlagged: true,
+  incidentType: true,
+  classifiedIncidentType: true,
+  createdAt: true
+} as const;
+
+function buildListWhere(scope: ReportListScope, viewerId: string, severity: SeverityFilter): Prisma.IncidentReportWhereInput {
+  const where: Prisma.IncidentReportWhereInput = {};
+
+  if (scope === "mine") {
+    where.reporterId = viewerId;
+  } else if (scope === "community") {
+    where.status = "PUBLISHED";
+    where.spamFlagged = false;
+  } else {
+    where.status = "UNDER_REVIEW";
+  }
+
+  if (severity !== "ALL") {
+    where.severityLevel = severity;
+  }
+
+  return where;
+}
 
 const defaultDependencies: CreateIncidentReportDependencies = {
   submitVoiceReport,
   classifyIncidentText,
-  createReportRecord: async (data) => {
-    return prisma.incidentReport.create({
-      data,
-      select: {
-        id: true
-      }
-    });
-  }
+  createReportRecord: (data) => prisma.incidentReport.create({ data, select: { id: true } })
 };
 
 const defaultListDependencies: ListIncidentReportsDependencies = {
-  listReports: async ({ viewerId, scope, severity }) => {
-    const where: Prisma.IncidentReportWhereInput = {
-      AND: [
-        { incidentTitle: { contains: "" } },
-        { description: { contains: "" } },
-        { locationText: { contains: "" } },
-        { classifiedIncidentTitle: { contains: "" } },
-        { incidentType: { in: allIncidentTypes } },
-        { classifiedIncidentType: { in: allIncidentTypes } },
-        { severityLevel: { in: allSeverities } },
-        { status: { in: allStatuses } },
-        { credibilityScore: { gte: 0 } },
-        { OR: [{ spamFlagged: true }, { spamFlagged: false }] },
-        { createdAt: { gte: new Date("1970-01-01T00:00:00.000Z") } }
-      ]
-    };
-
-    if (scope === "mine") {
-      where.reporterId = viewerId;
-    } else if (scope === "community") {
-      where.status = "PUBLISHED";
-      where.spamFlagged = false;
-    } else {
-      where.status = "UNDER_REVIEW";
-    }
-
-    if (severity !== "ALL") {
-      where.severityLevel = severity;
-    }
-
-    return prisma.incidentReport.findMany({
-      where,
-      select: {
-        id: true,
-        incidentTitle: true,
-        classifiedIncidentTitle: true,
-        description: true,
-        locationText: true,
-        mediaFilenames: true,
-        credibilityScore: true,
-        severityLevel: true,
-        status: true,
-        spamFlagged: true,
-        incidentType: true,
-        classifiedIncidentType: true,
-        createdAt: true
-      }
-    }).then((reports) =>
-      reports.map((report) => ({
-        ...report,
-        reporterId: scope === "mine" ? viewerId : ""
-      }))
-    );
-  },
-  listUsers: async (userIds) => {
-    const validUserIds = userIds.filter((id) => objectIdHexPattern.test(id));
-    if (validUserIds.length === 0) {
-      return [];
-    }
-
-    return prisma.user.findMany({
-      where: {
-        id: {
-          in: validUserIds
-        }
-      },
-      select: {
-        id: true,
-        fullName: true
-      }
-    });
-  }
+  listReports: ({ viewerId, scope, severity }) =>
+    prisma.incidentReport.findMany({
+      where: buildListWhere(scope, viewerId, severity),
+      select: REPORT_LIST_SELECT
+    }),
+  listUsers: fetchReporters
 };
-
-const incidentTypeMap: Record<string, IncidentType> = {
-  FLOOD: "FLOOD",
-  FIRE: "FIRE",
-  EARTHQUAKE: "EARTHQUAKE",
-  BUILDING_COLLAPSE: "BUILDING_COLLAPSE",
-  BUILDINGCOLLAPSE: "BUILDING_COLLAPSE",
-  ROAD_ACCIDENT: "ROAD_ACCIDENT",
-  ROADACCIDENT: "ROAD_ACCIDENT",
-  VIOLENCE: "VIOLENCE",
-  MEDICAL_EMERGENCY: "MEDICAL_EMERGENCY",
-  MEDICALEMERGENCY: "MEDICAL_EMERGENCY",
-  OTHER: "OTHER"
-};
-
-const severityMap: Record<string, IncidentSeverity> = {
-  CRITICAL: "CRITICAL",
-  HIGH: "HIGH",
-  MEDIUM: "MEDIUM",
-  LOW: "LOW"
-};
-
-function normalizeKey(value: string) {
-  return value.replace(/[\s-]+/g, "_").replace(/[^A-Za-z_]/g, "").toUpperCase();
-}
-
-function toIncidentType(value: string): IncidentType {
-  const normalized = normalizeKey(value);
-  return incidentTypeMap[normalized] ?? "OTHER";
-}
-
-function toIncidentSeverity(value: string): IncidentSeverity {
-  const normalized = normalizeKey(value);
-  return severityMap[normalized] ?? "LOW";
-}
-
-function toIncidentStatus(spamFlagged: boolean): IncidentStatus {
-  return spamFlagged ? "UNDER_REVIEW" : "PUBLISHED";
-}
-
-function clampCredibilityScore(score: number) {
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
 
 function matchesSearch(report: ReportRecordForList, search: string) {
-  if (!search.trim()) {
-    return true;
-  }
-
   const needle = search.trim().toLowerCase();
-  const haystack = [
-    report.incidentTitle,
-    report.classifiedIncidentTitle,
-    report.locationText,
-    report.description
-  ]
-    .join(" ")
-    .toLowerCase();
+  if (!needle) return true;
 
-  return haystack.includes(needle);
+  return [report.incidentTitle, report.classifiedIncidentTitle, report.locationText, report.description]
+    .join(" ")
+    .toLowerCase()
+    .includes(needle);
 }
 
 function compareReports(
@@ -300,7 +189,6 @@ function compareReports(
   order: ReportSortOrder
 ) {
   let comparison = 0;
-
   if (sortBy === "severity") {
     comparison = severityRanking[left.severityLevel] - severityRanking[right.severityLevel];
   } else if (sortBy === "credibility") {
@@ -308,21 +196,70 @@ function compareReports(
   } else {
     comparison = left.createdAt.getTime() - right.createdAt.getTime();
   }
+  return order === "asc" ? comparison : -comparison;
+}
 
-  return order === "asc" ? comparison : comparison * -1;
+function toListItem(report: ReportRecordForList, viewerId: string, reporterMap: Map<string, string>): IncidentReportListItem {
+  const isMine = report.reporterId === viewerId;
+  const reporterName = isMine ? "You" : reporterMap.get(report.reporterId) ?? "Community Member";
+
+  return {
+    id: report.id,
+    reporterId: report.reporterId,
+    reporterName,
+    isMine,
+    incidentTitle: report.incidentTitle,
+    classifiedIncidentTitle: report.classifiedIncidentTitle,
+    incidentType: report.incidentType,
+    classifiedIncidentType: report.classifiedIncidentType,
+    description: report.description,
+    locationText: report.locationText,
+    mediaFilenames: report.mediaFilenames,
+    credibilityScore: report.credibilityScore,
+    severityLevel: report.severityLevel,
+    status: report.status,
+    spamFlagged: report.spamFlagged,
+    createdAt: report.createdAt.toISOString()
+  };
+}
+
+async function paginateAndHydrate(
+  reports: ReportRecordForList[],
+  input: BaseListInput,
+  viewerId: string,
+  dependencies: ListIncidentReportsDependencies
+): Promise<IncidentReportListItem[]> {
+  const filtered = reports
+    .filter((report) => matchesSearch(report, input.search))
+    .sort((left, right) => compareReports(left, right, input.sortBy, input.order));
+
+  const page = Math.max(1, input.page);
+  const limit = Math.max(1, input.limit);
+  const start = (page - 1) * limit;
+  const paged = filtered.slice(start, start + limit);
+
+  const reporterIds = Array.from(new Set(paged.map((report) => report.reporterId)));
+  const reporters = await dependencies.listUsers(reporterIds);
+  const reporterMap = buildReporterMap(reporters);
+
+  return paged.map((report) => toListItem(report, viewerId, reporterMap));
 }
 
 export async function createIncidentReport(
   input: CreateIncidentReportInput,
   dependencies: CreateIncidentReportDependencies = defaultDependencies
 ) {
+  const trimmedTitle = input.incidentTitle.trim();
+  const trimmedLocation = input.locationText.trim();
+
   let description = input.description.trim();
   let voiceMetadata: VoiceReportResult | undefined;
 
   if (input.voiceFile) {
     voiceMetadata = await dependencies.submitVoiceReport(input.voiceFile);
-    if (voiceMetadata.translated_description?.trim()) {
-      description = voiceMetadata.translated_description.trim();
+    const translated = voiceMetadata.translated_description?.trim();
+    if (translated) {
+      description = translated;
     }
   }
 
@@ -330,31 +267,26 @@ export async function createIncidentReport(
     throw new Error("Description or voice note is required");
   }
 
-  const analysis = await dependencies.classifyIncidentText(
-    description,
-    input.latitude,
-    input.longitude
-  );
+  const analysis = await dependencies.classifyIncidentText(description, input.latitude, input.longitude);
   const credibilityScore = clampCredibilityScore(analysis.credibility_score);
   const spamFlagged = analysis.spam_flagged || credibilityScore < 30;
-  const status = toIncidentStatus(spamFlagged);
+  const status: IncidentStatus = spamFlagged ? "UNDER_REVIEW" : "PUBLISHED";
   const severityLevel = toIncidentSeverity(analysis.severity_level);
   const userSelectedIncidentType = toIncidentType(String(input.incidentType));
   const classifiedIncidentType = toIncidentType(analysis.incident_type);
-  const classifiedIncidentTitle =
-    analysis.incident_title.trim() || input.incidentTitle.trim();
+  const classifiedIncidentTitle = analysis.incident_title.trim() || trimmedTitle;
 
+  const now = new Date();
   const created = await dependencies.createReportRecord({
     reporterId: input.reporterId,
-    incidentTitle: input.incidentTitle.trim(),
+    incidentTitle: trimmedTitle,
     description,
     incidentType: userSelectedIncidentType,
-    locationText: input.locationText.trim(),
+    locationText: trimmedLocation,
     latitude: input.latitude ?? null,
     longitude: input.longitude ?? null,
     mediaFilenames: input.mediaFiles.map((file) => file.originalname),
-    sourceAudioFilename:
-      voiceMetadata?.filename ?? input.voiceFile?.originalname ?? null,
+    sourceAudioFilename: voiceMetadata?.filename ?? input.voiceFile?.originalname ?? null,
     detectedLanguage: voiceMetadata?.detected_language ?? null,
     languageProbability: voiceMetadata?.language_probability ?? null,
     translatedDescription: voiceMetadata?.translated_description ?? null,
@@ -364,15 +296,15 @@ export async function createIncidentReport(
     classifiedIncidentTitle,
     spamFlagged,
     status,
-    createdAt: new Date(),
-    updatedAt: new Date()
+    createdAt: now,
+    updatedAt: now
   });
 
   await clusterReportAfterCreation(created.id, {
     id: created.id,
-    incidentTitle: input.incidentTitle.trim(),
+    incidentTitle: trimmedTitle,
     description,
-    locationText: input.locationText.trim(),
+    locationText: trimmedLocation,
     incidentType: classifiedIncidentType,
     severityLevel,
     latitude: input.latitude ?? null,
@@ -382,7 +314,7 @@ export async function createIncidentReport(
 
   return {
     id: created.id,
-    incidentTitle: input.incidentTitle.trim(),
+    incidentTitle: trimmedTitle,
     classifiedIncidentTitle,
     severityLevel,
     credibilityScore,
@@ -412,7 +344,8 @@ async function clusterReportAfterCreation(
   }
   try {
     await clusterReportIntoCrisisEvent(reportMeta);
-  } catch {
+  } catch (error) {
+    console.error("Failed to cluster report into crisis event:", reportId, error);
   }
 }
 
@@ -425,59 +358,7 @@ export async function listIncidentReports(
     scope: input.scope,
     severity: input.severity
   });
-
-  const scopedReports = reports.filter((report) =>
-    input.scope === "mine"
-      ? report.reporterId === input.viewerId
-      : report.status === "PUBLISHED" && !report.spamFlagged
-  );
-
-  const severityFilteredReports =
-    input.severity === "ALL"
-      ? scopedReports
-      : scopedReports.filter((report) => report.severityLevel === input.severity);
-
-  const filteredReports = severityFilteredReports
-    .filter((report) => matchesSearch(report, input.search))
-    .sort((left, right) =>
-      compareReports(left, right, input.sortBy, input.order)
-    );
-  const page = Math.max(1, input.page);
-  const limit = Math.max(1, input.limit);
-  const startIndex = (page - 1) * limit;
-  const pagedReports = filteredReports.slice(startIndex, startIndex + limit);
-
-  const reporterIds = Array.from(
-    new Set(pagedReports.map((report) => report.reporterId))
-  );
-  const reporters = await dependencies.listUsers(reporterIds);
-  const reporterMap = new Map(reporters.map((reporter) => [reporter.id, reporter.fullName]));
-
-  return pagedReports.map((report) => {
-    const isMine = report.reporterId === input.viewerId;
-    const reporterName = isMine
-      ? "You"
-      : reporterMap.get(report.reporterId) ?? "Community Member";
-
-    return {
-      id: report.id,
-      reporterId: report.reporterId,
-      reporterName,
-      isMine,
-      incidentTitle: report.incidentTitle,
-      classifiedIncidentTitle: report.classifiedIncidentTitle,
-      incidentType: report.incidentType,
-      classifiedIncidentType: report.classifiedIncidentType,
-      description: report.description,
-      locationText: report.locationText,
-      mediaFilenames: report.mediaFilenames,
-      credibilityScore: report.credibilityScore,
-      severityLevel: report.severityLevel,
-      status: report.status,
-      spamFlagged: report.spamFlagged,
-      createdAt: report.createdAt.toISOString()
-    };
-  });
+  return paginateAndHydrate(reports, input, input.viewerId, dependencies);
 }
 
 export type IncidentReportDetail = {
@@ -504,10 +385,7 @@ export async function getIncidentReportById(
   reportId: string,
   viewerId: string
 ): Promise<IncidentReportDetail> {
-  const report = await prisma.incidentReport.findUnique({
-    where: { id: reportId }
-  });
-
+  const report = await prisma.incidentReport.findUnique({ where: { id: reportId } });
   if (!report) {
     throw new Error("Report not found");
   }
@@ -518,14 +396,11 @@ export async function getIncidentReportById(
   });
 
   const isMine = report.reporterId === viewerId;
-  const reporterName = isMine
-    ? "You"
-    : reporter?.fullName ?? "Community Member";
 
   return {
     id: report.id,
     reporterId: report.reporterId,
-    reporterName,
+    reporterName: isMine ? "You" : reporter?.fullName ?? "Community Member",
     incidentTitle: report.incidentTitle,
     classifiedIncidentTitle: report.classifiedIncidentTitle,
     incidentType: report.incidentType,
@@ -552,47 +427,7 @@ export async function listUnderReviewIncidentReports(
     scope: "under_review",
     severity: input.severity
   });
-
-  const scopedReports = reports.filter((report) => report.status === "UNDER_REVIEW");
-
-  const filteredReports = scopedReports
-    .filter((report) => matchesSearch(report, input.search))
-    .sort((left, right) =>
-      compareReports(left, right, input.sortBy, input.order)
-    );
-  const page = Math.max(1, input.page);
-  const limit = Math.max(1, input.limit);
-  const startIndex = (page - 1) * limit;
-  const pagedReports = filteredReports.slice(startIndex, startIndex + limit);
-
-  const reporterIds = Array.from(
-    new Set(pagedReports.map((report) => report.reporterId))
-  );
-  const reporters = await dependencies.listUsers(reporterIds);
-  const reporterMap = new Map(
-    reporters.map((reporter) => [reporter.id, reporter.fullName])
-  );
-
-  return pagedReports.map((report) => {
-    return {
-      id: report.id,
-      reporterId: report.reporterId,
-      reporterName: reporterMap.get(report.reporterId) ?? "Community Member",
-      isMine: false,
-      incidentTitle: report.incidentTitle,
-      classifiedIncidentTitle: report.classifiedIncidentTitle,
-      incidentType: report.incidentType,
-      classifiedIncidentType: report.classifiedIncidentType,
-      description: report.description,
-      locationText: report.locationText,
-      mediaFilenames: report.mediaFilenames,
-      credibilityScore: report.credibilityScore,
-      severityLevel: report.severityLevel,
-      status: report.status,
-      spamFlagged: report.spamFlagged,
-      createdAt: report.createdAt.toISOString()
-    };
-  });
+  return paginateAndHydrate(reports, input, "", dependencies);
 }
 
 export async function updateIncidentReportStatusByAdmin(
@@ -606,16 +441,11 @@ export async function updateIncidentReportStatusByAdmin(
       spamFlagged: status === "PUBLISHED" ? false : undefined,
       updatedAt: new Date()
     },
-    select: {
-      id: true,
-      status: true,
-      spamFlagged: true
-    }
+    select: { id: true, status: true, spamFlagged: true }
   });
 }
 
-
-export async function getMapIncidentReports(viewerId: string) {
+export async function getMapIncidentReports(_viewerId: string) {
   return prisma.incidentReport.findMany({
     where: {
       status: "PUBLISHED",

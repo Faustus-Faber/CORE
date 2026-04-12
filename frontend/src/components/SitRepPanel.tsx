@@ -323,7 +323,6 @@ export function SitRepPanel({ lat, lng, radiusKm }: SitRepPanelProps) {
 
   const fetchBlueprint = useCallback(async () => {
     try {
-      setLoading((prev) => prev === false && prev);
       const data = await getSitRep(lat, lng, radiusKm);
       if (prevTimestamp.current && data.blueprint.generatedAt !== prevTimestamp.current) {
         setIsUpdating(true);

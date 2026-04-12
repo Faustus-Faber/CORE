@@ -34,6 +34,12 @@ export function DashboardPage() {
   });
 
   useEffect(() => {
+    const cached = getUserLocation();
+    if (cached) {
+      setLocation(cached);
+      return;
+    }
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -44,12 +50,14 @@ export function DashboardPage() {
         () => {
           setLocation(null);
         },
-        { enableHighAccuracy: false, timeout: 5000 }
+        { enableHighAccuracy: false, timeout: 15000 }
       );
     }
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchFeed = async () => {
       setLoading(true);
       setError("");
@@ -60,15 +68,16 @@ export function DashboardPage() {
           lng: location?.lng,
           radiusKm: 10
         });
-        setEvents(response.feed);
+        if (!cancelled) setEvents(response.feed);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load dashboard feed");
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load dashboard feed");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     void fetchFeed();
+    return () => { cancelled = true; };
   }, [filters, location]);
 
   const stats = useMemo(() => {

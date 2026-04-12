@@ -13,6 +13,7 @@ function buildPrimaryNav(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
     { to: "/dashboard", label: "Dashboard" },
     { to: "/map", label: "Map" },
     { to: "/gallery", label: "Gallery" },
+    { to: "/docs", label: "My Documents" },
     { to: "/volunteers", label: "Volunteers" },
     { to: "/leaderboard", label: "Leaderboard" }
   ];
@@ -43,8 +44,7 @@ function buildResourceMenuItems(): NavItem[] {
 
 function buildUserMenuItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
   const items: NavItem[] = [
-    { to: "/profile", label: "Profile" },
-    { to: "/docs", label: "My Documents" }
+    { to: "/profile", label: "Profile" }
   ];
   if (role === "VOLUNTEER") {
     items.push({ to: "/tasks", label: "My Tasks" });

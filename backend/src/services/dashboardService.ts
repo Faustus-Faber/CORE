@@ -1,7 +1,6 @@
 import type {
   CrisisEvent,
   CrisisEventStatus,
-  IncidentReport,
   IncidentSeverity,
   IncidentType,
   Prisma
@@ -9,18 +8,16 @@ import type {
 
 import { prisma } from "../lib/prisma.js";
 import { env } from "../config/env.js";
-import { classifyIncidentText } from "./textAnalysisClient.js";
+import { haversineDistanceKm } from "../utils/geo.js";
+import { severityRanking } from "../utils/incidentMapping.js";
+import { fetchReporters, buildReporterMap } from "../utils/reporterLookup.js";
 
-const severityRanking: Record<IncidentSeverity, number> = {
-  CRITICAL: 4,
-  HIGH: 3,
-  MEDIUM: 2,
-  LOW: 1
-};
-
-const allActiveStatuses: CrisisEventStatus[] = ["ACTIVE", "CONTAINED"];
-
-const objectIdHexPattern = /^[a-fA-F0-9]{24}$/;
+const ACTIVE_STATUSES: CrisisEventStatus[] = ["ACTIVE", "CONTAINED"];
+const SIMILARITY_THRESHOLD = 0.8;
+const NEARBY_RESOURCE_LIMIT = 5;
+const DEFAULT_NEARBY_RADIUS_KM = 10;
+const TIMELINE_LIMIT = 8;
+const EXCERPT_LENGTH = 150;
 
 export type DashboardFeedFilter = {
   lat?: number;
@@ -67,15 +64,15 @@ export type SitRepResponse = {
   blueprint: SitRepBlueprint;
 };
 
-export type IncidentDetailResponse = {
-  crisisEvent: CrisisEvent;
-  contributingReports: IncidentReportListItem[];
-  nearbyResources: ResourceSummary[];
-};
-
-type ReporterRecord = {
+type ResourceSummary = {
   id: string;
-  fullName: string;
+  name: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  status: string;
+  address: string;
+  distanceKm?: number;
 };
 
 type IncidentReportListItem = {
@@ -98,51 +95,59 @@ type IncidentReportListItem = {
   createdAt: string;
 };
 
-type ResourceSummary = {
-  id: string;
-  name: string;
-  category: string;
-  quantity: number;
-  unit: string;
-  status: string;
-  address: string;
-  distanceKm?: number;
+export type IncidentDetailResponse = {
+  crisisEvent: CrisisEvent;
+  contributingReports: IncidentReportListItem[];
+  nearbyResources: ResourceSummary[];
 };
 
-function haversineDistance(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+function timeAgo(date: Date): string {
+  const diffMin = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return date.toLocaleDateString();
 }
 
-async function listUsers(userIds: string[]): Promise<ReporterRecord[]> {
-  const validUserIds = userIds.filter((id) => objectIdHexPattern.test(id));
-  if (validUserIds.length === 0) {
-    return [];
-  }
+function truncateExcerpt(text: string): string {
+  if (text.length <= EXCERPT_LENGTH) return text;
+  return text.slice(0, EXCERPT_LENGTH) + "...";
+}
 
-  return prisma.user.findMany({
-    where: { id: { in: validUserIds } },
-    select: { id: true, fullName: true }
+function filterByRadius<T extends { latitude: number | null; longitude: number | null }>(
+  items: T[],
+  lat: number,
+  lng: number,
+  radiusKm: number
+): T[] {
+  return items.filter((item) => {
+    if (item.latitude == null || item.longitude == null) return true;
+    return haversineDistanceKm(lat, lng, item.latitude, item.longitude) <= radiusKm;
   });
 }
 
-export async function getDashboardFeed(
-  filters: DashboardFeedFilter
-): Promise<CrisisEventCard[]> {
+function sortEvents(
+  events: CrisisEvent[],
+  sortBy: string,
+  sortOrder: "asc" | "desc"
+): CrisisEvent[] {
+  return [...events].sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === "highestSeverity") {
+      comparison = severityRanking[a.severityLevel] - severityRanking[b.severityLevel];
+    } else if (sortBy === "mostReports") {
+      comparison = a.reportCount - b.reportCount;
+    } else {
+      comparison = a.createdAt.getTime() - b.createdAt.getTime();
+    }
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
+}
+
+function buildFeedWhere(filters: DashboardFeedFilter): Prisma.CrisisEventWhereInput {
   const where: Prisma.CrisisEventWhereInput = {};
 
   if (filters.severity && filters.severity !== "ALL") {
@@ -160,64 +165,35 @@ export async function getDashboardFeed(
   }
 
   if (filters.lat && filters.lng && filters.radiusKm) {
-    const radius = filters.radiusKm;
-    const latFilter: number = filters.lat;
-    const lngFilter: number = filters.lng;
-    const degreeRadius = radius / 111;
-
+    const degreeRadius = filters.radiusKm / 111;
     where.latitude = {
-      gte: latFilter - degreeRadius * 1.5,
-      lte: latFilter + degreeRadius * 1.5
+      gte: filters.lat - degreeRadius * 1.5,
+      lte: filters.lat + degreeRadius * 1.5
     };
     where.longitude = {
-      gte: lngFilter - degreeRadius,
-      lte: lngFilter + degreeRadius
+      gte: filters.lng - degreeRadius,
+      lte: filters.lng + degreeRadius
     };
   }
 
+  return where;
+}
+
+export async function getDashboardFeed(
+  filters: DashboardFeedFilter
+): Promise<CrisisEventCard[]> {
   const events = await prisma.crisisEvent.findMany({
-    where,
+    where: buildFeedWhere(filters),
     orderBy: { createdAt: "desc" }
   });
 
-  let results = events;
+  const filtered = filters.lat && filters.lng && filters.radiusKm
+    ? filterByRadius(events, filters.lat, filters.lng, filters.radiusKm)
+    : events;
 
-  if (filters.lat && filters.lng && filters.radiusKm) {
-    results = results.filter((event) => {
-      if (event.latitude == null || event.longitude == null) {
-        return true;
-      }
-      const distance = haversineDistance(
-        filters.lat!,
-        filters.lng!,
-        event.latitude,
-        event.longitude
-      );
-      return distance <= filters.radiusKm!;
-    });
-  }
+  const sorted = sortEvents(filtered, filters.sortBy ?? "mostRecent", filters.sortOrder ?? "desc");
 
-  const sortBy = filters.sortBy ?? "mostRecent";
-  const sortOrder = filters.sortOrder ?? "desc";
-
-  results.sort((a, b) => {
-    let comparison = 0;
-
-    if (sortBy === "highestSeverity") {
-      comparison =
-        severityRanking[a.severityLevel] - severityRanking[b.severityLevel];
-    } else if (sortBy === "mostReports") {
-      comparison = a.reportCount - b.reportCount;
-    } else {
-      comparison =
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    }
-
-    return sortOrder === "asc" ? comparison : comparison * -1;
-  });
-
-  const eventIds = results.map((e) => e.id);
-
+  const eventIds = sorted.map((e) => e.id);
   const reportsByEvent = await prisma.crisisEventReport.findMany({
     where: { crisisEventId: { in: eventIds } },
     include: {
@@ -237,50 +213,26 @@ export async function getDashboardFeed(
 
   const reportsMap = new Map<string, typeof reportsByEvent>();
   for (const report of reportsByEvent) {
-    const key = report.crisisEventId;
-    if (!reportsMap.has(key)) {
-      reportsMap.set(key, []);
+    const existing = reportsMap.get(report.crisisEventId);
+    if (existing) {
+      existing.push(report);
+    } else {
+      reportsMap.set(report.crisisEventId, [report]);
     }
-    reportsMap.get(key)!.push(report);
   }
 
-  const allReporterIds = Array.from(
-    new Set(
-      reportsByEvent.map((r) => r.incidentReport.reporterId).filter(Boolean)
-    )
-  );
-  const reporters = await listUsers(allReporterIds);
-  const reporterMap = new Map(
-    reporters.map((r) => [r.id, r.fullName])
-  );
-
-  return results.map((event) => {
+  return sorted.map((event) => {
     const eventReports = reportsMap.get(event.id) ?? [];
     const firstReport = eventReports[0]?.incidentReport;
-    const descriptionExcerpt = firstReport?.description
-      ? firstReport.description.slice(0, 150) +
-        (firstReport.description.length > 150 ? "..." : "")
-      : "No description available";
 
-    const mediaFilenames = eventReports.flatMap(
-      (r) => r.incidentReport.mediaFilenames
-    );
-
-    const avgCredibility =
-      eventReports.length > 0
-        ? Math.round(
-            eventReports.reduce(
-              (sum, r) => sum + r.incidentReport.credibilityScore,
-              0
-            ) / eventReports.length
-          )
-        : 0;
+    const avgCredibility = eventReports.length > 0
+      ? Math.round(eventReports.reduce((sum, r) => sum + r.incidentReport.credibilityScore, 0) / eventReports.length)
+      : 0;
 
     return {
       id: event.id,
       title: event.title,
-      classifiedIncidentTitle:
-        firstReport?.classifiedIncidentTitle ?? event.title,
+      classifiedIncidentTitle: firstReport?.classifiedIncidentTitle ?? event.title,
       incidentType: event.incidentType,
       severityLevel: event.severityLevel,
       status: event.status,
@@ -291,10 +243,185 @@ export async function getDashboardFeed(
       reporterCount: event.reporterCount,
       credibilityScore: avgCredibility,
       createdAt: event.createdAt.toISOString(),
-      mediaFilenames: mediaFilenames.slice(0, 1),
-      descriptionExcerpt
+      mediaFilenames: eventReports.flatMap((r) => r.incidentReport.mediaFilenames).slice(0, 1),
+      descriptionExcerpt: firstReport?.description
+        ? truncateExcerpt(firstReport.description)
+        : "No description available"
     };
   });
+}
+
+function locationSimilarity(
+  locA: string,
+  locB: string,
+  latA: number | null,
+  lngA: number | null,
+  latB: number | null,
+  lngB: number | null
+): number {
+  const normA = locA.toLowerCase().trim();
+  const normB = locB.toLowerCase().trim();
+
+  if (normA === normB) return 1.0;
+
+  const wordsA = new Set(normA.split(/\s+/));
+  const wordsB = new Set(normB.split(/\s+/));
+  const intersection = new Set([...wordsA].filter((w) => wordsB.has(w)));
+  const union = new Set([...wordsA, ...wordsB]);
+  const jaccard = union.size > 0 ? intersection.size / union.size : 0;
+
+  if (latA != null && lngA != null && latB != null && lngB != null) {
+    const distance = haversineDistanceKm(latA, lngA, latB, lngB);
+    if (distance < 2) return Math.max(jaccard, 0.85);
+    if (distance < 5) return Math.max(jaccard, 0.7);
+    if (distance < 10) return Math.max(jaccard, 0.5);
+  }
+
+  return jaccard;
+}
+
+function fallbackSimilarity(textA: string, textB: string): number {
+  const wordsA = new Set(textA.toLowerCase().split(/\s+/).filter((w) => w.length > 3));
+  const wordsB = new Set(textB.toLowerCase().split(/\s+/).filter((w) => w.length > 3));
+
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+
+  const intersection = new Set([...wordsA].filter((w) => wordsB.has(w)));
+  const union = new Set([...wordsA, ...wordsB]);
+  return intersection.size / union.size;
+}
+
+const similaritySystemPrompt = [
+  "You are a duplicate-incident detection engine for a crisis response platform.",
+  "",
+  "You will receive two emergency incident reports (Report A and Report B). Determine whether they describe the SAME real-world incident.",
+  "",
+  'Return ONLY a JSON object: {"similarity_score": <number>}',
+  "",
+  "Scoring rules:",
+  "  1.0  — certainly the same incident (same event, same location, same timeframe).",
+  "  0.8-0.99 — very likely the same incident described differently.",
+  "  0.5-0.79 — possibly related (same area and type, but could be separate events).",
+  "  0.2-0.49 — weakly related (same general type but clearly different events).",
+  "  0.0-0.19 — completely unrelated incidents.",
+  "",
+  "Key factors to consider:",
+  "  - Geographic proximity: incidents at the same location or within 1-2km are more likely duplicates.",
+  "  - Incident type match: a flood report and another flood report in the same area are likely duplicates.",
+  "  - Temporal cues: references to the same time/date increase similarity.",
+  "  - Distinct details: different casualty counts, different buildings, or different streets lower similarity.",
+  "",
+  "Return raw JSON only. No markdown, no explanation."
+].join("\n");
+
+async function computeSimilarity(textA: string, textB: string): Promise<number> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), env.aiRequestTimeoutMs);
+
+    const response = await fetch(`${env.groqBaseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.groqApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: env.groqQwenModel,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: similaritySystemPrompt },
+          {
+            role: "user",
+            content: `Report A: ${textA}\n\nReport B: ${textB}\n\nReturn JSON: {"similarity_score": <number>}`
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) return fallbackSimilarity(textA, textB);
+
+    const payload = await response.json();
+    const content = payload.choices?.[0]?.message?.content ?? "";
+
+    try {
+      const parsed = JSON.parse(content);
+      return Math.min(1, Math.max(0, parsed.similarity_score ?? 0));
+    } catch {
+      return fallbackSimilarity(textA, textB);
+    }
+  } catch {
+    return fallbackSimilarity(textA, textB);
+  }
+}
+
+async function createNewCrisisEvent(report: {
+  id: string;
+  incidentTitle: string;
+  incidentType: IncidentType;
+  severityLevel: IncidentSeverity;
+  locationText: string;
+  latitude: number | null;
+  longitude: number | null;
+}): Promise<{ crisisEventId: string; isNew: true }> {
+  const newEvent = await prisma.crisisEvent.create({
+    data: {
+      title: report.incidentTitle,
+      incidentType: report.incidentType,
+      severityLevel: report.severityLevel,
+      locationText: report.locationText,
+      latitude: report.latitude,
+      longitude: report.longitude,
+      status: "ACTIVE",
+      reportCount: 1,
+      reporterCount: 1
+    }
+  });
+
+  await prisma.crisisEventReport.create({
+    data: { crisisEventId: newEvent.id, incidentReportId: report.id }
+  });
+
+  return { crisisEventId: newEvent.id, isNew: true };
+}
+
+async function linkReportToEvent(
+  eventId: string,
+  reportId: string,
+  reporterId: string
+): Promise<{ crisisEventId: string; isNew: false }> {
+  const existingLink = await prisma.crisisEventReport.findFirst({
+    where: { incidentReportId: reportId }
+  });
+
+  if (existingLink) {
+    return { crisisEventId: existingLink.crisisEventId, isNew: false };
+  }
+
+  const existingReporterLink = await prisma.crisisEventReport.findFirst({
+    where: {
+      crisisEventId: eventId,
+      incidentReport: { reporterId }
+    }
+  });
+
+  await prisma.$transaction([
+    prisma.crisisEventReport.create({
+      data: { crisisEventId: eventId, incidentReportId: reportId }
+    }),
+    prisma.crisisEvent.update({
+      where: { id: eventId },
+      data: {
+        reportCount: { increment: 1 },
+        reporterCount: existingReporterLink ? undefined : { increment: 1 }
+      }
+    })
+  ]);
+
+  return { crisisEventId: eventId, isNew: false };
 }
 
 export async function clusterReportIntoCrisisEvent(
@@ -311,37 +438,15 @@ export async function clusterReportIntoCrisisEvent(
   }
 ): Promise<{ crisisEventId: string; isNew: boolean }> {
   const activeEvents = await prisma.crisisEvent.findMany({
-    where: { status: { in: allActiveStatuses } },
+    where: { status: { in: ACTIVE_STATUSES } },
     orderBy: { createdAt: "desc" }
   });
 
   if (activeEvents.length === 0) {
-    const newEvent = await prisma.crisisEvent.create({
-      data: {
-        title: report.incidentTitle,
-        incidentType: report.incidentType,
-        severityLevel: report.severityLevel,
-        locationText: report.locationText,
-        latitude: report.latitude,
-        longitude: report.longitude,
-        status: "ACTIVE",
-        reportCount: 1,
-        reporterCount: 1
-      }
-    });
-
-    await prisma.crisisEventReport.create({
-      data: {
-        crisisEventId: newEvent.id,
-        incidentReportId: report.id
-      }
-    });
-
-    return { crisisEventId: newEvent.id, isNew: true };
+    return createNewCrisisEvent(report);
   }
 
   const candidateText = `${report.incidentTitle} ${report.description} ${report.locationText}`;
-
   let bestMatch: { eventId: string; score: number } | null = null;
 
   for (const event of activeEvents) {
@@ -349,321 +454,80 @@ export async function clusterReportIntoCrisisEvent(
       where: { crisisEventId: event.id },
       include: {
         incidentReport: {
-          select: {
-            incidentTitle: true,
-            description: true,
-            locationText: true
-          }
+          select: { incidentTitle: true, description: true, locationText: true }
         }
       }
     });
 
     const eventText = eventReports
-      .map(
-        (r) =>
-          `${r.incidentReport.incidentTitle} ${r.incidentReport.description} ${r.incidentReport.locationText}`
-      )
+      .map((r) => `${r.incidentReport.incidentTitle} ${r.incidentReport.description} ${r.incidentReport.locationText}`)
       .join(" ");
+
+    let score: number;
 
     if (!eventText.trim()) {
       const typeMatch = event.incidentType === report.incidentType;
-      const locSimilar = locationSimilarity(
-        report.locationText,
-        event.locationText,
-        report.latitude,
-        report.longitude,
-        event.latitude,
-        event.longitude
+      const locScore = locationSimilarity(
+        report.locationText, event.locationText,
+        report.latitude, report.longitude,
+        event.latitude, event.longitude
       );
-      const score = typeMatch ? 0.5 + locSimilar * 0.5 : locSimilar * 0.3;
-
-      if (score > (bestMatch?.score ?? 0)) {
-        bestMatch = { eventId: event.id, score };
-      }
-      continue;
+      score = typeMatch ? 0.5 + locScore * 0.5 : locScore * 0.3;
+    } else {
+      score = await computeSimilarity(candidateText, eventText);
     }
 
-    const similarity = await computeSimilarity(candidateText, eventText);
-
-    if (similarity > (bestMatch?.score ?? 0)) {
-      bestMatch = { eventId: event.id, score: similarity };
+    if (score > (bestMatch?.score ?? 0)) {
+      bestMatch = { eventId: event.id, score };
     }
   }
-
-  const SIMILARITY_THRESHOLD = 0.8;
 
   if (bestMatch && bestMatch.score >= SIMILARITY_THRESHOLD) {
-    await prisma.crisisEventReport.create({
-      data: {
-        crisisEventId: bestMatch.eventId,
-        incidentReportId: report.id
-      }
-    });
-
-    const existingLink = await prisma.crisisEventReport.findFirst({
-      where: { incidentReportId: report.id }
-    });
-
-    if (!existingLink) {
-      await prisma.crisisEvent.update({
-        where: { id: bestMatch.eventId },
-        data: {
-          reportCount: { increment: 1 },
-          reporterCount: { increment: 1 }
-        }
-      });
-    }
-
-    return { crisisEventId: bestMatch.eventId, isNew: false };
+    return linkReportToEvent(bestMatch.eventId, report.id, report.reporterId);
   }
 
-  const newEvent = await prisma.crisisEvent.create({
-    data: {
-      title: report.incidentTitle,
-      incidentType: report.incidentType,
-      severityLevel: report.severityLevel,
-      locationText: report.locationText,
-      latitude: report.latitude,
-      longitude: report.longitude,
-      status: "ACTIVE",
-      reportCount: 1,
-      reporterCount: 1
-    }
-  });
-
-  await prisma.crisisEventReport.create({
-    data: {
-      crisisEventId: newEvent.id,
-      incidentReportId: report.id
-    }
-  });
-
-  return { crisisEventId: newEvent.id, isNew: true };
+  return createNewCrisisEvent(report);
 }
 
-function locationSimilarity(
-  locA: string,
-  locB: string,
-  latA: number | null,
-  lngA: number | null,
-  latB: number | null,
-  lngB: number | null
-): number {
-  const normA = locA.toLowerCase().trim();
-  const normB = locB.toLowerCase().trim();
-
-  if (normA === normB) {
-    return 1.0;
-  }
-
-  const wordsA = new Set(normA.split(/\s+/));
-  const wordsB = new Set(normB.split(/\s+/));
-  const intersection = new Set([...wordsA].filter((w) => wordsB.has(w)));
-  const union = new Set([...wordsA, ...wordsB]);
-  const jaccard = union.size > 0 ? intersection.size / union.size : 0;
-
-  if (latA != null && lngA != null && latB != null && lngB != null) {
-    const distance = haversineDistance(latA, lngA, latB, lngB);
-    if (distance < 2) {
-      return Math.max(jaccard, 0.85);
-    }
-    if (distance < 5) {
-      return Math.max(jaccard, 0.7);
-    }
-    if (distance < 10) {
-      return Math.max(jaccard, 0.5);
-    }
-  }
-
-  return jaccard;
+function computeThreatLevel(events: CrisisEvent[]): SitRepBlueprint["threatLevel"] {
+  if (events.some((e) => e.severityLevel === "CRITICAL")) return "CRITICAL";
+  if (events.some((e) => e.severityLevel === "HIGH")) return "RED";
+  if (events.some((e) => e.severityLevel === "MEDIUM")) return "AMBER";
+  return "GREEN";
 }
 
-async function computeSimilarity(
-  textA: string,
-  textB: string
-): Promise<number> {
-  try {
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => {
-      abortController.abort();
-    }, env.aiRequestTimeoutMs);
-
-    const response = await fetch(`${env.groqBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.groqApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: env.groqQwenModel,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a similarity scoring engine. Compare two emergency incident reports. Return ONLY a JSON object with key 'similarity_score' as a number between 0 and 1. Score 1.0 means they describe the exact same incident. Score 0 means completely unrelated. Do not include markdown."
-          },
-          {
-            role: "user",
-            content: `Report A: ${textA}\n\nReport B: ${textB}\n\nReturn JSON: {"similarity_score": <number>}`
-          }
-        ]
-      }),
-      signal: abortController.signal
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      return fallbackSimilarity(textA, textB);
-    }
-
-    const payload = await response.json();
-    const content = payload.choices?.[0]?.message?.content ?? "";
-
-    try {
-      const parsed = JSON.parse(content);
-      return Math.min(1, Math.max(0, parsed.similarity_score ?? 0));
-    } catch {
-      return fallbackSimilarity(textA, textB);
-    }
-  } catch {
-    return fallbackSimilarity(textA, textB);
-  }
-}
-
-function fallbackSimilarity(
-  textA: string,
-  textB: string
-): number {
-  const wordsA = new Set(
-    textA
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 3)
-  );
-  const wordsB = new Set(
-    textB
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 3)
-  );
-
-  if (wordsA.size === 0 || wordsB.size === 0) {
-    return 0;
-  }
-
-  const intersection = new Set([...wordsA].filter((w) => wordsB.has(w)));
-  const union = new Set([...wordsA, ...wordsB]);
-
-  return intersection.size / union.size;
-}
-
-export async function generateSitRep(
-  lat?: number,
-  lng?: number,
-  radiusKm?: number
-): Promise<SitRepResponse> {
-  const where: Prisma.CrisisEventWhereInput = {
-    status: { in: allActiveStatuses }
-  };
-
-  let events = await prisma.crisisEvent.findMany({
-    where,
-    orderBy: [{ severityLevel: "desc" }, { createdAt: "desc" }]
-  });
-
-  if (lat && lng && radiusKm) {
-    const degreeRadius = radiusKm / 111;
-    const filtered = events.filter((event) => {
-      if (event.latitude == null || event.longitude == null) {
-        return true;
-      }
-      const distance = haversineDistance(
-        lat,
-        lng,
-        event.latitude,
-        event.longitude
-      );
-      return distance <= radiusKm;
-    });
-    events = filtered;
-  }
-
-  const resources = await prisma.resource.findMany({
-    where: { status: { in: ["Available", "Low Stock"] } },
-    select: {
-      id: true,
-      name: true,
-      category: true,
-      quantity: true,
-      unit: true,
-      status: true,
-      address: true,
-      latitude: true,
-      longitude: true
-    }
-  });
-
-  let nearbyResources: ResourceSummary[] = resources;
-
-  if (lat && lng) {
-    nearbyResources = resources
-      .map((r) => {
-        const distance =
-          r.latitude != null && r.longitude != null
-            ? haversineDistance(lat, lng, r.latitude, r.longitude)
-            : undefined;
-        return { ...r, distanceKm: distance };
-      })
-      .filter((r) => r.distanceKm == null || r.distanceKm <= (radiusKm ?? 10))
-      .sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999))
-      .slice(0, 5);
-  }
-
-  const incidentSummaries = events.map(
-    (e) =>
-      `- ${e.title} (${e.severityLevel}, ${e.incidentType}) at ${e.locationText}. ${e.sitRepText ?? "No update available."}`
-  );
-
-  const resourceSummaries = nearbyResources.map(
-    (r) =>
-      `- ${r.name}: ${r.quantity} ${r.unit} (${r.status}) at ${r.address}${r.distanceKm != null ? ` (${r.distanceKm.toFixed(1)} km away)` : ""}`
-  );
-
-  const criticalEvents = events.filter((e) => e.severityLevel === "CRITICAL");
-  const highEvents = events.filter((e) => e.severityLevel === "HIGH");
-  const mediumEvents = events.filter((e) => e.severityLevel === "MEDIUM");
-  const lowEvents = events.filter((e) => e.severityLevel === "LOW");
-
-  const threatLevel = criticalEvents.length > 0 ? "CRITICAL" : highEvents.length > 0 ? "RED" : mediumEvents.length > 0 ? "AMBER" : "GREEN";
-
-  const timelineData = events
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 8)
+function buildTimelineData(events: CrisisEvent[]) {
+  return [...events]
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, TIMELINE_LIMIT)
     .map((e) => ({
       time: timeAgo(e.createdAt),
       event: e.title,
       severity: e.severityLevel
     }));
+}
 
-  const warningsData = events
+function buildWarningsData(events: CrisisEvent[]) {
+  return events
     .filter((e) => e.severityLevel === "CRITICAL" || e.severityLevel === "HIGH")
     .map((e) => ({
       zone: e.locationText,
       reason: `${e.severityLevel} ${e.incidentType}`,
       until: e.status === "ACTIVE" ? "Until further notice" : "Monitoring in progress"
     }));
+}
 
-  const resourcesData = nearbyResources.map((r) => ({
+function buildResourcesData(resources: ResourceSummary[]) {
+  return resources.map((r) => ({
     name: r.name,
     qty: `${r.quantity} ${r.unit}`,
     location: r.address.split(",")[0] ?? r.address,
     eta: r.status === "Available" ? "Now" : "Limited"
   }));
+}
 
-  const pulseMapData = events
+function buildPulseMapData(events: CrisisEvent[]) {
+  return events
     .filter((e) => e.latitude != null && e.longitude != null)
     .map((e) => ({
       lat: e.latitude!,
@@ -671,31 +535,180 @@ export async function generateSitRep(
       intensity: e.severityLevel.toLowerCase(),
       label: e.title
     }));
+}
 
-  const metricsData = [
-    { label: "Active Incidents", value: events.length, color: "critical", trend: criticalEvents.length > 0 ? `+${criticalEvents.length} critical` : undefined },
-    { label: "Reports Merged", value: events.reduce((s, e) => s + e.reportCount, 0), color: "neutral" },
-    { label: "Responders", value: new Set(events.map((e) => e.reporterCount)).size > 0 ? events.reduce((s, e) => s + e.reporterCount, 0) : 0, color: "medium" },
-    { label: "Resources Available", value: nearbyResources.length, color: "low" }
+function buildMetricsData(events: CrisisEvent[], resourceCount: number) {
+  const criticalCount = events.filter((e) => e.severityLevel === "CRITICAL").length;
+  return [
+    {
+      label: "Active Incidents",
+      value: events.length,
+      color: "critical",
+      trend: criticalCount > 0 ? `+${criticalCount} critical` : undefined
+    },
+    {
+      label: "Reports Merged",
+      value: events.reduce((sum, e) => sum + e.reportCount, 0),
+      color: "neutral"
+    },
+    {
+      label: "Responders",
+      value: events.reduce((sum, e) => sum + e.reporterCount, 0),
+      color: "medium"
+    },
+    {
+      label: "Resources Available",
+      value: resourceCount,
+      color: "low"
+    }
   ];
+}
 
-  const advisoriesDefault = [
-    "Avoid all affected areas unless actively responding to the emergency",
-    "Monitor official channels for real-time updates",
-    "Check on vulnerable neighbors and elderly residents",
-    "Keep emergency contact numbers accessible"
-  ];
+function attachDistances(
+  resources: Array<{ id: string; name: string; category: string; quantity: number; unit: string; status: string; address: string; latitude: number | null; longitude: number | null }>,
+  lat: number,
+  lng: number,
+  radiusKm: number
+): ResourceSummary[] {
+  return resources
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      quantity: r.quantity,
+      unit: r.unit,
+      status: r.status,
+      address: r.address,
+      distanceKm: r.latitude != null && r.longitude != null
+        ? haversineDistanceKm(lat, lng, r.latitude, r.longitude)
+        : undefined
+    }))
+    .filter((r) => r.distanceKm == null || r.distanceKm <= radiusKm)
+    .sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999))
+    .slice(0, NEARBY_RESOURCE_LIMIT);
+}
+
+const DEFAULT_ADVISORIES = [
+  "Avoid all affected areas unless actively responding to the emergency",
+  "Monitor official channels for real-time updates",
+  "Check on vulnerable neighbors and elderly residents",
+  "Keep emergency contact numbers accessible"
+];
+
+const advisorySystemPrompt = [
+  "You are a public safety advisor for a community crisis dashboard in Bangladesh.",
+  "",
+  "Based on the active incidents and available resources provided, generate actionable safety advisories for community members.",
+  "",
+  'Return ONLY a JSON object: {"advisories": ["...", "...", ...]}',
+  "",
+  "Rules:",
+  "  - Generate exactly 5 to 7 advisory strings.",
+  "  - Each advisory must be 1 sentence, under 25 words, and directly actionable.",
+  "  - Tailor advisories to the specific incident types present (e.g., flood → move to higher ground; fire → avoid smoke inhalation).",
+  "  - If resources are available, mention them (e.g., 'Medical supplies available at Mirpur-10 relief center').",
+  "  - Include at least one general safety advisory (e.g., 'Keep emergency contacts accessible').",
+  "  - Do not repeat the same advice in different words.",
+  "",
+  "Return raw JSON only. No markdown, no explanation."
+].join("\n");
+
+async function generateAiAdvisories(
+  events: CrisisEvent[],
+  resources: ResourceSummary[]
+): Promise<string[]> {
+  const incidentContext = events
+    .map((e) => `${e.title} (${e.severityLevel}) at ${e.locationText} - ${e.sitRepText ?? "Active"}`)
+    .join("; ");
+
+  const resourceContext = resources
+    .map((r) => `${r.name}: ${r.quantity} ${r.unit} at ${r.address}`)
+    .join("; ");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), env.aiRequestTimeoutMs);
+
+  const response = await fetch(`${env.groqBaseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.groqApiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: env.groqQwenModel,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: advisorySystemPrompt },
+        {
+          role: "user",
+          content: `Active incidents: ${incidentContext}. Available resources: ${resourceContext}. Generate 5-7 concise safety advisories for the community.`
+        }
+      ]
+    }),
+    signal: controller.signal
+  });
+
+  clearTimeout(timeout);
+
+  if (!response.ok) return [];
+
+  const payload = await response.json();
+  const content = payload.choices?.[0]?.message?.content ?? "";
+
+  try {
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed.advisories) ? parsed.advisories.slice(0, 7) : [];
+  } catch {
+    return [];
+  }
+}
+
+const RESOURCE_SELECT = {
+  id: true,
+  name: true,
+  category: true,
+  quantity: true,
+  unit: true,
+  status: true,
+  address: true,
+  latitude: true,
+  longitude: true
+} as const;
+
+export async function generateSitRep(
+  lat?: number,
+  lng?: number,
+  radiusKm?: number
+): Promise<SitRepResponse> {
+  let events = await prisma.crisisEvent.findMany({
+    where: { status: { in: ACTIVE_STATUSES } },
+    orderBy: [{ severityLevel: "desc" }, { createdAt: "desc" }]
+  });
+
+  if (lat && lng && radiusKm) {
+    events = filterByRadius(events, lat, lng, radiusKm);
+  }
+
+  const rawResources = await prisma.resource.findMany({
+    where: { status: { in: ["Available", "Low Stock"] } },
+    select: RESOURCE_SELECT
+  });
+
+  const nearbyResources: ResourceSummary[] = lat && lng
+    ? attachDistances(rawResources, lat, lng, radiusKm ?? DEFAULT_NEARBY_RADIUS_KM)
+    : rawResources;
 
   const blueprint: SitRepBlueprint = {
     version: "1.0",
     generatedAt: new Date().toISOString(),
-    threatLevel,
-    metrics: metricsData,
-    pulseMap: pulseMapData,
-    timeline: timelineData,
-    warnings: warningsData,
-    resources: resourcesData,
-    advisories: advisoriesDefault
+    threatLevel: computeThreatLevel(events),
+    metrics: buildMetricsData(events, nearbyResources.length),
+    pulseMap: buildPulseMapData(events),
+    timeline: buildTimelineData(events),
+    warnings: buildWarningsData(events),
+    resources: buildResourcesData(nearbyResources),
+    advisories: DEFAULT_ADVISORIES
   };
 
   try {
@@ -704,80 +717,10 @@ export async function generateSitRep(
       blueprint.advisories = aiAdvisories;
     }
   } catch {
-    // Use default advisories if AI fails
+    /* keep default advisories */
   }
 
   return { blueprint };
-}
-
-async function generateAiAdvisories(
-  events: CrisisEvent[],
-  resources: ResourceSummary[]
-): Promise<string[]> {
-  const incidentContext = events.map(
-    (e) => `${e.title} (${e.severityLevel}) at ${e.locationText} - ${e.sitRepText ?? "Active"}`
-  ).join("; ");
-
-  const resourceContext = resources.map(
-    (r) => `${r.name}: ${r.quantity} ${r.unit} at ${r.address}`
-  ).join("; ");
-
-  try {
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => abortController.abort(), env.aiRequestTimeoutMs);
-
-    const response = await fetch(`${env.groqBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.groqApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: env.groqQwenModel,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: "You generate safety advisories for a crisis dashboard. Return ONLY a JSON object with key 'advisories' containing an array of 5-7 short advisory strings. No markdown. No explanations."
-          },
-          {
-            role: "user",
-            content: `Active incidents: ${incidentContext}. Available resources: ${resourceContext}. Generate 5-7 concise safety advisories for the community.`
-          }
-        ]
-      }),
-      signal: abortController.signal
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) return [];
-
-    const payload = await response.json();
-    const content = payload.choices?.[0]?.message?.content ?? "";
-
-    try {
-      const parsed = JSON.parse(content);
-      return Array.isArray(parsed.advisories) ? parsed.advisories.slice(0, 7) : [];
-    } catch {
-      return [];
-    }
-  } catch {
-    return [];
-  }
-}
-
-function timeAgo(date: Date): string {
-  const now = new Date();
-  const diffMin = Math.floor((now.getTime() - date.getTime()) / 60000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString();
 }
 
 export async function getIncidentDetail(
@@ -787,50 +730,37 @@ export async function getIncidentDetail(
     where: { id: incidentId }
   });
 
-  if (!crisisEvent) {
-    return null;
-  }
+  if (!crisisEvent) return null;
 
   const eventReportLinks = await prisma.crisisEventReport.findMany({
     where: { crisisEventId: incidentId },
-    include: {
-      incidentReport: true
-    },
+    include: { incidentReport: true },
     orderBy: { createdAt: "asc" }
   });
 
   const reports = eventReportLinks.map((link) => link.incidentReport);
+  const reporterIds = Array.from(new Set(reports.map((r) => r.reporterId).filter(Boolean)));
+  const reporterMap = buildReporterMap(await fetchReporters(reporterIds));
 
-  const reporterIds = Array.from(
-    new Set(reports.map((r) => r.reporterId).filter(Boolean))
-  );
-  const reporters = await listUsers(reporterIds);
-  const reporterMap = new Map(
-    reporters.map((r) => [r.id, r.fullName])
-  );
-
-  const contributingReports: IncidentReportListItem[] = reports.map(
-    (report) => ({
-      id: report.id,
-      reporterId: report.reporterId,
-      reporterName:
-        reporterMap.get(report.reporterId) ?? "Community Member",
-      incidentTitle: report.incidentTitle,
-      classifiedIncidentTitle: report.classifiedIncidentTitle,
-      incidentType: report.incidentType,
-      classifiedIncidentType: report.classifiedIncidentType,
-      description: report.description,
-      locationText: report.locationText,
-      latitude: report.latitude,
-      longitude: report.longitude,
-      mediaFilenames: report.mediaFilenames,
-      credibilityScore: report.credibilityScore,
-      severityLevel: report.severityLevel,
-      status: report.status,
-      spamFlagged: report.spamFlagged,
-      createdAt: report.createdAt.toISOString()
-    })
-  );
+  const contributingReports: IncidentReportListItem[] = reports.map((report) => ({
+    id: report.id,
+    reporterId: report.reporterId,
+    reporterName: reporterMap.get(report.reporterId) ?? "Community Member",
+    incidentTitle: report.incidentTitle,
+    classifiedIncidentTitle: report.classifiedIncidentTitle,
+    incidentType: report.incidentType,
+    classifiedIncidentType: report.classifiedIncidentType,
+    description: report.description,
+    locationText: report.locationText,
+    latitude: report.latitude,
+    longitude: report.longitude,
+    mediaFilenames: report.mediaFilenames,
+    credibilityScore: report.credibilityScore,
+    severityLevel: report.severityLevel,
+    status: report.status,
+    spamFlagged: report.spamFlagged,
+    createdAt: report.createdAt.toISOString()
+  }));
 
   let nearbyResources: ResourceSummary[] = [];
 
@@ -839,33 +769,13 @@ export async function getIncidentDetail(
       where: { status: { in: ["Available", "Low Stock"] } }
     });
 
-    nearbyResources = allResources
-      .map((r) => ({
-        id: r.id,
-        name: r.name,
-        category: r.category,
-        quantity: r.quantity,
-        unit: r.unit,
-        status: r.status,
-        address: r.address,
-        distanceKm:
-          r.latitude != null && r.longitude != null
-            ? haversineDistance(
-                crisisEvent.latitude!,
-                crisisEvent.longitude!,
-                r.latitude,
-                r.longitude
-              )
-            : undefined
-      }))
-      .filter((r) => r.distanceKm == null || r.distanceKm <= 10)
-      .sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999))
-      .slice(0, 5);
+    nearbyResources = attachDistances(
+      allResources,
+      crisisEvent.latitude,
+      crisisEvent.longitude,
+      DEFAULT_NEARBY_RADIUS_KM
+    );
   }
 
-  return {
-    crisisEvent,
-    contributingReports,
-    nearbyResources
-  };
+  return { crisisEvent, contributingReports, nearbyResources };
 }

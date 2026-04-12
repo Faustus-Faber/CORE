@@ -53,8 +53,8 @@ export function IncidentFeed({ events, loading, error }: IncidentFeedProps) {
       {events.map((event, index) => (
         <div
           key={event.id}
-          style={{ animationDelay: `${index * 60}ms` }}
-          className="animate-[slideUp_0.3s_ease-out_both]"
+          style={index < 10 ? { animationDelay: `${index * 60}ms` } : undefined}
+          className={index < 10 ? "animate-[slideUp_0.3s_ease-out_both]" : ""}
         >
           <IncidentCard event={event} />
         </div>

@@ -4,6 +4,7 @@ frontend/node_modules/
 backend/dist/
 frontend/dist/
 .agents/
+.claude/
 .env
 backend/.env
 frontend/.env

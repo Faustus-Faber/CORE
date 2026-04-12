@@ -7,37 +7,42 @@ import type { NextFunction, Request, Response } from "express";
 import {
   createIncidentReport,
   listIncidentReports,
-  getIncidentReportById
+  getIncidentReportById,
+  getMapIncidentReports
 } from "../services/reportService.js";
 import {
   validateReportListQueryInput,
   validateReportSubmissionInput
 } from "../utils/validation.js";
+import { objectIdHexPattern } from "../utils/incidentMapping.js";
 
-const objectIdHexPattern = /^[a-fA-F0-9]{24}$/;
+const UPLOADS_SUBDIR = path.join("uploads", "reports");
+const MAX_EXTENSION_LENGTH = 10;
 
-function mapFiles(request: Request) {
+function parseCoordinate(raw: unknown, min: number, max: number): number | null {
+  if (raw == null || raw === "") return null;
+  const parsed = typeof raw === "number" ? raw : parseFloat(String(raw));
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) return null;
+  return parsed;
+}
+
+function extractFiles(request: Request) {
   const filesByField = request.files as Record<string, Express.Multer.File[]> | undefined;
-  const mediaFiles = filesByField?.media ?? [];
-  const voiceFile = filesByField?.voiceNote?.[0];
-
-  return { mediaFiles, voiceFile };
+  return {
+    mediaFiles: filesByField?.media ?? [],
+    voiceFile: filesByField?.voiceNote?.[0]
+  };
 }
 
 function inferFileExtension(file: Express.Multer.File) {
   const nameExtension = path.extname(file.originalname).toLowerCase();
-  if (nameExtension && nameExtension.length <= 10) {
+  if (nameExtension && nameExtension.length <= MAX_EXTENSION_LENGTH) {
     return nameExtension;
   }
-
-  if (file.mimetype.startsWith("image/")) {
-    return `.${file.mimetype.slice("image/".length)}`;
+  const [category, subtype] = file.mimetype.split("/");
+  if ((category === "image" || category === "video") && subtype) {
+    return `.${subtype}`;
   }
-
-  if (file.mimetype.startsWith("video/")) {
-    return `.${file.mimetype.slice("video/".length)}`;
-  }
-
   return "";
 }
 
@@ -46,18 +51,15 @@ async function persistMediaFiles(files: Express.Multer.File[]) {
     return [];
   }
 
-  const uploadDirectory = path.resolve(process.cwd(), "uploads", "reports");
+  const uploadDirectory = path.resolve(process.cwd(), UPLOADS_SUBDIR);
   await mkdir(uploadDirectory, { recursive: true });
 
   return Promise.all(
     files.map(async (file) => {
-      const extension = inferFileExtension(file);
-      const filename = `${Date.now()}-${randomUUID()}${extension}`;
-      const targetPath = path.join(uploadDirectory, filename);
-      await writeFile(targetPath, file.buffer);
-
+      const filename = `${Date.now()}-${randomUUID()}${inferFileExtension(file)}`;
+      await writeFile(path.join(uploadDirectory, filename), file.buffer);
       return {
-        originalname: `/uploads/reports/${filename}`,
+        originalname: `/${UPLOADS_SUBDIR.replace(/\\/g, "/")}/${filename}`,
         mimetype: file.mimetype,
         size: file.size
       };
@@ -65,35 +67,42 @@ async function persistMediaFiles(files: Express.Multer.File[]) {
   );
 }
 
+function fileMeta(file: Express.Multer.File) {
+  return {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size
+  };
+}
+
+function requireUserId(request: Request, response: Response): string | null {
+  const userId = request.authUser?.userId;
+  if (!userId) {
+    response.status(401).json({ message: "Authentication required" });
+    return null;
+  }
+  return userId;
+}
+
 export async function createReport(
   request: Request,
   response: Response,
   _next: NextFunction
 ) {
-  const reporterId = request.authUser?.userId;
-  if (!reporterId) {
-    return response.status(401).json({ message: "Authentication required" });
-  }
+  const reporterId = requireUserId(request, response);
+  if (!reporterId) return;
 
-  const { mediaFiles, voiceFile } = mapFiles(request);
+  const { mediaFiles, voiceFile } = extractFiles(request);
+
   const payload = validateReportSubmissionInput({
     incidentTitle: String(request.body.incidentTitle ?? ""),
     description: String(request.body.description ?? ""),
     incidentType: String(request.body.incidentType ?? ""),
     locationText: String(request.body.locationText ?? ""),
-    mediaFiles: mediaFiles.map((file) => ({
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size
-    })),
-    voiceFile: voiceFile
-      ? {
-          originalname: voiceFile.originalname,
-          mimetype: voiceFile.mimetype,
-          size: voiceFile.size
-        }
-      : undefined
+    mediaFiles: mediaFiles.map(fileMeta),
+    voiceFile: voiceFile ? fileMeta(voiceFile) : undefined
   });
+
   const storedMediaFiles = await persistMediaFiles(mediaFiles);
 
   const report = await createIncidentReport({
@@ -102,8 +111,8 @@ export async function createReport(
     description: payload.description,
     incidentType: payload.incidentType,
     locationText: payload.locationText,
-    latitude: request.body.latitude ? parseFloat(request.body.latitude) : null,
-    longitude: request.body.longitude ? parseFloat(request.body.longitude) : null,
+    latitude: parseCoordinate(request.body.latitude, -90, 90),
+    longitude: parseCoordinate(request.body.longitude, -180, 180),
     mediaFiles: storedMediaFiles,
     voiceFile: voiceFile
       ? {
@@ -126,22 +135,25 @@ export async function listMyReports(
   response: Response,
   _next: NextFunction
 ) {
-  const reporterId = request.authUser?.userId;
-  if (!reporterId) {
-    return response.status(401).json({ message: "Authentication required" });
-  }
+  const reporterId = requireUserId(request, response);
+  if (!reporterId) return;
 
   const query = validateReportListQueryInput(request.query);
-  const reports = await listIncidentReports({
-    viewerId: reporterId,
-    scope: "mine",
-    search: query.search,
-    severity: query.severity,
-    sortBy: query.sortBy,
-    order: query.order,
-    page: query.page,
-    limit: query.limit
-  });
+  const reports = await listIncidentReports({ ...query, viewerId: reporterId, scope: "mine" });
+
+  return response.status(200).json({ reports });
+}
+
+export async function listReports(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const reporterId = requireUserId(request, response);
+  if (!reporterId) return;
+
+  const query = validateReportListQueryInput(request.query);
+  const reports = await listIncidentReports({ ...query, viewerId: reporterId, scope: "community" });
 
   return response.status(200).json({ reports });
 }
@@ -151,13 +163,10 @@ export async function getReportDetail(
   response: Response,
   _next: NextFunction
 ) {
-  const reportId = request.params.id;
-  const viewerId = request.authUser?.userId;
+  const viewerId = requireUserId(request, response);
+  if (!viewerId) return;
 
-  if (!viewerId) {
-    return response.status(401).json({ message: "Authentication required" });
-  }
-
+  const reportId = String(request.params.id);
   if (!objectIdHexPattern.test(reportId)) {
     return response.status(400).json({ message: "Invalid report ID" });
   }
@@ -170,55 +179,22 @@ export async function getReportDetail(
   }
 }
 
-export async function listReports(
-  request: Request,
-  response: Response,
-  _next: NextFunction
-) {
-  const reporterId = request.authUser?.userId;
-  if (!reporterId) {
-    return response.status(401).json({ message: "Authentication required" });
-  }
-
-  const query = validateReportListQueryInput(request.query);
-  const reports = await listIncidentReports({
-    viewerId: reporterId,
-    scope: "community",
-    search: query.search,
-    severity: query.severity,
-    sortBy: query.sortBy,
-    order: query.order,
-    page: query.page,
-    limit: query.limit
-  });
-
-  return response.status(200).json({ reports });
-}
-
-import { getMapIncidentReports } from "../services/reportService.js";
-
-export async function getMapReports(
-  request: Request,
-  response: Response
-) {
-  const viewerId = request.authUser?.userId;
-
-  if (!viewerId) {
-    return response.status(401).json({ message: "Authentication required" });
-  }
+export async function getMapReports(request: Request, response: Response) {
+  const viewerId = requireUserId(request, response);
+  if (!viewerId) return;
 
   const reports = await getMapIncidentReports(viewerId);
 
   return response.status(200).json(
-    reports.map((r) => ({
-      id: r.id,
-      title: r.classifiedIncidentTitle || r.incidentTitle,
-      type: r.classifiedIncidentType || r.incidentType,
-      severity: r.severityLevel,
-      latitude: r.latitude,
-      longitude: r.longitude,
-      description: r.description,
-      createdAt: r.createdAt
+    reports.map((report) => ({
+      id: report.id,
+      title: report.classifiedIncidentTitle || report.incidentTitle,
+      type: report.classifiedIncidentType || report.incidentType,
+      severity: report.severityLevel,
+      latitude: report.latitude,
+      longitude: report.longitude,
+      description: report.description,
+      createdAt: report.createdAt
     }))
   );
 }

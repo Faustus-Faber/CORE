@@ -1,61 +1,23 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
+
 import { getIncidentDetail } from "../services/api";
-import type { IncidentDetailResponse, ContributingReport, IncidentSeverity, CrisisEventStatus, IncidentType } from "../types";
+import {
+  getTypeIconPath,
+  severityBadgeClass,
+  timeAgo,
+  normalizeMediaUrl,
+  isImageFile
+} from "../utils/incident";
+import type { IncidentDetailResponse, ContributingReport, CrisisEventStatus } from "../types";
 
-const severityColorMap: Record<IncidentSeverity, string> = {
-  CRITICAL: "bg-red-100 text-red-800 ring-red-300",
-  HIGH: "bg-orange-100 text-orange-800 ring-orange-300",
-  MEDIUM: "bg-amber-100 text-amber-800 ring-amber-300",
-  LOW: "bg-emerald-100 text-emerald-800 ring-emerald-300"
-};
-
-const statusLabel: Record<CrisisEventStatus, string> = {
+const STATUS_LABEL: Record<CrisisEventStatus, string> = {
   ACTIVE: "Active",
   CONTAINED: "Contained",
   RESOLVED: "Resolved",
   CLOSED: "Closed"
 };
-
-const typeIcons: Record<IncidentType, string> = {
-  FLOOD: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
-  FIRE: "M12 23c-3.6 0-8-2.4-8-7.7 0-3.5 2.3-6.3 4.1-8.2.8-.9 1.5-1.6 1.9-2.3.4.7 1.1 1.4 1.9 2.3C13.7 9 16 11.8 16 15.3 16 20.6 15.6 23 12 23zm0-17.4c-.3.4-.7.8-1.1 1.3C9.3 8.6 7.3 11 7.3 15.3 7.3 19 10.2 20.7 12 20.7s4.7-1.7 4.7-5.4c0-4.3-2-6.7-3.6-8.4-.4-.5-.8-.9-1.1-1.3z",
-  EARTHQUAKE: "M2 18h2v2H2v-2zm4 0h2v2H6v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zM4 12l2 3h12l2-3H4zm16-6H4l-2 4h20l-2-4z",
-  BUILDING_COLLAPSE: "M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z",
-  ROAD_ACCIDENT: "M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z",
-  VIOLENCE: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z",
-  MEDICAL_EMERGENCY: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 11h-4v4h-4v-4H6v-4h4V6h4v4h4v4z",
-  OTHER: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
-};
-
-function timeAgo(dateStr: string): string {
-  const now = new Date();
-  const date = new Date(dateStr);
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHr = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString();
-}
-
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
-const API_ORIGIN = API_BASE.replace(/\/api\/?$/, "");
-
-function normalizeMediaUrl(filePath: string) {
-  if (!filePath) return "";
-  if (filePath.startsWith("http://") || filePath.startsWith("https://")) return filePath;
-  if (filePath.startsWith("/")) return `${API_ORIGIN}${filePath}`;
-  return `${API_ORIGIN}/uploads/reports/${filePath}`;
-}
-
-function isImageFile(filePath: string) {
-  return /\.(png|jpg|jpeg|webp|gif|bmp|svg)$/i.test(filePath);
-}
 
 function ContributingReportCard({ report }: { report: ContributingReport }) {
   const [expanded, setExpanded] = useState(false);
@@ -74,7 +36,7 @@ function ContributingReportCard({ report }: { report: ContributingReport }) {
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
               {report.classifiedIncidentType.replaceAll("_", " ")}
             </span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${severityColorMap[report.severityLevel]}`}>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${severityBadgeClass(report.severityLevel)}`}>
               {report.severityLevel}
             </span>
           </div>
@@ -113,7 +75,7 @@ function ContributingReportCard({ report }: { report: ContributingReport }) {
                   className="overflow-hidden rounded-md ring-1 ring-slate-200 transition hover:ring-tide"
                 >
                   {isImageFile(mediaPath) ? (
-                    <img src={mediaUrl} alt="" loading="lazy" className="h-24 w-full object-cover" />
+                    <img src={mediaUrl} alt={`Evidence from ${report.reporterName}`} loading="lazy" className="h-24 w-full object-cover" />
                   ) : (
                     <div className="flex h-24 items-center justify-center bg-slate-100 text-xs font-medium text-slate-600">
                       File Attachment
@@ -174,7 +136,7 @@ export function IncidentDetailPage() {
       <div className="rounded-xl bg-red-50 p-6 text-center ring-1 ring-red-200">
         <p className="text-sm font-semibold text-red-700">{error || "Incident not found"}</p>
         <Link to="/dashboard" className="mt-3 inline-block text-sm text-tide hover:underline">
-          ← Back to Dashboard
+          Back to Dashboard
         </Link>
       </div>
     );
@@ -197,17 +159,17 @@ export function IncidentDetailPage() {
         <div className="flex flex-wrap items-start gap-3">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
             <svg viewBox="0 0 24 24" className="h-7 w-7 fill-current">
-              <path d={typeIcons[crisisEvent.incidentType] ?? typeIcons.OTHER} />
+              <path d={getTypeIconPath(crisisEvent.incidentType)} />
             </svg>
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold text-ink">{crisisEvent.title}</h1>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${severityColorMap[crisisEvent.severityLevel]}`}>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${severityBadgeClass(crisisEvent.severityLevel)}`}>
                 {crisisEvent.severityLevel}
               </span>
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                {statusLabel[crisisEvent.status]}
+                {STATUS_LABEL[crisisEvent.status]}
               </span>
             </div>
             <p className="mt-2 text-sm text-slate-600">{crisisEvent.locationText}</p>

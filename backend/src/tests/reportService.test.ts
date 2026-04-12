@@ -188,7 +188,11 @@ describe("listIncidentReports", () => {
     }
   ];
 
-  const listReports = vi.fn().mockResolvedValue(sampleReports);
+  const listReports = vi.fn().mockImplementation(({ viewerId, scope }: { viewerId: string; scope: string }) => {
+    if (scope === "mine") return Promise.resolve(sampleReports.filter((r) => r.reporterId === viewerId));
+    if (scope === "community") return Promise.resolve(sampleReports.filter((r) => r.status === "PUBLISHED" && !r.spamFlagged));
+    return Promise.resolve(sampleReports.filter((r) => r.status === "UNDER_REVIEW"));
+  });
   const listUsers = vi.fn().mockResolvedValue([
     { id: "u1", fullName: "Alice Rahman" },
     { id: "u2", fullName: "Rafi Alam" }

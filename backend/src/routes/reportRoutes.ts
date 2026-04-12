@@ -1,19 +1,24 @@
 import multer from "multer";
 import { Router } from "express";
-import { getMapReports, getReportDetail } from "../controllers/reportController.js";
 
 import {
   createReport,
+  getMapReports,
+  getReportDetail,
   listMyReports,
   listReports
 } from "../controllers/reportController.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_MIME_PATTERN = /^(image|video|audio)\//;
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024
+  limits: { fileSize: MAX_FILE_SIZE_BYTES },
+  fileFilter: (_req, file, cb) => {
+    cb(null, ALLOWED_MIME_PATTERN.test(file.mimetype));
   }
 });
 

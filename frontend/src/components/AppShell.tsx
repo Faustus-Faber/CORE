@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
@@ -8,25 +8,17 @@ type NavItem = {
   label: string;
 };
 
-function buildNavItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
-  const commonItems: NavItem[] = [
+function buildPrimaryNav(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
+  const items: NavItem[] = [
     { to: "/dashboard", label: "Dashboard" },
     { to: "/map", label: "Map" },
     { to: "/volunteers", label: "Volunteers" },
-    { to: "/docs", label: "My Documents" },
-    { to: "/profile", label: "Profile" },
     { to: "/leaderboard", label: "Leaderboard" }
   ];
-
-  if (role === "VOLUNTEER") {
-    return [...commonItems, { to: "/tasks", label: "My Tasks" }];
-  }
-
   if (role === "ADMIN") {
-    return [...commonItems, { to: "/admin", label: "Admin Panel" }];
+    items.push({ to: "/admin", label: "Admin Panel" });
   }
-
-  return commonItems;
+  return items;
 }
 
 function buildReportMenuItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
@@ -34,12 +26,10 @@ function buildReportMenuItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
     { to: "/report-incident", label: "Submit Incident" },
     { to: "/reports/explore", label: "Browse Reports" }
   ];
-
   if (role === "ADMIN") {
     items.push({ to: "/reports/review", label: "Review Unpublished" });
     items.push({ to: "/reports/generate", label: "Generate Reports" });
   }
-
   return items;
 }
 
@@ -50,25 +40,183 @@ function buildResourceMenuItems(): NavItem[] {
   ];
 }
 
+function buildUserMenuItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
+  const items: NavItem[] = [
+    { to: "/profile", label: "Profile" },
+    { to: "/docs", label: "My Documents" }
+  ];
+  if (role === "VOLUNTEER") {
+    items.push({ to: "/tasks", label: "My Tasks" });
+  }
+  return items;
+}
+
+function useClickOutside(ref: React.RefObject<HTMLElement | null>, handler: () => void) {
+  useEffect(() => {
+    const listener = (e: MouseEvent) => {
+      if (!ref.current || ref.current.contains(e.target as Node)) return;
+      handler();
+    };
+    document.addEventListener("mousedown", listener);
+    return () => document.removeEventListener("mousedown", listener);
+  }, [ref, handler]);
+}
+
+function Dropdown({
+  label,
+  items,
+  isActive,
+  onNavigate
+}: {
+  label: string;
+  items: NavItem[];
+  isActive: boolean;
+  onNavigate?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+
+  useClickOutside(ref, () => setOpen(false));
+  useEffect(() => { setOpen(false); }, [location.pathname]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+          isActive
+            ? "bg-tide/10 text-tide"
+            : "text-slate-600 hover:bg-slate-100 hover:text-ink"
+        }`}
+      >
+        {label}
+        <svg className={`h-3.5 w-3.5 transition ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute left-0 z-50 mt-1 w-52 origin-top-left animate-[fadeIn_100ms_ease-out] rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+          {items.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              onClick={() => { setOpen(false); onNavigate?.(); }}
+              className={({ isActive: active }) =>
+                `block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  active
+                    ? "bg-tide/10 text-tide"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-ink"
+                }`
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserMenu({
+  userName,
+  userRole,
+  items,
+  isLoggingOut,
+  onLogout
+}: {
+  userName: string;
+  userRole: string;
+  items: NavItem[];
+  isLoggingOut: boolean;
+  onLogout: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+
+  useClickOutside(ref, () => setOpen(false));
+  useEffect(() => { setOpen(false); }, [location.pathname]);
+
+  const initials = (userName ?? "")
+    .split(" ")
+    .map(w => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "?";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 rounded-full border border-slate-200 py-1 pl-1 pr-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-tide text-xs font-bold text-white">
+          {initials}
+        </span>
+        <span className="hidden max-w-[100px] truncate sm:block">{userName.split(" ")[0]}</span>
+        <svg className={`h-3.5 w-3.5 text-slate-400 transition ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right animate-[fadeIn_100ms_ease-out] rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+          <div className="border-b border-slate-100 px-3 py-2.5">
+            <p className="text-sm font-semibold text-ink">{userName}</p>
+            <p className="text-xs text-slate-500">{userRole}</p>
+          </div>
+          <div className="py-1">
+            {items.map(item => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => setOpen(false)}
+                className={({ isActive }) =>
+                  `block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    isActive
+                      ? "bg-tide/10 text-tide"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-ink"
+                  }`
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
+          <div className="border-t border-slate-100 pt-1">
+            <button
+              type="button"
+              disabled={isLoggingOut}
+              onClick={() => { setOpen(false); onLogout(); }}
+              className="flex w-full items-center rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+            >
+              {isLoggingOut ? "Logging out..." : "Logout"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AppShell() {
   const { user, logoutUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [reportsMenuOpen, setReportsMenuOpen] = useState(false);
-  const [resourcesMenuOpen, setResourcesMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const navItems = user ? buildNavItems(user.role) : [];
+  const navItems = user ? buildPrimaryNav(user.role) : [];
   const reportMenuItems = user ? buildReportMenuItems(user.role) : [];
   const resourceMenuItems = buildResourceMenuItems();
+  const userMenuItems = user ? buildUserMenuItems(user.role) : [];
   const isReportRoute = location.pathname.startsWith("/report") || location.pathname.startsWith("/reports");
   const isResourceRoute = location.pathname.startsWith("/resources");
 
-  useEffect(() => {
-    setReportsMenuOpen(false);
-    setResourcesMenuOpen(false);
-  }, [location.pathname]);
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -80,191 +228,177 @@ export function AppShell() {
     }
   };
 
-  const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `rounded-md px-3 py-2 text-sm font-semibold transition ${
-      isActive ? "bg-tide text-white" : "text-ink hover:bg-white/60"
+  const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `rounded-lg px-3 py-2 text-sm font-medium transition ${
+      isActive
+        ? "bg-tide/10 text-tide"
+        : "text-slate-600 hover:bg-slate-100 hover:text-ink"
     }`;
 
+  const roleBadge = user?.role === "ADMIN" ? "Admin" : user?.role === "VOLUNTEER" ? "Volunteer" : "User";
+
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-canvas/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link to="/" className="text-lg font-bold tracking-tight text-ink">
+    <div className="min-h-screen bg-canvas">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-lg">
+        <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-2.5">
+          {/* Brand */}
+          <Link to="/" className="text-xl font-black tracking-tight text-ink">
             CORE
           </Link>
 
           {!user ? (
-            <nav className="hidden items-center gap-2 md:flex">
-              <NavLink to="/" className={linkClass}>
-                Home
-              </NavLink>
-              <NavLink to="/login" className={linkClass}>
-                Login
-              </NavLink>
-              <NavLink to="/signup" className={linkClass}>
+            <nav className="ml-auto flex items-center gap-1">
+              <NavLink to="/" end className={navLinkClass}>Home</NavLink>
+              <NavLink to="/login" className={navLinkClass}>Login</NavLink>
+              <NavLink
+                to="/signup"
+                className="rounded-lg bg-tide px-4 py-2 text-sm font-semibold text-white transition hover:bg-tide/90"
+              >
                 Sign Up
               </NavLink>
             </nav>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen((value) => !value);
-                  setReportsMenuOpen(false);
-                  setResourcesMenuOpen(false);
-                }}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium md:hidden"
-              >
-                Menu
-              </button>
-              <nav className="hidden items-center gap-1 md:flex">
-                {navItems.map((item) => (
-                  <NavLink key={item.to} to={item.to} className={linkClass}>
+              {/* Desktop nav — pushed to the right */}
+              <nav className="ml-auto hidden items-center gap-1 lg:flex">
+                {navItems.map(item => (
+                  <NavLink key={item.to} to={item.to} className={navLinkClass}>
                     {item.label}
                   </NavLink>
                 ))}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setReportsMenuOpen((value) => !value)}
-                    className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-                      isReportRoute
-                        ? "bg-tide text-white"
-                        : "text-ink hover:bg-white/60"
-                    }`}
-                  >
-                    Reports ▾
-                  </button>
-                  {reportsMenuOpen && (
-                    <div className="absolute left-0 z-50 mt-2 w-56 rounded-lg border border-slate-200 bg-white py-2 shadow-lg">
-                      {reportMenuItems.map((item) => (
-                        <NavLink
-                          key={item.to}
-                          to={item.to}
-                          onClick={() => setReportsMenuOpen(false)}
-                          className={({ isActive }) =>
-                            `block px-4 py-2 text-sm font-medium ${
-                              isActive
-                                ? "bg-tide text-white"
-                                : "text-slate-700 hover:bg-slate-50"
-                            }`
-                          }
-                        >
-                          {item.label}
-                        </NavLink>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setResourcesMenuOpen((value) => !value)}
-                    className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-                      isResourceRoute
-                        ? "bg-tide text-white"
-                        : "text-ink hover:bg-white/60"
-                    }`}
-                  >
-                    Resources ▾
-                  </button>
-                  {resourcesMenuOpen && (
-                    <div className="absolute left-0 z-50 mt-2 w-56 rounded-lg border border-slate-200 bg-white py-2 shadow-lg">
-                      {resourceMenuItems.map((item) => (
-                        <NavLink
-                          key={item.to}
-                          to={item.to}
-                          onClick={() => setResourcesMenuOpen(false)}
-                          className={({ isActive }) =>
-                            `block px-4 py-2 text-sm font-medium ${
-                              isActive
-                                ? "bg-tide text-white"
-                                : "text-slate-700 hover:bg-slate-50"
-                            }`
-                          }
-                        >
-                          {item.label}
-                        </NavLink>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="rounded-md px-3 py-2 text-sm font-semibold text-ink hover:bg-white/60"
-                >
-                  Notifications (3)
-                </button>
+                <Dropdown label="Reports" items={reportMenuItems} isActive={isReportRoute} />
+                <Dropdown label="Resources" items={resourceMenuItems} isActive={isResourceRoute} />
+                <span className="mx-1 h-5 w-px bg-slate-200" />
                 {user.role === "VOLUNTEER" && (
                   <button
                     type="button"
-                    className="rounded-md bg-ember px-3 py-2 text-sm font-semibold text-white"
+                    className="rounded-lg bg-ember/10 px-3 py-2 text-sm font-semibold text-ember transition hover:bg-ember/20"
                   >
                     Dispatch Alert
                   </button>
                 )}
-                <button
-                  type="button"
-                  disabled={isLoggingOut}
-                  onClick={() => void handleLogout()}
-                  className="rounded-md bg-ink px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {isLoggingOut ? "Logging out..." : "Logout"}
-                </button>
+                <UserMenu
+                  userName={user.fullName}
+                  userRole={roleBadge}
+                  items={userMenuItems}
+                  isLoggingOut={isLoggingOut}
+                  onLogout={() => void handleLogout()}
+                />
               </nav>
+
+              {/* Mobile hamburger */}
+              <button
+                type="button"
+                onClick={() => setMobileOpen(v => !v)}
+                className="ml-auto rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
+                aria-label="Toggle menu"
+              >
+                {mobileOpen ? (
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  </svg>
+                ) : (
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 5A.75.75 0 012.75 9h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 9.75zm0 5a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
             </>
           )}
         </div>
-        {menuOpen && user && (
-          <nav className="space-y-1 border-t border-slate-200 px-4 py-3 md:hidden">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={linkClass}
-                onClick={() => setMenuOpen(false)}
-              >
-                {item.label}
-              </NavLink>
-            ))}
-            <div className="mt-1 border-t border-slate-200 pt-2">
-              <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+
+        {/* Mobile menu */}
+        {mobileOpen && user && (
+          <nav className="animate-[fadeIn_150ms_ease-out] border-t border-slate-200/80 bg-white px-4 pb-4 pt-3 lg:hidden">
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-tide text-sm font-bold text-white">
+                {user.fullName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-ink">{user.fullName}</p>
+                <p className="text-xs text-slate-500">{roleBadge}</p>
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-0.5">
+              {navItems.map(item => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileOpen(false)}
+                  className={navLinkClass}
+                >
+                  <span className="block">{item.label}</span>
+                </NavLink>
+              ))}
+            </div>
+
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Reports
               </p>
-              {reportMenuItems.map((item) => (
+              {reportMenuItems.map(item => (
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  className={linkClass}
-                  onClick={() => setMenuOpen(false)}
+                  onClick={() => setMobileOpen(false)}
+                  className={navLinkClass}
                 >
-                  {item.label}
+                  <span className="block">{item.label}</span>
                 </NavLink>
               ))}
             </div>
-            <div className="mt-1 border-t border-slate-200 pt-2">
-              <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Resources
               </p>
-              {resourceMenuItems.map((item) => (
+              {resourceMenuItems.map(item => (
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  className={linkClass}
-                  onClick={() => setMenuOpen(false)}
+                  onClick={() => setMobileOpen(false)}
+                  className={navLinkClass}
                 >
-                  {item.label}
+                  <span className="block">{item.label}</span>
                 </NavLink>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => void handleLogout()}
-              className="mt-2 w-full rounded-md bg-ink px-3 py-2 text-left text-sm font-semibold text-white"
-            >
-              Logout
-            </button>
+
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Account
+              </p>
+              {userMenuItems.map(item => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileOpen(false)}
+                  className={navLinkClass}
+                >
+                  <span className="block">{item.label}</span>
+                </NavLink>
+              ))}
+            </div>
+
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              {user.role === "VOLUNTEER" && (
+                <button
+                  type="button"
+                  className="mb-2 w-full rounded-lg bg-ember/10 px-3 py-2.5 text-sm font-semibold text-ember"
+                >
+                  Dispatch Alert
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={isLoggingOut}
+                onClick={() => void handleLogout()}
+                className="w-full rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+              >
+                {isLoggingOut ? "Logging out..." : "Logout"}
+              </button>
+            </div>
           </nav>
         )}
       </header>

@@ -1,31 +1,17 @@
-import type { IncidentType, IncidentSeverity, DashboardSortBy, SortOrder, DashboardFeedFilters, DashboardTimeRange } from "../types";
+import { INCIDENT_TYPE_OPTIONS, SEVERITY_OPTIONS } from "../utils/incident";
+import type { IncidentType, IncidentSeverity, DashboardSortBy, DashboardFeedFilters, DashboardTimeRange } from "../types";
 
 type DashboardFiltersProps = {
   filters: DashboardFeedFilters;
   onChange: (filters: DashboardFeedFilters) => void;
 };
 
-const typeOptions: Array<{ value: IncidentType | "ALL"; label: string }> = [
+const TYPE_FILTER_OPTIONS: Array<{ value: IncidentType | "ALL"; label: string }> = [
   { value: "ALL", label: "All Types" },
-  { value: "FLOOD", label: "Flood" },
-  { value: "FIRE", label: "Fire" },
-  { value: "EARTHQUAKE", label: "Earthquake" },
-  { value: "BUILDING_COLLAPSE", label: "Building Collapse" },
-  { value: "ROAD_ACCIDENT", label: "Road Accident" },
-  { value: "VIOLENCE", label: "Violence" },
-  { value: "MEDICAL_EMERGENCY", label: "Medical Emergency" },
-  { value: "OTHER", label: "Other" }
+  ...INCIDENT_TYPE_OPTIONS
 ];
 
-const severityOptions: Array<{ value: IncidentSeverity | "ALL"; label: string }> = [
-  { value: "ALL", label: "All Severities" },
-  { value: "CRITICAL", label: "Critical" },
-  { value: "HIGH", label: "High" },
-  { value: "MEDIUM", label: "Medium" },
-  { value: "LOW", label: "Low" }
-];
-
-const timeRangeOptions: Array<{ value: number; label: string }> = [
+const TIME_RANGE_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 0, label: "All" },
   { value: 1, label: "1h" },
   { value: 6, label: "6h" },
@@ -33,7 +19,7 @@ const timeRangeOptions: Array<{ value: number; label: string }> = [
   { value: 168, label: "7d" }
 ];
 
-const sortOptions: Array<{ value: DashboardSortBy; label: string }> = [
+const SORT_OPTIONS: Array<{ value: DashboardSortBy; label: string }> = [
   { value: "mostRecent", label: "Most Recent" },
   { value: "highestSeverity", label: "Highest Severity" },
   { value: "mostReports", label: "Most Reports" }
@@ -44,39 +30,42 @@ export function DashboardFilters({ filters, onChange }: DashboardFiltersProps) {
     <section className="rounded-xl bg-white p-4 shadow-panel ring-1 ring-slate-200">
       <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Type</p>
+          <label htmlFor="filter-type" className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Type</label>
           <select
+            id="filter-type"
             value={filters.incidentType}
             onChange={(e) => onChange({ ...filters, incidentType: e.target.value as IncidentType | "ALL" })}
             className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-ink"
           >
-            {typeOptions.map((o) => (
+            {TYPE_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Severity</p>
+          <label htmlFor="filter-severity" className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Severity</label>
           <select
+            id="filter-severity"
             value={filters.severity}
             onChange={(e) => onChange({ ...filters, severity: e.target.value as IncidentSeverity | "ALL" })}
             className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-ink"
           >
-            {severityOptions.map((o) => (
+            {SEVERITY_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Sort</p>
+          <label htmlFor="filter-sort" className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Sort</label>
           <select
+            id="filter-sort"
             value={filters.sortBy}
             onChange={(e) => onChange({ ...filters, sortBy: e.target.value as DashboardSortBy })}
             className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-ink"
           >
-            {sortOptions.map((o) => (
+            {SORT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -86,7 +75,7 @@ export function DashboardFilters({ filters, onChange }: DashboardFiltersProps) {
       <div className="mt-3 border-t border-slate-100 pt-3">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Time Range</p>
         <div className="flex flex-wrap items-center gap-2">
-          {timeRangeOptions.map((o) => (
+          {TIME_RANGE_OPTIONS.map((o) => (
             <button
               key={o.value}
               type="button"

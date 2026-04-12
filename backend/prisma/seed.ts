@@ -9,7 +9,7 @@ import {
   IncidentStatus,
   CrisisEventStatus
 } from "@prisma/client";
-import * as bcrypt from "bcryptjs";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -660,9 +660,9 @@ async function main() {
 
   const f1 = await prisma.secureFolder.create({ data: { name: "মিরপুর বন্যা উদ্ধার সাক্ষ্য", description: "Photos and field notes from Mirpur Sections 10-12 flood rescue operations", crisisId: crisisEvents.ce0.id, ownerId: users.farhan.id } });
   await prisma.folderFile.createMany({ data: [
-    { folderId: f1.id, uploaderId: users.farhan.id, fileUrl: "/uploads/docs/mirpur_flood_rescue_boat.jpg", fileType: "image/jpeg", sizeBytes: 2458624, gpsLat: 23.8070, gpsLng: 90.3680 },
-    { folderId: f1.id, uploaderId: users.farhan.id, fileUrl: "/uploads/docs/mirpur_water_level_marker.jpg", fileType: "image/jpeg", sizeBytes: 3145728, gpsLat: 23.8085, gpsLng: 90.3695 },
-    { folderId: f1.id, uploaderId: users.rahim.id, fileUrl: "/uploads/docs/mirpur_rescue_video.mp4", fileType: "video/mp4", sizeBytes: 15728640, gpsLat: 23.8075, gpsLng: 90.3688 },
+    { folderId: f1.id, uploaderId: users.farhan.id, fileName: "mirpur_flood_rescue_boat.jpg", fileUrl: "/uploads/docs/mirpur_flood_rescue_boat.jpg", fileType: "image/jpeg", sizeBytes: 2458624, gpsLat: 23.8070, gpsLng: 90.3680 },
+    { folderId: f1.id, uploaderId: users.farhan.id, fileName: "mirpur_water_level_marker.jpg", fileUrl: "/uploads/docs/mirpur_water_level_marker.jpg", fileType: "image/jpeg", sizeBytes: 3145728, gpsLat: 23.8085, gpsLng: 90.3695 },
+    { folderId: f1.id, uploaderId: users.rahim.id, fileName: "mirpur_rescue_video.mp4", fileUrl: "/uploads/docs/mirpur_rescue_video.mp4", fileType: "video/mp4", sizeBytes: 15728640, gpsLat: 23.8075, gpsLng: 90.3688 },
   ]});
   fileCount += 3;
   await prisma.folderNote.createMany({ data: [
@@ -676,9 +676,9 @@ async function main() {
 
   const f2 = await prisma.secureFolder.create({ data: { name: "সদরঘাট ভবন ধস তদন্ত", description: "Structural assessment and rescue documentation for Sadarghat factory collapse", crisisId: crisisEvents.ce6.id, ownerId: users.arif.id } });
   await prisma.folderFile.createMany({ data: [
-    { folderId: f2.id, uploaderId: users.arif.id, fileUrl: "/uploads/docs/sadarghat_collapse_overview.jpg", fileType: "image/jpeg", sizeBytes: 4194304, gpsLat: 23.7080, gpsLng: 90.4050 },
-    { folderId: f2.id, uploaderId: users.arif.id, fileUrl: "/uploads/docs/sadarghat_rescue_team.jpg", fileType: "image/jpeg", sizeBytes: 2097152, gpsLat: 23.7082, gpsLng: 90.4048 },
-    { folderId: f2.id, uploaderId: users.israt.id, fileUrl: "/uploads/docs/sadarghat_structural_report.pdf", fileType: "application/pdf", sizeBytes: 1048576, gpsLat: 23.7080, gpsLng: 90.4050 },
+    { folderId: f2.id, uploaderId: users.arif.id, fileName: "sadarghat_collapse_overview.jpg", fileUrl: "/uploads/docs/sadarghat_collapse_overview.jpg", fileType: "image/jpeg", sizeBytes: 4194304, gpsLat: 23.7080, gpsLng: 90.4050 },
+    { folderId: f2.id, uploaderId: users.arif.id, fileName: "sadarghat_rescue_team.jpg", fileUrl: "/uploads/docs/sadarghat_rescue_team.jpg", fileType: "image/jpeg", sizeBytes: 2097152, gpsLat: 23.7082, gpsLng: 90.4048 },
+    { folderId: f2.id, uploaderId: users.israt.id, fileName: "sadarghat_structural_report.pdf", fileUrl: "/uploads/docs/sadarghat_structural_report.pdf", fileType: "application/pdf", sizeBytes: 1048576, gpsLat: 23.7080, gpsLng: 90.4050 },
   ]});
   fileCount += 3;
   await prisma.folderNote.createMany({ data: [
@@ -691,8 +691,8 @@ async function main() {
 
   const f3 = await prisma.secureFolder.create({ data: { name: "সিলেট বন্যা জরুরি নথি", description: "Flash flood rescue and relief documentation for Sylhet-Sunamganj region", crisisId: crisisEvents.ce2.id, ownerId: users.tanvir.id } });
   await prisma.folderFile.createMany({ data: [
-    { folderId: f3.id, uploaderId: users.tanvir.id, fileUrl: "/uploads/docs/sylhet_highway_flood.jpg", fileType: "image/jpeg", sizeBytes: 3500000, gpsLat: 24.9100, gpsLng: 91.8500 },
-    { folderId: f3.id, uploaderId: users.tanvir.id, fileUrl: "/uploads/docs/sylhet_air_rescue.jpg", fileType: "image/jpeg", sizeBytes: 2800000, gpsLat: 24.9050, gpsLng: 91.8550 },
+    { folderId: f3.id, uploaderId: users.tanvir.id, fileName: "sylhet_highway_flood.jpg", fileUrl: "/uploads/docs/sylhet_highway_flood.jpg", fileType: "image/jpeg", sizeBytes: 3500000, gpsLat: 24.9100, gpsLng: 91.8500 },
+    { folderId: f3.id, uploaderId: users.tanvir.id, fileName: "sylhet_air_rescue.jpg", fileUrl: "/uploads/docs/sylhet_air_rescue.jpg", fileType: "image/jpeg", sizeBytes: 2800000, gpsLat: 24.9050, gpsLng: 91.8550 },
   ]});
   fileCount += 2;
   await prisma.folderNote.create({ data: { folderId: f3.id, authorId: users.tanvir.id, content: "Army rescue team deployed via helicopter. 500 people airlifted from Sunamganj char areas. Communication lines restored in Zindabazar. Relief camp set up at MC College with capacity for 2000.", gpsLat: 24.8949, gpsLng: 91.8687 } });
@@ -700,8 +700,8 @@ async function main() {
 
   const f4 = await prisma.secureFolder.create({ data: { name: "স্বেচ্ছাসেবক প্রশিক্ষণ — এপ্রিল ২০২৬", description: "CPR, water rescue, and first aid training session documentation", ownerId: volunteers.ayesha.id } });
   await prisma.folderFile.createMany({ data: [
-    { folderId: f4.id, uploaderId: volunteers.ayesha.id, fileUrl: "/uploads/docs/training_cpr_session.jpg", fileType: "image/jpeg", sizeBytes: 1843200, gpsLat: 23.7937, gpsLng: 90.4066 },
-    { folderId: f4.id, uploaderId: volunteers.kamrul.id, fileUrl: "/uploads/docs/training_water_rescue.jpg", fileType: "image/jpeg", sizeBytes: 2200000, gpsLat: 23.7940, gpsLng: 90.4070 },
+    { folderId: f4.id, uploaderId: volunteers.ayesha.id, fileName: "training_cpr_session.jpg", fileUrl: "/uploads/docs/training_cpr_session.jpg", fileType: "image/jpeg", sizeBytes: 1843200, gpsLat: 23.7937, gpsLng: 90.4066 },
+    { folderId: f4.id, uploaderId: volunteers.kamrul.id, fileName: "training_water_rescue.jpg", fileUrl: "/uploads/docs/training_water_rescue.jpg", fileType: "image/jpeg", sizeBytes: 2200000, gpsLat: 23.7940, gpsLng: 90.4070 },
   ]});
   fileCount += 2;
   await prisma.folderNote.create({ data: { folderId: f4.id, authorId: volunteers.ayesha.id, content: "প্রশিক্ষণ সম্পন্ন: ২০ জন স্বেচ্ছাসেবক CPR, পানি উদ্ধার কৌশল, এবং প্রাথমিক চিকিৎসায় সার্টিফাইড। সময়কাল ৮ ঘন্টা। পরবর্তী সেশন মে ১৫ তারিখে নির্ধারিত।", gpsLat: 23.7937, gpsLng: 90.4066 } });
@@ -710,13 +710,13 @@ async function main() {
   linkCount++;
 
   const f5 = await prisma.secureFolder.create({ data: { name: "চট্টগ্রাম গার্মেন্টস অগ্নিকাণ্ড রিপোর্ট", description: "Investigation and safety audit documents for Agrabad factory fire", crisisId: crisisEvents.ce5.id, ownerId: users.polash.id } });
-  await prisma.folderFile.create({ data: { folderId: f5.id, uploaderId: users.polash.id, fileUrl: "/uploads/docs/agrabad_fire_investigation.pdf", fileType: "application/pdf", sizeBytes: 2500000, gpsLat: 22.3267, gpsLng: 91.8127 } });
+  await prisma.folderFile.create({ data: { folderId: f5.id, uploaderId: users.polash.id, fileName: "agrabad_fire_investigation.pdf", fileUrl: "/uploads/docs/agrabad_fire_investigation.pdf", fileType: "application/pdf", sizeBytes: 2500000, gpsLat: 22.3267, gpsLng: 91.8127 } });
   fileCount++;
   await prisma.folderNote.create({ data: { folderId: f5.id, authorId: users.polash.id, content: "BFSCD investigation report: Fire caused by electrical short circuit on 3rd floor wiring panel. Factory had expired fire safety certificate. All 1200 workers safely evacuated. 5 minor injuries. Factory sealed by DIFE.", gpsLat: 22.3267, gpsLng: 91.8127 } });
   noteCount++;
 
   const f6 = await prisma.secureFolder.create({ data: { name: "রামপুরা ডেঙ্গু প্রতিরোধ অভিযান", description: "Dengue outbreak response documentation for Rampura area", crisisId: crisisEvents.ce11.id, ownerId: users.salma.id } });
-  await prisma.folderFile.create({ data: { folderId: f6.id, uploaderId: users.salma.id, fileUrl: "/uploads/docs/rampura_fogging_schedule.pdf", fileType: "application/pdf", sizeBytes: 800000, gpsLat: 23.7635, gpsLng: 90.4251 } });
+  await prisma.folderFile.create({ data: { folderId: f6.id, uploaderId: users.salma.id, fileName: "rampura_fogging_schedule.pdf", fileUrl: "/uploads/docs/rampura_fogging_schedule.pdf", fileType: "application/pdf", sizeBytes: 800000, gpsLat: 23.7635, gpsLng: 90.4251 } });
   fileCount++;
   await prisma.folderNote.createMany({ data: [
     { folderId: f6.id, authorId: users.salma.id, content: "DGHS fogging campaign: Day 1 completed covering 12 wards. 45 breeding sites identified and destroyed. 200 mosquito nets distributed. Blood testing camp set up at Rampura Bazar.", gpsLat: 23.7635, gpsLng: 90.4251 },

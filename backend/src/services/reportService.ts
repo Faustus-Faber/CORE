@@ -309,7 +309,8 @@ export async function createIncidentReport(
     severityLevel,
     latitude: input.latitude ?? null,
     longitude: input.longitude ?? null,
-    reporterId: input.reporterId
+    reporterId: input.reporterId,
+    spamFlagged
   });
 
   return {
@@ -337,6 +338,7 @@ async function clusterReportAfterCreation(
     latitude: number | null;
     longitude: number | null;
     reporterId: string;
+    spamFlagged: boolean;
   }
 ) {
   if (process.env.VITEST === "true" || process.env.NODE_ENV === "test") {

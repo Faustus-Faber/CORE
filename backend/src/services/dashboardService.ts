@@ -435,8 +435,13 @@ export async function clusterReportIntoCrisisEvent(
     latitude: number | null;
     longitude: number | null;
     reporterId: string;
+    spamFlagged: boolean;
   }
 ): Promise<{ crisisEventId: string; isNew: boolean }> {
+  if (report.spamFlagged) {
+    return { crisisEventId: "spam-skipped", isNew: false };
+  }
+
   const activeEvents = await prisma.crisisEvent.findMany({
     where: { status: { in: ACTIVE_STATUSES } },
     orderBy: { createdAt: "desc" }

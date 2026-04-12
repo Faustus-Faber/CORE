@@ -100,6 +100,16 @@ CORE enables communities to coordinate emergency response efforts through real-t
 - Sorting: nearest first, highest rated, alphabetical
 - Detailed volunteer profile with reviews, trust rating, and flag warnings
 
+### ✅ Module 2, Feature 4: Visual Evidence Gallery (Complete)
+- Social-media-style evidence feed with images and videos from crisis zones
+- Media post creation with title, description, location, and GPS coordinates
+- Like, comment, and share functionality with optimistic UI updates
+- Admin verification badge for trusted evidence posts
+- Flag system for community moderation with reason prompts
+- Filter by all/verified posts, sort by newest/oldest
+- Responsive modal viewer for full media detail view
+- Owner-only post editing and deletion
+
 ---
 
 ## Tech Stack
@@ -351,33 +361,35 @@ if ($conn5173) { Stop-Process -Id $conn5173.OwningProcess -Force }
 
 After running `npm run seed`, the following accounts are available:
 
-### Administrator
+### Administrators
 
-| Credential | Value |
-|------------|-------|
-| Email | `admin@core.local` |
-| Phone | `+8801700000000` |
-| Password | `Admin@12345` |
-| Access | Full admin privileges |
+| Email | Password | Access |
+|-------|----------|--------|
+| `admin@core.local` | `Admin@12345` | Full admin privileges |
+| `mizan@core.local` | `Admin@12345` | Full admin privileges |
 
 ### Standard Users (Password: `User@12345`)
 
 | Email | Purpose |
 |-------|---------|
-| `alice@core.local` | Trusted reviewer (60-day account) |
-| `bob@core.local` | Trusted reviewer (60-day account) |
-| `carol@core.local` | Trusted reviewer (60-day account) |
-| `frank@core.local` | Fraud testing (<24hr account) |
-| `grace@core.local` | Active emergency reporter |
+| `farhan@core.local` | Demo account (trusted reviewer) |
+| `babul@core.local` | New account (<1 day, fraud flag trigger) |
+| *(33 additional users)* | Various test scenarios |
 
 ### Volunteers (Password: `Volunteer@12345`)
 
 | Email | Status | Description |
 |-------|--------|-------------|
-| `sarah@core.local` | ✅ Good | 5★ rating, positive reviews |
-| `mike@core.local` | ⚠️ Flagged | Low average rating (1.6★) |
-| `tom@core.local` | ⚠️ Flagged | Fraud keywords detected |
-| `emma@core.local` | ✅ Active | No reviews yet |
+| `ayesha.vol@core.local` | ✅ Exemplary | 4.6★ rating, 8 reviews |
+| `kamrul.vol@core.local` | ✅ Solid | 4.0★ rating, 6 reviews |
+| `rashida.vol@core.local` | ✅ Good | 4.3★ rating, 7 reviews |
+| `farzana.vol@core.local` | ✅ Excellent | 4.5★ rating, 6 reviews |
+| `masud.vol@core.local` | ✅ Good | 4.2★ rating, 5 reviews |
+| `billal.vol@core.local` | ⚠️ Flagged | 1.5★ avg, low-rating flag |
+| `sohel.vol@core.local` | ⚠️ Flagged | 67% fraud keywords |
+| `alamgir.vol@core.local` | ⚠️ Flagged | Negative trend in 30d |
+| `munira.vol@core.local` | 🆕 Fresh | Zero reviews yet |
+| *(3 additional volunteers)* | Various test scenarios |
 
 ---
 
@@ -452,6 +464,26 @@ After running `npm run seed`, the following accounts are available:
    - View: Resource markers
    - Click: Info window with details
 
+### Visual Evidence Gallery
+
+1. **Create Evidence Post:**
+   - Login: `admin@core.local` / `Admin@12345` or any volunteer account
+   - Navigate: Gallery (`/gallery`)
+   - Fill: Title, description, location, media type (IMAGE/VIDEO)
+   - Attach: Media files (images or videos)
+   - Submit → Post appears in feed (auto-verified for admins)
+
+2. **Interact with Posts:**
+   - Like: Click like to toggle (optimistic UI)
+   - Comment: Add comments visible in post modal
+   - Share: Uses Web Share API or copies link to clipboard
+   - Verify: Admin can verify unverified posts
+   - Flag: Report inappropriate/fake posts with reason prompt
+
+3. **Filter and Sort:**
+   - Filter: All posts / Verified only
+   - Sort: Newest first / Oldest first
+
 ---
 
 ## API Endpoints
@@ -507,6 +539,18 @@ After running `npm run seed`, the following accounts are available:
 | GET | `/api/dashboard/feed` | Get clustered incident feed with filters |
 | GET | `/api/dashboard/sitrep` | Get AI-generated Situation Report |
 | GET | `/api/dashboard/incidents/:id` | Get incident detail with contributing reports |
+
+### Evidence Gallery
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/evidence` | List evidence posts (filter: verified, sort: newest/oldest) |
+| POST | `/api/evidence` | Create evidence post with media files |
+| PATCH | `/api/evidence/:id` | Update post (owner only) |
+| DELETE | `/api/evidence/:id` | Delete post (owner only) |
+| POST | `/api/evidence/:id/like` | Toggle like |
+| POST | `/api/evidence/:id/comment` | Add comment |
+| POST | `/api/evidence/:id/verify` | Verify post (Admin only) |
+| POST | `/api/evidence/:id/flag` | Flag post for moderation |
 
 ### Admin
 | Method | Endpoint | Description |
@@ -616,7 +660,7 @@ cd frontend && npm run build
 - [x] Feature 1: Real-Time Dashboard with AI duplicate clustering
 - [ ] Feature 2: Interactive Crisis Map (enhanced)
 - [x] Feature 3: Volunteer Directory Search
-- [ ] Feature 4: Visual Evidence Gallery
+- [x] Feature 4: Visual Evidence Gallery
 
 ### 📋 Module 3 (Planned)
 - [ ] Live Crisis Updates

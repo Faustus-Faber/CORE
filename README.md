@@ -308,7 +308,7 @@ AI_REQUEST_TIMEOUT_MS=15000
 Create `frontend/.env`:
 
 ```env
-VITE_API_URL=http://localhost:5000/api
+VITE_API_URL=http://localhost:4000/api
 VITE_GOOGLE_MAPS_API_KEY=your-google-maps-api-key
 ```
 
@@ -325,7 +325,7 @@ VITE_GOOGLE_MAPS_API_KEY=your-google-maps-api-key
 cd backend
 npm run dev
 ```
-Backend runs on: `http://localhost:5000`
+Backend runs on: `http://localhost:4000`
 
 **Terminal 2 - Frontend:**
 ```powershell
@@ -339,8 +339,8 @@ Frontend runs on: `http://localhost:5173`
 If ports are occupied:
 
 ```powershell
-$conn5000 = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue
-if ($conn5000) { Stop-Process -Id $conn5000.OwningProcess -Force }
+$conn4000 = Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue
+if ($conn4000) { Stop-Process -Id $conn4000.OwningProcess -Force }
 
 $conn5173 = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue
 if ($conn5173) { Stop-Process -Id $conn5173.OwningProcess -Force }
@@ -351,9 +351,9 @@ if ($conn5173) { Stop-Process -Id $conn5173.OwningProcess -Force }
 | Service | URL | Description |
 |---------|-----|-------------|
 | Frontend | http://localhost:5173 | Main application |
-| Backend API | http://localhost:5000/api | REST API |
-| Health Check | http://localhost:5000/api/health | API status |
-| Static Files | http://localhost:5000/uploads/ | Uploaded media |
+| Backend API | http://localhost:4000/api | REST API |
+| Health Check | http://localhost:4000/api/health | API status |
+| Static Files | http://localhost:4000/uploads/ | Uploaded media |
 
 ---
 

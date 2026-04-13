@@ -15,7 +15,7 @@ import type {
 } from "../types";
 import { buildEmergencyReportFormData } from "./reportPayload";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
 
 type RequestOptions = {
   method?: string;

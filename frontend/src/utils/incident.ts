@@ -89,7 +89,7 @@ export function timeAgo(dateInput: string | Date): string {
   return date.toLocaleDateString();
 }
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
 const API_ORIGIN = API_BASE.replace(/\/api\/?$/, "");
 
 export function normalizeMediaUrl(filePath: string): string {

@@ -103,5 +103,9 @@ export const docService = {
         return request(`/docs/${folderId}/pin`, {
             method: 'POST'
         });
+    },
+
+    getSharedFolder: async (token: string): Promise<SecureFolder> => {
+        return request(`/docs/shared/${token}`);
     }
 };

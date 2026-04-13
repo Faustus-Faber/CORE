@@ -80,7 +80,8 @@ export default function AddResourcePage() {
 
     const token = localStorage.getItem("token");
 
-    const res = await fetch("http://localhost:5000/api/resources/add", {
+    const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
+          const res = await fetch(`${API_BASE}/resources/add`, {
       method: "POST",
       body: data,
       headers: {

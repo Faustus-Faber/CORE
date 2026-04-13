@@ -168,6 +168,11 @@ export interface SecureFolder {
   description?: string | null;
   crisisId?: string | null;
   ownerId: string;
+  owner?: {
+    id: string;
+    fullName: string;
+    email?: string;
+  };
   isDeleted: boolean;
   isPinned: boolean;
   deletedAt?: string | null;

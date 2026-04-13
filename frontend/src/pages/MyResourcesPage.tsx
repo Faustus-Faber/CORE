@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 
-const API_URL = "http://localhost:5000";
+const API_BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:4000/api").replace("/api", "");
+const API_URL = `${API_BASE}/api`;
 
 interface Resource {
   id: string;
@@ -47,7 +48,7 @@ export default function MyResourcesPage() {
       if (!token) return;
 
       try {
-        const res = await fetch("http://localhost:5000/api/resources/my", {
+        const res = await fetch(`${API_URL}/resources/my`, {
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -77,7 +78,7 @@ export default function MyResourcesPage() {
     if (!editingResource) return;
 
     const token = localStorage.getItem("token");
-    const res = await fetch(`http://localhost:5000/api/resources/update/${editingResource.id}`, {
+    const res = await fetch(`${API_URL}/resources/update/${editingResource.id}`, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -100,7 +101,7 @@ export default function MyResourcesPage() {
 
   const handleDeactivate = async (id: string) => {
     const token = localStorage.getItem("token");
-    const res = await fetch(`http://localhost:5000/api/resources/deactivate/${id}`, {
+    const res = await fetch(`${API_URL}/resources/deactivate/${id}`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -118,7 +119,7 @@ export default function MyResourcesPage() {
     if (!confirm("Are you sure you want to delete this resource?")) return;
 
     const token = localStorage.getItem("token");
-    const res = await fetch(`http://localhost:5000/api/resources/delete/${id}`, {
+    const res = await fetch(`${API_URL}/resources/delete/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` }
     });

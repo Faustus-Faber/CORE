@@ -6,7 +6,10 @@ import { upload } from "../middleware/upload.js"; // Import your multer config
 
 export const docRoutes = Router();
 
-// All routes require authentication
+// Public routes
+docRoutes.get("/shared/:token", asyncHandler(docController.getSharedFolder));
+
+// All other routes require authentication
 docRoutes.use(requireAuth);
 
 // Folders

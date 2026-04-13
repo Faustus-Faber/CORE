@@ -47,7 +47,8 @@ export default function ResourceMap() {
 
   
   useEffect(() => {
-    fetch("http://localhost:5000/api/resources/all")
+    const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
+        fetch(`${API_BASE}/resources/all`)
       .then((res) => res.json())
       .then((data) => setResources(data))
       .catch((err) => console.error("Failed to fetch resources:", err));
@@ -57,7 +58,8 @@ export default function ResourceMap() {
   const fetchIncidents = () => {
     const token = localStorage.getItem("token");
 
-    fetch("http://localhost:5000/api/reports/map", {
+    const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
+        fetch(`${API_BASE}/reports/map`, {
       headers: {
         Authorization: `Bearer ${token}`
       }

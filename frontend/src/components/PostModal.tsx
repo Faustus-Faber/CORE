@@ -11,7 +11,7 @@ interface PostModalProps {
   onFlag: (id: string) => void;
 }
 
-const apiBaseUrl = "http://localhost:5000";
+const apiBaseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace("/api", "") : "http://localhost:4000";
 
 export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFlag }: PostModalProps) {
   return (

@@ -70,10 +70,12 @@ export async function shareFolder(req: Request, res: Response) {
 
     const tokenData = await docService.generateShareLink(userId, folderId, Number(expiresInHours));
 
-    const baseUrl = process.env.CORS_ORIGIN || "http://localhost:5173";
+    // Determine the base URL: prioritize Request Header 'origin', fallback to CORS_ORIGIN, then default
+    const origin = req.headers.origin || process.env.CORS_ORIGIN || "http://localhost:5173";
+    
     res.json({
-        shareUrl: `${baseUrl}/shared/${tokenData.token}`, // FIXED: Removed "share" prefix
-        expiresAt: tokenData.expiresAt                    // FIXED: Removed "share" prefix
+        shareUrl: `${origin}/shared/${tokenData.token}`, 
+        expiresAt: tokenData.expiresAt                    
     });
 }
 

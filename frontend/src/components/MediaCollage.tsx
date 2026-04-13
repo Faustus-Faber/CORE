@@ -5,7 +5,7 @@ interface MediaCollageProps {
   onClick: () => void;
 }
 
-const apiBaseUrl = "http://localhost:5000";
+const apiBaseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace("/api", "") : "http://localhost:4000";
 
 export function MediaCollage({ post, onClick }: MediaCollageProps) {
   const urls = post.mediaUrls;

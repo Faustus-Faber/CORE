@@ -60,7 +60,7 @@ export async function getFolderDetails(ownerId: string, folderId: string) {
                 take: 1
             },
             // SRS requirement: Show Linked Crisis name if possible
-            owner: { select: { fullName: true } }
+            owner: { select: { id: true, fullName: true, email: true } }
         }
     });
 
@@ -110,27 +110,36 @@ export async function softDeleteFolder(ownerId: string, folderId: string) {
 
 export async function getFolderByToken(token: string) {
     const link = await prisma.shareLink.findFirst({
-        where: { 
-            token, 
-            isRevoked: false,
-            OR: [
-                { expiresAt: null },
-                { expiresAt: { gt: new Date() } }
-            ]
-        },
+        where: { token },
         include: {
             folder: {
                 include: {
                     files: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
                     notes: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
-                    owner: { select: { fullName: true } }
+                    owner: { select: { id: true, fullName: true, email: true } }
                 }
             }
         }
     });
 
-    if (!link || link.folder.isDeleted) {
-        throw new Error("Invalid or expired share link");
+    if (!link) {
+        console.error(`[SHARE_LINK] Link not found for token: ${token}`);
+        throw new Error("Shared link not found");
+    }
+
+    if (link.isRevoked) {
+        console.error(`[SHARE_LINK] Link revoked for token: ${token}`);
+        throw new Error("Shared link has been revoked");
+    }
+
+    if (link.expiresAt && link.expiresAt < new Date()) {
+        console.error(`[SHARE_LINK] Link expired for token: ${token}. Expired at: ${link.expiresAt}`);
+        throw new Error("Shared link has expired");
+    }
+
+    if (!link.folder || link.folder.isDeleted) {
+        console.error(`[SHARE_LINK] Folder missing or deleted for token: ${token}`);
+        throw new Error("The shared folder no longer exists");
     }
 
     return link.folder;

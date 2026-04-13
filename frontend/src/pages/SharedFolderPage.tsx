@@ -91,7 +91,7 @@ export function SharedFolderPage() {
                     viewMode={viewMode}
                     setViewMode={setViewMode}
                     uploading={false}
-                    fileInputRef={null as any}
+                    fileInputRef={{ current: null }}
                     handleFileUpload={() => {}}
                     handleDeleteFile={() => {}}
                     editingFileId={null}

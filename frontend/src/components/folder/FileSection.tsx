@@ -6,7 +6,7 @@ interface FileSectionProps {
     viewMode: 'grid' | 'list';
     setViewMode: (mode: 'grid' | 'list') => void;
     uploading: boolean;
-    fileInputRef: React.RefObject<HTMLInputElement>;
+    fileInputRef: React.RefObject<HTMLInputElement | null>;
     handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     handleDeleteFile: (fileId: string) => void;
     editingFileId: string | null;

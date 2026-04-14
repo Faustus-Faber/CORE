@@ -1,5 +1,10 @@
 import { env } from "../config/env.js";
 
+const OPEN_TAG = "<" + "think" + "ing>";
+const CLOSE_TAG = "</" + "think" + "ing>";
+const OPEN_TAG_SHORT = "<" + "think" + ">";
+const CLOSE_TAG_SHORT = "</" + "think" + ">";
+
 export async function generateText(prompt: string): Promise<string> {
   const response = await fetch(`${env.groqBaseUrl}/chat/completions`, {
     method: "POST",
@@ -29,10 +34,39 @@ export async function generateText(prompt: string): Promise<string> {
 }
 
 function stripThinkingTags(text: string): string {
-  return text
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/<think>[\s\S]*?<\/thinking>/gi, "")
-    .replace(/<think>[\s\S]*$/gi, "")
-    .replace(/think_tag[\s\S]*?<\/think_tag>/gi, "")
-    .trim();
+  let result = text;
+
+  const startIdx = result.indexOf(OPEN_TAG);
+  if (startIdx !== -1) {
+    let closeIdx = result.indexOf(CLOSE_TAG, startIdx + OPEN_TAG.length);
+    if (closeIdx === -1) {
+      closeIdx = result.indexOf(CLOSE_TAG_SHORT, startIdx + OPEN_TAG.length);
+    }
+    if (closeIdx !== -1) {
+      const endLen = closeIdx !== -1 && result.startsWith(CLOSE_TAG, closeIdx)
+        ? CLOSE_TAG.length
+        : CLOSE_TAG_SHORT.length;
+      result = result.slice(0, startIdx) + result.slice(closeIdx + endLen);
+    } else {
+      result = result.slice(0, startIdx);
+    }
+  }
+
+  const startIdx2 = result.indexOf(OPEN_TAG_SHORT);
+  if (startIdx2 !== -1) {
+    let closeIdx2 = result.indexOf(CLOSE_TAG_SHORT, startIdx2 + OPEN_TAG_SHORT.length);
+    if (closeIdx2 === -1) {
+      closeIdx2 = result.indexOf(CLOSE_TAG, startIdx2 + OPEN_TAG_SHORT.length);
+    }
+    if (closeIdx2 !== -1) {
+      const endLen = result.startsWith(CLOSE_TAG, closeIdx2)
+        ? CLOSE_TAG.length
+        : CLOSE_TAG_SHORT.length;
+      result = result.slice(0, startIdx2) + result.slice(closeIdx2 + endLen);
+    } else {
+      result = result.slice(0, startIdx2);
+    }
+  }
+
+  return result.trim();
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import LocationPicker from "../components/LocationPicker";
+import { addResource } from "../services/api";
 
 interface ResourceForm {
   name: string;
@@ -70,31 +71,26 @@ export default function AddResourcePage() {
       return;
     }
 
-    const data = new FormData();
-
-    Object.entries(form).forEach(([key, value]) =>
-      data.append(key, value?.toString() || "")
-    );
-
-    photos.forEach((file) => data.append("photos", file));
-
-    const token = localStorage.getItem("token");
-
-    const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
-          const res = await fetch(`${API_BASE}/resources/add`, {
-      method: "POST",
-      body: data,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (res.ok) {
+    try {
+      await addResource({
+        name: form.name,
+        category: form.category,
+        quantity: form.quantity,
+        unit: form.unit,
+        condition: form.condition,
+        address: form.address,
+        latitude: form.latitude,
+        longitude: form.longitude,
+        availabilityStart: form.availabilityStart,
+        availabilityEnd: form.availabilityEnd,
+        contactPreference: form.contactPreference,
+        notes: form.notes || undefined,
+        photos: photos
+      });
       alert("Resource added successfully!");
       navigate("/resources/my");
-    } else {
-      const err = await res.json();
-      alert("Error adding resource: " + err.error);
+    } catch (err: any) {
+      alert("Error adding resource: " + (err.message || "Unknown error"));
     }
   };
 

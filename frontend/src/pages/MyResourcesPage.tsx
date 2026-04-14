@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "../context/AuthContext";
-
-const API_BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:4000/api").replace("/api", "");
-const API_URL = `${API_BASE}/api`;
+import { getMyResources, updateResource, deactivateResource as deactivateResourceApi, deleteResource as deleteResourceApi } from "../services/api";
 
 interface Resource {
   id: string;
@@ -40,27 +37,11 @@ export default function MyResourcesPage() {
     status: "Available"
   });
   const [showEditModal, setShowEditModal] = useState(false);
-  const { user } = useAuth();
 
   useEffect(() => {
-    const fetchResources = async () => {
-      const token = localStorage.getItem("token");
-      if (!token) return;
-
-      try {
-        const res = await fetch(`${API_URL}/resources/my`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-        const data = await res.json();
-        setResources(data);
-      } catch (err) {
-        console.error("Failed to fetch resources:", err);
-      }
-    };
-
-    void fetchResources();
+    getMyResources()
+      .then((data) => setResources(data))
+      .catch((err) => console.error("Failed to fetch resources:", err));
   }, []);
 
   const handleEditClick = (resource: Resource) => {
@@ -77,59 +58,40 @@ export default function MyResourcesPage() {
   const handleSaveEdit = async () => {
     if (!editingResource) return;
 
-    const token = localStorage.getItem("token");
-    const res = await fetch(`${API_URL}/resources/update/${editingResource.id}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(editForm)
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      setResources(resources.map(r => r.id === editingResource.id ? data.resource : r));
+    try {
+      const data = await updateResource(editingResource.id, editForm);
+      setResources((prev) =>
+        prev.map((r) =>
+          r.id === editingResource.id ? { ...r, ...data.resource } : r
+        )
+      );
       setShowEditModal(false);
       setEditingResource(null);
       alert("Resource updated successfully!");
-    } else {
-      const err = await res.json();
-      alert("Error updating resource: " + (err.error || "Unknown error"));
+    } catch (err: any) {
+      alert("Error updating resource: " + (err.message || "Unknown error"));
     }
   };
 
   const handleDeactivate = async (id: string) => {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`${API_URL}/resources/deactivate/${id}`, {
-      method: "PATCH",
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    if (res.ok) {
+    try {
+      await deactivateResourceApi(id);
       setResources(resources.map(r => r.id === id ? { ...r, status: "Unavailable" } : r));
       alert("Resource deactivated!");
-    } else {
-      const err = await res.json();
-      alert("Error deactivating resource: " + err.error);
+    } catch (err: any) {
+      alert("Error deactivating resource: " + (err.message || "Unknown error"));
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this resource?")) return;
 
-    const token = localStorage.getItem("token");
-    const res = await fetch(`${API_URL}/resources/delete/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    if (res.ok) {
+    try {
+      await deleteResourceApi(id);
       setResources(resources.filter(r => r.id !== id));
       alert("Resource deleted successfully!");
-    } else {
-      const err = await res.json();
-      alert("Error deleting resource: " + err.error);
+    } catch (err: any) {
+      alert("Error deleting resource: " + (err.message || "Unknown error"));
     }
   };
 
@@ -190,17 +152,22 @@ export default function MyResourcesPage() {
 
             {r.photos && r.photos.length > 0 && (
               <div className="mt-2 flex gap-2 overflow-x-auto">
-                {r.photos.map((photo, i) => (
-                  <img
-                    key={i}
-                    src={`${API_URL}/${photo}`}
-                    alt={`Resource ${r.name} ${i + 1}`}
-                    className="h-24 w-24 object-cover rounded"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "https://via.placeholder.com/96?text=No+Image";
-                    }}
-                  />
-                ))}
+                {r.photos.map((photo, i) => {
+                  const photoUrl = photo.startsWith("http")
+                    ? photo
+                    : `${import.meta.env.VITE_API_URL?.replace("/api", "")}/${photo}`;
+                  return (
+                    <img
+                      key={i}
+                      src={photoUrl}
+                      alt={`Resource ${r.name} ${i + 1}`}
+                      className="h-24 w-24 object-cover rounded"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "https://via.placeholder.com/96?text=No+Image";
+                      }}
+                    />
+                  );
+                })}
               </div>
             )}
 

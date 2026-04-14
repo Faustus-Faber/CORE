@@ -92,6 +92,9 @@ async function main() {
   await prisma.secureFolder.deleteMany();
   await prisma.crisisEventReport.deleteMany();
   await prisma.crisisEvent.deleteMany();
+  await prisma.like.deleteMany();
+  await prisma.comment.deleteMany();
+  await prisma.evidencePost.deleteMany();
   await prisma.review.deleteMany();
   await prisma.incidentReport.deleteMany();
   await prisma.resource.deleteMany();

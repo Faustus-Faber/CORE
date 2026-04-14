@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { GoogleMap, Marker, InfoWindow, useLoadScript } from "@react-google-maps/api";
 import { MarkerClusterer } from "@react-google-maps/api";
 import { Autocomplete } from "@react-google-maps/api";
+import { getAllResources, getMapReports } from "../services/api";
+
 interface Resource {
   id: string;
   name: string;
@@ -18,17 +20,20 @@ interface Incident {
   id: string;
   title: string;
   type: string;
-  severity: "Critical" | "High" | "Medium" | "Low";
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   latitude: number;
   longitude: number;
   description?: string;
   createdAt?: string;
 }
+
+const MAP_LIBRARIES = ["places"] as never[];
+
 export default function ResourceMap() {
   const { isLoaded } = useLoadScript({
-  googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-  libraries: ["places"]
-});
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    libraries: MAP_LIBRARIES
+  });
 
   const [resources, setResources] = useState<Resource[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -37,100 +42,83 @@ export default function ResourceMap() {
   const [showIncidents, setShowIncidents] = useState(true);
   const [showResources, setShowResources] = useState(true);
   const [autocomplete, setAutocomplete] =
-  useState<google.maps.places.Autocomplete | null>(null);
+    useState<google.maps.places.Autocomplete | null>(null);
   const [severityFilter, setSeverityFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [center, setCenter] = useState({
-  lat: 23.685,
-  lng: 90.356
-});
+    lat: 23.685,
+    lng: 90.356
+  });
 
-  
   useEffect(() => {
-    const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
-        fetch(`${API_BASE}/resources/all`)
-      .then((res) => res.json())
+    getAllResources()
       .then((data) => setResources(data))
       .catch((err) => console.error("Failed to fetch resources:", err));
   }, []);
 
   useEffect(() => {
-  const fetchIncidents = () => {
-    const token = localStorage.getItem("token");
+    const fetchIncidents = () => {
+      getMapReports()
+        .then((data) => {
+          const reports = (data ?? []).map((r) => ({
+            ...r,
+            severity: r.severity.toUpperCase() as Incident["severity"]
+          }));
+          setIncidents(reports);
+        })
+        .catch((err) => console.error("Failed to fetch incidents:", err));
+    };
 
-    const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
-        fetch(`${API_BASE}/reports/map`, {
-      headers: {
-        Authorization: `Bearer ${token}`
+    fetchIncidents();
+    const interval = setInterval(fetchIncidents, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCenter({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        });
+      },
+      (err) => {
+        console.error("Location error:", err);
       }
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Unauthorized or server error");
-        return res.json();
-      })
-      .then((data) => {
-        console.log("MAP DATA:", data);
-        setIncidents(Array.isArray(data) ? data : []);
-      })
-      .catch((err) => console.error(err));
-  };
-
-  // initial fetch
-  fetchIncidents();
-
-  // auto refresh every 60s
-  const interval = setInterval(fetchIncidents, 60000);
-
-  return () => clearInterval(interval);
-}, []);
-
-
-useEffect(() => {
-  if (!navigator.geolocation) return;
-
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      setCenter({
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude
-      });
-    },
-    (err) => {
-      console.error("Location error:", err);
-    }
-  );
-}, []);
+    );
+  }, []);
 
   const validResources = resources.filter(
-  (r) => !isNaN(Number(r.latitude)) && !isNaN(Number(r.longitude))
-);
+    (r) => !isNaN(Number(r.latitude)) && !isNaN(Number(r.longitude))
+  );
 
+  const avgCenter =
+    validResources.length > 0
+      ? {
+          lat:
+            validResources.reduce((sum, r) => sum + Number(r.latitude), 0) /
+            validResources.length,
+          lng:
+            validResources.reduce((sum, r) => sum + Number(r.longitude), 0) /
+            validResources.length
+        }
+      : { lat: 23.685, lng: 90.356 };
 
-
-const avgCenter =
-  validResources.length > 0
-    ? {
-        lat:
-          validResources.reduce((sum, r) => sum + Number(r.latitude), 0) /
-          validResources.length,
-        lng:
-          validResources.reduce((sum, r) => sum + Number(r.longitude), 0) /
-          validResources.length
-      }
-    : { lat: 23.685, lng: 90.356 };
   if (!isLoaded) return <div>Loading Map...</div>;
-const getIncidentIcon = (severity: string) => {
-  switch (severity) {
-    case "CRITICAL":
-      return "http://maps.google.com/mapfiles/ms/icons/red-dot.png";
-    case "HIGH":
-      return "http://maps.google.com/mapfiles/ms/icons/orange-dot.png";
-    case "MEDIUM":
-      return "http://maps.google.com/mapfiles/ms/icons/yellow-dot.png";
-    default:
-      return "http://maps.google.com/mapfiles/ms/icons/green-dot.png";
-  }
-};
+
+  const getIncidentIcon = (severity: string) => {
+    switch (severity) {
+      case "CRITICAL":
+        return "http://maps.google.com/mapfiles/ms/icons/red-dot.png";
+      case "HIGH":
+        return "http://maps.google.com/mapfiles/ms/icons/orange-dot.png";
+      case "MEDIUM":
+        return "http://maps.google.com/mapfiles/ms/icons/yellow-dot.png";
+      default:
+        return "http://maps.google.com/mapfiles/ms/icons/green-dot.png";
+    }
+  };
 
   return (
     <div className="relative w-full h-full">
@@ -143,7 +131,8 @@ const getIncidentIcon = (severity: string) => {
               type="checkbox"
               checked={showResources}
               onChange={() => setShowResources(!showResources)}
-            /> Resources
+            />{" "}
+            Resources
           </label>
 
           <label className="block">
@@ -151,7 +140,8 @@ const getIncidentIcon = (severity: string) => {
               type="checkbox"
               checked={showIncidents}
               onChange={() => setShowIncidents(!showIncidents)}
-            /> Incidents
+            />{" "}
+            Incidents
           </label>
         </div>
 
@@ -190,12 +180,9 @@ const getIncidentIcon = (severity: string) => {
           onLoad={(auto) => setAutocomplete(auto)}
           onPlaceChanged={() => {
             if (!autocomplete) return;
-
             const place = autocomplete.getPlace();
             const loc = place.geometry?.location;
-
             if (!loc) return;
-
             setCenter({
               lat: loc.lat(),
               lng: loc.lng()
@@ -244,8 +231,7 @@ const getIncidentIcon = (severity: string) => {
                   .filter((i) => {
                     if (severityFilter !== "all" && i.severity !== severityFilter)
                       return false;
-                    if (typeFilter !== "all" && i.type !== typeFilter)
-                      return false;
+                    if (typeFilter !== "all" && i.type !== typeFilter) return false;
                     return true;
                   })
                   .map((i) => {
@@ -279,17 +265,20 @@ const getIncidentIcon = (severity: string) => {
             <div className="p-2 max-w-xs">
               <h3 className="font-bold text-lg mb-2">{selectedResource.name}</h3>
               <p className="text-sm text-gray-700 mb-1">
-                <span className="font-semibold">Category:</span> {selectedResource.category}
+                <span className="font-semibold">Category:</span>{" "}
+                {selectedResource.category}
               </p>
               <p className="text-sm text-gray-700 mb-1">
-                <span className="font-semibold">Quantity:</span> {selectedResource.quantity}{" "}
-                {selectedResource.unit}
+                <span className="font-semibold">Quantity:</span>{" "}
+                {selectedResource.quantity} {selectedResource.unit}
               </p>
               <p className="text-sm text-gray-700 mb-1">
-                <span className="font-semibold">Address:</span> {selectedResource.address}
+                <span className="font-semibold">Address:</span>{" "}
+                {selectedResource.address}
               </p>
               <p className="text-sm text-gray-700 mb-2">
-                <span className="font-semibold">Contact:</span> {selectedResource.contactPreference}
+                <span className="font-semibold">Contact:</span>{" "}
+                {selectedResource.contactPreference}
               </p>
               <a
                 href={`/resources/reserve/${selectedResource.id}`}

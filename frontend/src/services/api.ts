@@ -1,75 +1,92 @@
 import type {
   AuthUser,
-  IncidentReportListItem,
+  CrisisEventCard,
+  DashboardFeedFilters,
   EmergencyReportSubmissionInput,
   EmergencyReportSummary,
-  ReportListQuery,
-  Role,
-  Review,
   FlaggedVolunteer,
-  CrisisEventCard,
-  SitRepResponse,
-  ReportDetailResponse,
   IncidentDetailResponse,
-  DashboardFeedFilters
+  IncidentReportListItem,
+  ReportDetailResponse,
+  ReportListQuery,
+  Review,
+  Role,
+  SitRepResponse
 } from "../types";
 import { buildEmergencyReportFormData } from "./reportPayload";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
 
-type RequestOptions = {
-  method?: string;
-  body?: unknown;
+// ── HTTP client ──────────────────────────────────────────────────────────────
+
+type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+
+type RequestInit = {
+  method: HttpMethod;
+  headers?: Record<string, string>;
+  body?: FormData | string;
 };
 
-type ApiValidationIssue = {
+type ValidationError = {
   path?: string;
   message?: string;
 };
 
-type ApiErrorPayload = {
+type ErrorResponse = {
   message?: string;
-  issues?: ApiValidationIssue[];
+  issues?: ValidationError[];
 };
 
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const isFormData = options.body instanceof FormData;
-  const headers = isFormData
-    ? undefined
-    : {
-        "Content-Type": "application/json"
-      };
+export async function request<T>(endpoint: string, options: { method?: HttpMethod; body?: unknown } = {}): Promise<T> {
+  return httpClient<T>(endpoint, options.method ?? "GET", options.body);
+}
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: options.method ?? "GET",
-    headers,
-    credentials: "include",
-    body: options.body
-      ? isFormData
-        ? (options.body as FormData)
-        : JSON.stringify(options.body)
-      : undefined
+async function httpClient<T>(endpoint: string, method: HttpMethod = "GET", body?: unknown): Promise<T> {
+  const isFormData = body instanceof FormData;
+
+  const init: RequestInit = {
+    method,
+    headers: isFormData ? undefined : { "Content-Type": "application/json" },
+    body: serializeBody(body, isFormData)
+  };
+
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...init,
+    credentials: "include"
   });
 
-  const payload = (await response.json().catch(() => ({}))) as ApiErrorPayload;
+  const data = (await response.json().catch(() => ({}))) as ErrorResponse;
 
   if (!response.ok) {
-    if (Array.isArray(payload.issues) && payload.issues.length > 0) {
-      const details = payload.issues
-        .map((issue) =>
-          issue.path ? `${issue.path}: ${issue.message ?? "Invalid value"}` : issue.message
-        )
-        .filter(Boolean)
-        .join(" | ");
-
-      throw new Error(details || payload.message || "Validation failed");
-    }
-
-    throw new Error(payload.message ?? "Request failed");
+    throw new Error(formatError(data));
   }
 
-  return payload as T;
+  return data as T;
 }
+
+function serializeBody(body: unknown | undefined, isFormData: boolean): FormData | string | undefined {
+  if (!body) return undefined;
+  return isFormData ? (body as FormData) : JSON.stringify(body);
+}
+
+function formatError(payload: ErrorResponse): string {
+  if (Array.isArray(payload.issues) && payload.issues.length > 0) {
+    return payload.issues
+      .map((issue) =>
+        issue.path ? `${issue.path}: ${issue.message ?? "Invalid value"}` : issue.message
+      )
+      .filter(Boolean)
+      .join(" | ");
+  }
+  return payload.message ?? "Request failed";
+}
+
+function buildQueryString(params: URLSearchParams): string {
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
 
 export type RegisterPayload = {
   fullName: string;
@@ -90,53 +107,40 @@ export type LoginPayload = {
   rememberMe?: boolean;
 };
 
+type AuthResponse = { message: string; user: AuthUser };
+type CurrentUserResponse = { user: AuthUser };
+type MessageResponse = { message: string };
+
 export async function registerUser(payload: RegisterPayload) {
-  return request<{ message: string; user: AuthUser }>("/auth/register", {
-    method: "POST",
-    body: payload
-  });
+  return httpClient<AuthResponse>("/auth/register", "POST", payload);
 }
 
 export async function loginUser(payload: LoginPayload) {
-  return request<{ message: string; user: AuthUser }>("/auth/login", {
-    method: "POST",
-    body: payload
-  });
+  return httpClient<AuthResponse>("/auth/login", "POST", payload);
 }
 
 export async function getCurrentUser() {
-  return request<{ user: AuthUser }>("/auth/me");
+  return httpClient<CurrentUserResponse>("/auth/me");
 }
 
 export async function logoutUser() {
-  return request<{ message: string }>("/auth/logout", {
-    method: "POST"
-  });
+  return httpClient<MessageResponse>("/auth/logout", "POST");
 }
 
 export async function forgotPassword(email: string) {
-  return request<{ message: string }>("/auth/forgot-password", {
-    method: "POST",
-    body: { email }
-  });
+  return httpClient<MessageResponse>("/auth/forgot-password", "POST", { email });
 }
 
-export async function resetPassword(
-  token: string,
-  password: string,
-  confirmPassword: string
-) {
-  return request<{ message: string }>("/auth/reset-password", {
-    method: "POST",
-    body: { token, password, confirmPassword }
-  });
+export async function resetPassword(token: string, password: string, confirmPassword: string) {
+  return httpClient<MessageResponse>("/auth/reset-password", "POST", { token, password, confirmPassword });
 }
+
+// ── Profile ──────────────────────────────────────────────────────────────────
+
+type ProfileResponse = { message: string; profile: AuthUser };
 
 export async function updateProfile(payload: Partial<AuthUser>) {
-  return request<{ message: string; profile: AuthUser }>("/profile", {
-    method: "PATCH",
-    body: payload
-  });
+  return httpClient<ProfileResponse>("/profile", "PATCH", payload);
 }
 
 export async function changePassword(payload: {
@@ -144,118 +148,90 @@ export async function changePassword(payload: {
   newPassword: string;
   confirmNewPassword: string;
 }) {
-  return request<{ message: string }>("/profile/change-password", {
-    method: "POST",
-    body: payload
-  });
+  return httpClient<MessageResponse>("/profile/change-password", "POST", payload);
 }
 
+// ── Admin ────────────────────────────────────────────────────────────────────
+
+type UserSummary = Pick<AuthUser, "id" | "fullName" | "email" | "phone" | "location" | "role"> & {
+  isBanned: boolean;
+  createdAt: string;
+};
+
+type UsersListResponse = { users: UserSummary[] };
+
 export async function listUsers() {
-  return request<{
-    users: Array<
-      Pick<AuthUser, "id" | "fullName" | "email" | "phone" | "location" | "role"> & {
-        isBanned: boolean;
-        createdAt: string;
-      }
-    >;
-  }>("/admin/users");
+  return httpClient<UsersListResponse>("/admin/users");
 }
 
 export async function updateUserRole(userId: string, role: Exclude<Role, "ADMIN">) {
-  return request<{ message: string }>(`/admin/users/${userId}/role`, {
-    method: "PATCH",
-    body: { role }
-  });
+  return httpClient<MessageResponse>(`/admin/users/${userId}/role`, "PATCH", { role });
 }
 
 export async function updateUserBanStatus(userId: string, isBanned: boolean) {
-  return request<{ message: string }>(`/admin/users/${userId}/ban`, {
-    method: "PATCH",
-    body: { isBanned }
-  });
+  return httpClient<MessageResponse>(`/admin/users/${userId}/ban`, "PATCH", { isBanned });
 }
 
-export async function createEmergencyReport(
-  payload: EmergencyReportSubmissionInput
-) {
+// ── Reports ──────────────────────────────────────────────────────────────────
+
+export type MapIncident = {
+  id: string;
+  title: string;
+  type: string;
+  severity: string;
+  latitude: number;
+  longitude: number;
+  description?: string;
+  createdAt?: string;
+};
+
+export async function createEmergencyReport(payload: EmergencyReportSubmissionInput) {
   const formData = buildEmergencyReportFormData(payload);
-  return request<{ message: string; report: EmergencyReportSummary }>("/reports", {
-    method: "POST",
-    body: formData
-  });
-}
-
-function toQueryString(query: ReportListQuery) {
-  const params = new URLSearchParams();
-
-  if (query.search?.trim()) {
-    params.set("search", query.search.trim());
-  }
-
-  if (query.severity && query.severity !== "ALL") {
-    params.set("severity", query.severity);
-  }
-
-  if (query.sortBy) {
-    params.set("sortBy", query.sortBy);
-  }
-
-  if (query.order) {
-    params.set("order", query.order);
-  }
-
-  if (typeof query.page === "number") {
-    params.set("page", String(query.page));
-  }
-
-  if (typeof query.limit === "number") {
-    params.set("limit", String(query.limit));
-  }
-
-  const queryString = params.toString();
-  return queryString ? `?${queryString}` : "";
+  return httpClient<{ message: string; report: EmergencyReportSummary }>("/reports", "POST", formData);
 }
 
 export async function listCommunityReports(query: ReportListQuery = {}) {
-  return request<{ reports: IncidentReportListItem[] }>(
-    `/reports${toQueryString(query)}`
-  );
+  return httpClient<{ reports: IncidentReportListItem[] }>(`/reports${toReportQueryString(query)}`);
 }
 
 export async function listMyReports(query: ReportListQuery = {}) {
-  return request<{ reports: IncidentReportListItem[] }>(
-    `/reports/mine${toQueryString(query)}`
-  );
+  return httpClient<{ reports: IncidentReportListItem[] }>(`/reports/mine${toReportQueryString(query)}`);
 }
 
 export async function getReportDetail(reportId: string) {
-  return request<ReportDetailResponse>(`/reports/${reportId}`);
+  return httpClient<ReportDetailResponse>(`/reports/${reportId}`);
+}
+
+export async function getMapReports() {
+  return httpClient<MapIncident[]>("/reports/map");
 }
 
 export async function listAdminUnpublishedReports(query: ReportListQuery = {}) {
-  return request<{ reports: IncidentReportListItem[] }>(
-    `/admin/reports/unpublished${toQueryString(query)}`
+  return httpClient<{ reports: IncidentReportListItem[] }>(`/admin/reports/unpublished${toReportQueryString(query)}`);
+}
+
+export async function updateReportStatusByAdmin(reportId: string, status: "PUBLISHED" | "UNDER_REVIEW") {
+  return httpClient<{ message: string; report: { id: string; status: string; spamFlagged: boolean } }>(
+    `/admin/reports/${reportId}/status`,
+    "PATCH",
+    { status }
   );
 }
 
-export async function updateReportStatusByAdmin(
-  reportId: string,
-  status: "PUBLISHED" | "UNDER_REVIEW"
-) {
-  return request<{
-    message: string;
-    report: {
-      id: string;
-      status: "PUBLISHED" | "UNDER_REVIEW";
-      spamFlagged: boolean;
-    };
-  }>(`/admin/reports/${reportId}/status`, {
-    method: "PATCH",
-    body: { status }
-  });
+function toReportQueryString(query: ReportListQuery) {
+  const params = new URLSearchParams();
+
+  if (query.search?.trim()) params.set("search", query.search.trim());
+  if (query.severity && query.severity !== "ALL") params.set("severity", query.severity);
+  if (query.sortBy) params.set("sortBy", query.sortBy);
+  if (query.order) params.set("order", query.order);
+  if (typeof query.page === "number") params.set("page", String(query.page));
+  if (typeof query.limit === "number") params.set("limit", String(query.limit));
+
+  return buildQueryString(params);
 }
 
-// ── Volunteers ──────────────────────────────────────────────────────────────
+// ── Volunteers ───────────────────────────────────────────────────────────────
 
 export type VolunteerFilterQuery = {
   search?: string;
@@ -268,42 +244,32 @@ export type VolunteerFilterQuery = {
   sortBy?: string;
 };
 
+type VolunteerProfileResponse = {
+  volunteer: Pick<AuthUser, "id" | "fullName" | "email" | "location" | "role" | "skills" | "availability" | "certifications" | "avatarUrl"> & {
+    isFlagged: boolean;
+    volunteerFlagReasons: string[];
+  };
+};
+
+type VolunteersListResponse = { volunteers: AuthUser[] };
+
 export async function listVolunteers(query: VolunteerFilterQuery = {}) {
   const params = new URLSearchParams();
+
   if (query.search) params.set("search", query.search);
-  if (query.skills && query.skills.length > 0) params.set("skills", query.skills.join(","));
-  if (query.availability && query.availability.length > 0) params.set("availability", query.availability.join(","));
+  if (query.skills?.length) params.set("skills", query.skills.join(","));
+  if (query.availability?.length) params.set("availability", query.availability.join(","));
   if (query.minRating != null) params.set("minRating", String(query.minRating));
   if (query.lat != null) params.set("lat", String(query.lat));
   if (query.lng != null) params.set("lng", String(query.lng));
   if (query.radiusKm != null) params.set("radiusKm", String(query.radiusKm));
   if (query.sortBy) params.set("sortBy", query.sortBy);
 
-  const queryString = params.toString() ? `?${params.toString()}` : "";
-
-  return request<{
-    volunteers: AuthUser[];
-  }>(`/volunteers${queryString}`);
+  return httpClient<VolunteersListResponse>(`/volunteers${buildQueryString(params)}`);
 }
 
 export async function getVolunteerProfile(volunteerId: string) {
-  return request<{
-    volunteer: Pick<
-      AuthUser,
-      | "id"
-      | "fullName"
-      | "email"
-      | "location"
-      | "role"
-      | "skills"
-      | "availability"
-      | "certifications"
-      | "avatarUrl"
-    > & {
-      isFlagged: boolean;
-      volunteerFlagReasons: string[];
-    };
-  }>(`/volunteers/${volunteerId}`);
+  return httpClient<VolunteerProfileResponse>(`/volunteers/${volunteerId}`);
 }
 
 // ── Reviews ──────────────────────────────────────────────────────────────────
@@ -317,61 +283,54 @@ export async function submitReview(
   wouldWorkAgain: boolean,
   crisisEventId?: string | null
 ) {
-  return request<{ message: string; review: Review }>("/reviews", {
-    method: "POST",
-    body: {
-      volunteerId,
-      rating,
-      text,
-      interactionContext,
-      interactionDate,
-      wouldWorkAgain,
-      crisisEventId
-    }
+  return httpClient<{ message: string; review: Review }>("/reviews", "POST", {
+    volunteerId,
+    rating,
+    text,
+    interactionContext,
+    interactionDate,
+    wouldWorkAgain,
+    crisisEventId
   });
 }
 
 export async function getVolunteerReviews(volunteerId: string) {
-  return request<{ reviews: Review[]; averageRating: number | null }>(
-    `/reviews/volunteer/${volunteerId}`
-  );
+  return httpClient<{ reviews: Review[]; averageRating: number | null }>(`/reviews/volunteer/${volunteerId}`);
 }
 
 export async function getFlaggedReviews() {
-  return request<{ reviews: Review[] }>("/reviews/flagged");
+  return httpClient<{ reviews: Review[] }>("/reviews/flagged");
 }
 
 export async function getFlaggedVolunteers() {
-  return request<{ volunteers: FlaggedVolunteer[] }>("/reviews/flagged-volunteers");
+  return httpClient<{ volunteers: FlaggedVolunteer[] }>("/reviews/flagged-volunteers");
 }
 
 export async function approveReview(reviewId: string) {
-  return request<{ message: string }>(`/reviews/${reviewId}/approve`, {
-    method: "PATCH"
-  });
+  return httpClient<MessageResponse>(`/reviews/${reviewId}/approve`, "PATCH");
 }
 
 export async function deleteReview(reviewId: string) {
-  return request<{ message: string }>(`/reviews/${reviewId}`, {
-    method: "DELETE"
-  });
+  return httpClient<MessageResponse>(`/reviews/${reviewId}`, "DELETE");
 }
 
 export async function approveVolunteer(volunteerId: string) {
-  return request<{ message: string }>(`/reviews/volunteer/${volunteerId}/approve`, {
-    method: "PATCH"
-  });
+  return httpClient<MessageResponse>(`/reviews/volunteer/${volunteerId}/approve`, "PATCH");
 }
 
 export async function banVolunteer(volunteerId: string) {
-  return request<{ message: string }>(`/reviews/volunteer/${volunteerId}/ban`, {
-    method: "POST"
-  });
+  return httpClient<MessageResponse>(`/reviews/volunteer/${volunteerId}/ban`, "POST");
 }
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+
+type DashboardFeedResponse = { feed: CrisisEventCard[] };
 
 export async function getDashboardFeed(
   filters: Partial<DashboardFeedFilters> & { lat?: number; lng?: number; radiusKm?: number } = {}
 ) {
+  const params = new URLSearchParams();
+
   const defaults: DashboardFeedFilters = {
     incidentType: "ALL",
     severity: "ALL",
@@ -382,8 +341,6 @@ export async function getDashboardFeed(
 
   const merged = { ...defaults, ...filters };
 
-  const params = new URLSearchParams();
-
   if (filters.lat != null) params.set("lat", String(filters.lat));
   if (filters.lng != null) params.set("lng", String(filters.lng));
   if (filters.radiusKm != null) params.set("radiusKm", String(filters.radiusKm));
@@ -393,20 +350,114 @@ export async function getDashboardFeed(
   if (merged.sortBy) params.set("sortBy", merged.sortBy);
   if (merged.sortOrder) params.set("sortOrder", merged.sortOrder);
 
-  const qs = params.toString();
-  return request<{ feed: CrisisEventCard[] }>(`/dashboard/feed${qs ? `?${qs}` : ""}`);
+  return httpClient<DashboardFeedResponse>(`/dashboard/feed${buildQueryString(params)}`);
 }
 
 export async function getSitRep(lat?: number, lng?: number, radiusKm?: number) {
   const params = new URLSearchParams();
+
   if (lat != null) params.set("lat", String(lat));
   if (lng != null) params.set("lng", String(lng));
   if (radiusKm != null) params.set("radius", String(radiusKm));
 
-  const qs = params.toString();
-  return request<SitRepResponse>(`/dashboard/sitrep${qs ? `?${qs}` : ""}`);
+  return httpClient<SitRepResponse>(`/dashboard/sitrep${buildQueryString(params)}`);
 }
 
 export async function getIncidentDetail(incidentId: string) {
-  return request<{ incident: IncidentDetailResponse }>(`/dashboard/incidents/${incidentId}`);
+  return httpClient<{ incident: IncidentDetailResponse }>(`/dashboard/incidents/${incidentId}`);
+}
+
+// ── Resources ────────────────────────────────────────────────────────────────
+
+export type ResourceSummary = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  category: string;
+  quantity: number;
+  unit: string;
+  address: string;
+  contactPreference: string;
+};
+
+export type ResourceDetail = ResourceSummary & {
+  status: string;
+  createdAt: string;
+  availabilityStart?: string;
+  availabilityEnd?: string;
+  notes?: string;
+  photos?: string[];
+  condition?: string;
+};
+
+export type AddResourcePayload = {
+  name: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  condition: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  availabilityStart?: string;
+  availabilityEnd?: string;
+  contactPreference: string;
+  notes?: string;
+  photos?: File[];
+};
+
+export type UpdateResourcePayload = {
+  name: string;
+  quantity: number;
+  notes: string;
+  status: string;
+};
+
+export async function getAllResources() {
+  return httpClient<ResourceSummary[]>("/resources/all");
+}
+
+export async function addResource(payload: AddResourcePayload) {
+  const formData = new FormData();
+
+  formData.append("name", payload.name);
+  formData.append("category", payload.category);
+  formData.append("quantity", String(payload.quantity));
+  formData.append("unit", payload.unit);
+  formData.append("condition", payload.condition);
+  formData.append("address", payload.address);
+  formData.append("latitude", String(payload.latitude));
+  formData.append("longitude", String(payload.longitude));
+  formData.append("contactPreference", payload.contactPreference);
+
+  if (payload.availabilityStart) formData.append("availabilityStart", payload.availabilityStart);
+  if (payload.availabilityEnd) formData.append("availabilityEnd", payload.availabilityEnd);
+  if (payload.notes) formData.append("notes", payload.notes);
+  payload.photos?.forEach((file) => formData.append("photos", file));
+
+  return httpClient<{ id: string; name: string }>("/resources/add", "POST", formData);
+}
+
+export async function getMyResources() {
+  return httpClient<ResourceDetail[]>("/resources/my");
+}
+
+export async function updateResource(resourceId: string, payload: UpdateResourcePayload) {
+  return httpClient<{ message: string; resource: UpdateResourcePayload }>(
+    `/resources/update/${resourceId}`,
+    "PATCH",
+    payload
+  );
+}
+
+export async function deactivateResource(resourceId: string) {
+  return httpClient<{ message: string; resource: { id: string; status: string } }>(
+    `/resources/deactivate/${resourceId}`,
+    "PATCH"
+  );
+}
+
+export async function deleteResource(resourceId: string) {
+  return httpClient<MessageResponse>(`/resources/delete/${resourceId}`, "DELETE");
 }

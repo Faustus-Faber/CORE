@@ -24,5 +24,13 @@ export async function generateText(prompt: string): Promise<string> {
     choices: Array<{ message: { content: string } }>;
   };
 
-  return data.choices[0]?.message.content ?? "";
+  const raw = data.choices[0]?.message.content ?? "";
+  return stripThinkingTags(raw).trim();
+}
+
+function stripThinkingTags(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*?<\/thinking>/gi, "")
+    .trim();
 }

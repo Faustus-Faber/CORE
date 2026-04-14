@@ -29,9 +29,9 @@ export function UpdateTimeline({ entries, isAdmin }: UpdateTimelineProps) {
                 <span className="text-xs text-slate-400">
                   {new Date(entry.createdAt).toLocaleString()}
                 </span>
-                {entry.isFlagged && isAdmin && (
+                {entry.isFlagged && (
                   <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
-                    Flagged
+                    Conflicting Update
                   </span>
                 )}
               </div>

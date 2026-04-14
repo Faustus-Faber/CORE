@@ -341,3 +341,65 @@ export type ReportDetailResponse = {
     createdAt: string;
   };
 };
+
+export type CrisisEventStatusExpanded =
+  | "REPORTED"
+  | "VERIFIED"
+  | "UNDER_INVESTIGATION"
+  | "RESPONSE_IN_PROGRESS"
+  | "CONTAINED"
+  | "RESOLVED"
+  | "CLOSED";
+
+export type CrisisUpdateEntry = {
+  id: string;
+  crisisEventId: string;
+  updaterId: string;
+  updaterName: string;
+  previousStatus: string;
+  newStatus: string;
+  updateNote: string;
+  newSeverity: IncidentSeverity | null;
+  affectedArea: string | null;
+  casualtyCount: number | null;
+  displacedCount: number | null;
+  damageNotes: string | null;
+  isFlagged: boolean;
+  createdAt: string;
+};
+
+export type CrisisUpdateResponse = {
+  entry: CrisisUpdateEntry;
+  isTrusted: boolean;
+};
+
+export type CrisisUpdateInput = {
+  status: CrisisEventStatusExpanded;
+  updateNote: string;
+  newSeverity?: IncidentSeverity;
+  affectedArea?: string;
+  casualtyCount?: number;
+  displacedCount?: number;
+  damageNotes?: string;
+};
+
+export type NotificationPreferences = {
+  incidentTypes: IncidentType[];
+  radiusKm: number;
+  isActive: boolean;
+};
+
+export type NotificationEntry = {
+  id: string;
+  title: string;
+  body: string;
+  survivalInstruction: string | null;
+  isRead: boolean;
+  crisisEventId: string | null;
+  createdAt: string;
+};
+
+export type NotificationInboxResponse = {
+  notifications: NotificationEntry[];
+  unreadCount: number;
+};

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
+import { getNotifications } from "../services/api";
 
 type NavItem = {
   to: string;
@@ -44,7 +45,9 @@ function buildResourceMenuItems(): NavItem[] {
 
 function buildUserMenuItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
   const items: NavItem[] = [
-    { to: "/profile", label: "Profile" }
+    { to: "/profile", label: "Profile" },
+    { to: "/notifications", label: "Notifications" },
+    { to: "/notifications/preferences", label: "Notification Settings" }
   ];
   if (role === "VOLUNTEER") {
     items.push({ to: "/tasks", label: "My Tasks" });
@@ -203,12 +206,31 @@ function UserMenu({
   );
 }
 
+function NotificationBell({ unreadCount }: { unreadCount: number }) {
+  return (
+    <NavLink
+      to="/notifications"
+      className="relative rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 hover:text-ink"
+    >
+      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+      </svg>
+      {unreadCount > 0 && (
+        <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+          {unreadCount > 9 ? "9+" : unreadCount}
+        </span>
+      )}
+    </NavLink>
+  );
+}
+
 export function AppShell() {
   const { user, logoutUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const navItems = user ? buildPrimaryNav(user.role) : [];
   const reportMenuItems = user ? buildReportMenuItems(user.role) : [];
@@ -218,6 +240,16 @@ export function AppShell() {
   const isResourceRoute = location.pathname.startsWith("/resources");
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+
+  useEffect(() => {
+    if (!user) return;
+    const poll = () => {
+      getNotifications(1, 1).then((data) => setUnreadCount(data.unreadCount));
+    };
+    poll();
+    const interval = setInterval(poll, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -278,6 +310,7 @@ export function AppShell() {
                     Dispatch Alert
                   </button>
                 )}
+                <NotificationBell unreadCount={unreadCount} />
                 <UserMenu
                   userName={user.fullName}
                   userRole={roleBadge}

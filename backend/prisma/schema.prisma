@@ -74,6 +74,9 @@ model User {
   comments        Comment[]
   likes           Like[]
   evidenceFlags   EvidenceFlag[]
+  crisisUpdates   CrisisEventUpdate[]
+  notificationSub NotificationSubscription?
+  notifications   Notification[]
 
   @@index([role, isBanned])
   @@index([role, isFlagged])
@@ -220,7 +223,10 @@ model ShareLink {
 }
 
 enum CrisisEventStatus {
-  ACTIVE
+  REPORTED
+  VERIFIED
+  UNDER_INVESTIGATION
+  RESPONSE_IN_PROGRESS
   CONTAINED
   RESOLVED
   CLOSED
@@ -234,7 +240,7 @@ model CrisisEvent {
   locationText  String
   latitude      Float?
   longitude     Float?
-  status        CrisisEventStatus @default(ACTIVE)
+  status        CrisisEventStatus @default(REPORTED)
   sitRepText    String?
   reportCount   Int               @default(0)
   reporterCount Int               @default(0)
@@ -242,6 +248,7 @@ model CrisisEvent {
   updatedAt     DateTime          @updatedAt
 
   reports CrisisEventReport[]
+  updates CrisisEventUpdate[]
 
   @@index([status, severityLevel, createdAt(sort: Desc)])
   @@index([latitude, longitude])
@@ -317,4 +324,53 @@ model Like {
   createdAt DateTime     @default(now())
 
   @@unique([postId, userId])
+}
+
+model CrisisEventUpdate {
+  id              String            @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId   String            @db.ObjectId
+  crisisEvent     CrisisEvent       @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  updaterId       String            @db.ObjectId
+  updater         User              @relation(fields: [updaterId], references: [id])
+  previousStatus  CrisisEventStatus
+  newStatus       CrisisEventStatus
+  updateNote      String
+  newSeverity     IncidentSeverity?
+  affectedArea    String?
+  casualtyCount   Int?
+  displacedCount  Int?
+  damageNotes     String?
+  isFlagged       Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+
+  @@index([crisisEventId, createdAt(sort: Desc)])
+}
+
+model NotificationSubscription {
+  id              String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String            @db.ObjectId
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  incidentTypes   IncidentType[]
+  radiusKm        Float             @default(10)
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([userId])
+  @@index([userId, isActive])
+}
+
+model Notification {
+  id              String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String            @db.ObjectId
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  crisisEventId   String?           @db.ObjectId
+  title           String
+  body            String
+  survivalInstruction String?
+  isRead          Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
 }

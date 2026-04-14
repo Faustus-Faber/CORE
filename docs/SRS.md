@@ -572,32 +572,38 @@
 
 ---
 
-#### 3.1 Live Crisis Updates — *Farhan Zarif*
+#### 3.1 Live Crisis Updates �" *Farhan Zarif*
 
 | Aspect | Detail |
 |:---|:---|
-| **Description** | Volunteers can update the details and operational status of an active crisis event. Status changes trigger the AI to regenerate a revised live situation summary, ensuring the community stays informed with a concise, up-to-date overview without being overwhelmed by raw data. |
+| **Description** | Volunteers can update the details and operational status of an active crisis event. Status changes trigger the AI to regenerate a revised live situation summary, ensuring the community stays informed with a concise, up-to-date overview without being overwhelmed by raw data. The system enforces an append-only timeline, supports admin override, and flags conflicting updates for review to maintain data integrity. |
 | **Actors** | Volunteer, Admin. |
 | **External APIs** | Groq LLM API (Qwen 3-32B) (revised situation summary generation). |
 
 **Functional Details:**
 
 1. On the detailed incident view page, authorized users (Volunteers and Admin) shall see an **"Update Crisis"** panel with the following editable fields:
-   - **Status** (dropdown): `Reported` → `Verified` → `Under Investigation` → `Response in Progress` → `Contained` → `Resolved` → `Closed`.
+   - **Status** (dropdown): `Reported` �' `Verified` �' `Under Investigation` �' `Response in Progress` �' `Contained` �' `Resolved` �' `Closed`.
    - **Situation Update Note** (text area, required when changing status, max 1000 characters): a brief description of what has changed.
    - **Updated Severity** (optional re-classification): Critical, High, Medium, Low.
    - **Affected Area Update** (optional): revised radius or boundary description.
    - **Casualty / Impact Estimates** (optional): fields for injured count, displaced count, structural damage notes.
 2. Upon submitting an update, the system shall:
    - Log the update as a new entry in the crisis event's **update timeline/history** with the updater's User ID, timestamp, and all changed fields.
-   - Send the complete crisis event data (original report + all updates) to the **Groq LLM API (Qwen 3-32B)** to generate a **revised live situation summary** (150–300 words).
+   - Run a **conflict-resolution check**: if the proposed status transition skips one or more intermediate states (e.g., `Reported` �' `Resolved` without passing through `Verified` or `Response in Progress`), the update shall be flagged with a `? Conflicting Update` badge visible to Admin.
+   - **Trusted volunteers** (trust rating ≥ 4.0, not flagged) shall bypass the conflict check, and their updates shall apply immediately without flagging.
+   - Send the complete crisis event data (original report + all updates) to the **Groq LLM API (Qwen 3-32B)** to generate a **revised live situation summary** (150�"300 words).
    - Replace the previous summary on the incident's detail page and the dashboard SitRep.
-3. If the status is changed to **`Resolved`** or **`Closed`**:
+3. **Admin override:** Admins can review the full update timeline for any crisis event, including flagged entries. Admins shall be able to:
+   - **Dismiss** a flagged update (mark as reviewed, no state change).
+   - **Revert** the crisis status to any previously logged state.
+   - Apply a **correction note** that is appended to the timeline with the Admin's User ID and timestamp.
+4. If the status is changed to **`Resolved`** or **`Closed`**:
    - The incident marker shall be removed from the active crisis map layer (or moved to a "Resolved" layer).
    - The incident card on the dashboard shall be visually muted and moved to the bottom of the feed.
    - If the user is an Admin, the system shall prompt them to **trigger NGO Summary Report generation** (Module 3.4).
-4. All status changes shall be **immutable** once saved (append-only log); users cannot delete or retroactively edit past updates.
-5. Each update shall trigger relevant **push notifications** (Module 3.5) to users subscribed to that crisis's type or location.
+5. All status changes shall be **immutable** once saved (append-only log); users cannot delete or retroactively edit past updates.
+6. Each update shall trigger relevant **push notifications** (Module 3.5) to users subscribed to that crisis's type or location.
 
 ---
 
@@ -783,10 +789,10 @@
    | Badge Name | Criteria |
    |:---|:---|
    | 🌱 First Responder | Complete first verified task |
-   | ⭐ Rising Star | Accumulate 100 points |
+   | ⭝ Rising Star | Accumulate 100 points |
    | 🔥 Crisis Hero | Log 50+ verified hours |
-   | 🛡️ Community Guardian | Maintain a trust rating ≥ 4.5 with 10+ reviews |
-   | 🏆 Elite Volunteer | Reach Top 10 on the all-time leaderboard |
+   | 🛡︝ Community Guardian | Maintain a trust rating ≥ 4.5 with 10+ reviews |
+   | 🝆 Elite Volunteer | Reach Top 10 on the all-time leaderboard |
    | 💯 Century | Complete 100 verified tasks |
    | 🤝 Team Player | Log tasks across 5+ different crisis events |
 

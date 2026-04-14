@@ -2,7 +2,9 @@ import { Router } from "express";
 
 import { adminRoutes } from "./adminRoutes.js";
 import { authRoutes } from "./authRoutes.js";
+import { crisisUpdateRoutes } from "./crisisUpdateRoutes.js";
 import { dashboardRoutes } from "./dashboardRoutes.js";
+import { notificationRoutes } from "./notificationRoutes.js";
 import { profileRoutes } from "./profileRoutes.js";
 import { reportRoutes } from "./reportRoutes.js";
 import { reviewRoutes } from "./reviewRoutes.js";
@@ -27,3 +29,5 @@ apiRoutes.use("/resources", resourceRoutes);
 apiRoutes.use("/docs", docRoutes);
 apiRoutes.use("/evidence", evidenceRoutes);
 apiRoutes.use("/dashboard", dashboardRoutes);
+apiRoutes.use("/crises", crisisUpdateRoutes);
+apiRoutes.use("/notifications", notificationRoutes);

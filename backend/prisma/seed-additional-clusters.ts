@@ -79,7 +79,7 @@ async function main() {
             locationText: "Jamuna Future Park, Gulshan, Dhaka",
             latitude: 23.8045,
             longitude: 90.4234,
-            status: CrisisEventStatus.ACTIVE,
+            status: CrisisEventStatus.REPORTED,
             sitRepText: "Cardiac arrest reported at shopping mall. Emergency services en route. Main entrance area cordoned off by security.",
             reportCount: 2,
             reporterCount: 2
@@ -163,7 +163,7 @@ async function main() {
             locationText: "Dhanmondi Road 27, Dhaka",
             latitude: 23.7465,
             longitude: 90.3750,
-            status: CrisisEventStatus.ACTIVE,
+            status: CrisisEventStatus.REPORTED,
             sitRepText: "Kitchen fire at Dhanmondi restaurant. Fire service on scene. All patrons evacuated. Fire being contained. No injuries reported.",
             reportCount: 3,
             reporterCount: 3
@@ -269,7 +269,7 @@ async function main() {
             locationText: "Chawk Bazar, Old Dhaka",
             latitude: 23.7150,
             longitude: 90.3980,
-            status: CrisisEventStatus.ACTIVE,
+            status: CrisisEventStatus.REPORTED,
             sitRepText: "Building structural failure in Chawk Bazar. One wing collapsed. All residents previously evacuated. RAJF conducting safety inspection. Area cordoned off.",
             reportCount: 2,
             reporterCount: 2

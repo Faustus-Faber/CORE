@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
+import type { IncidentType } from "@prisma/client";
 import path from "node:path";
 
 import type { NextFunction, Request, Response } from "express";
 
+import { dispatchNotifications } from "../services/notificationService.js";
 import {
   createIncidentReport,
   listIncidentReports,
@@ -65,6 +67,29 @@ async function persistMediaFiles(files: Express.Multer.File[]) {
   );
 }
 
+async function tryDispatchNotifications(report: {
+  id: string;
+  classifiedIncidentType: string;
+  severityLevel: string;
+  classifiedIncidentTitle: string;
+}, incidentType: string, description: string, latitude: number | null, longitude: number | null) {
+  if (report.severityLevel === "CRITICAL" || report.severityLevel === "HIGH") {
+    try {
+      await dispatchNotifications(
+        report.id,
+        incidentType,
+        report.severityLevel,
+        report.classifiedIncidentTitle,
+        description,
+        latitude,
+        longitude
+      );
+    } catch {
+      // Silent failure — notifications are non-critical
+    }
+  }
+}
+
 export async function createReport(
   request: Request,
   response: Response,
@@ -114,6 +139,14 @@ export async function createReport(
         }
       : undefined
   });
+
+  await tryDispatchNotifications(
+    report,
+    payload.incidentType as IncidentType,
+    payload.description,
+    request.body.latitude ? parseFloat(request.body.latitude) : null,
+    request.body.longitude ? parseFloat(request.body.longitude) : null
+  );
 
   return response.status(201).json({
     message: "Incident report submitted successfully",

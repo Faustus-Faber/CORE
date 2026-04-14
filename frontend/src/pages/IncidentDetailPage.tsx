@@ -10,14 +10,23 @@ import {
   normalizeMediaUrl,
   isImageFile
 } from "../utils/incident";
-import type { IncidentDetailResponse, ContributingReport, CrisisEventStatus } from "../types";
+import type { IncidentDetailResponse, ContributingReport } from "../types";
+import { CrisisUpdateForm } from "../components/CrisisUpdateForm";
+import { UpdateTimeline } from "../components/UpdateTimeline";
+import { getCrisisUpdates, CrisisUpdateEntry } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
-const STATUS_LABEL: Record<CrisisEventStatus, string> = {
-  ACTIVE: "Active",
+const STATUS_LABEL: Record<string, string> = {
+  REPORTED: "Reported",
+  VERIFIED: "Verified",
+  UNDER_INVESTIGATION: "Under Investigation",
+  RESPONSE_IN_PROGRESS: "Response in Progress",
   CONTAINED: "Contained",
   RESOLVED: "Resolved",
   CLOSED: "Closed"
 };
+
+const CAN_UPDATE_ROLES = ["VOLUNTEER", "ADMIN"];
 
 function ContributingReportCard({ report }: { report: ContributingReport }) {
   const [expanded, setExpanded] = useState(false);
@@ -93,12 +102,23 @@ function ContributingReportCard({ report }: { report: ContributingReport }) {
 
 export function IncidentDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const [detail, setDetail] = useState<IncidentDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [updates, setUpdates] = useState<CrisisUpdateEntry[]>([]);
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ""
   });
+
+  const canUpdate = user != null && CAN_UPDATE_ROLES.includes(user.role);
+
+  const loadUpdates = () => {
+    if (id) {
+      getCrisisUpdates(id).then((data) => setUpdates(data.entries));
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -108,6 +128,7 @@ export function IncidentDetailPage() {
       try {
         const response = await getIncidentDetail(id);
         setDetail(response.incident);
+        loadUpdates();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load incident details");
       } finally {
@@ -213,6 +234,33 @@ export function IncidentDetailPage() {
                 <p className="mt-1 text-[11px] text-slate-500">{r.address}{r.distanceKm != null ? ` (${r.distanceKm.toFixed(1)} km)` : ""}</p>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {canUpdate && detail && (
+        <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Update Crisis Status</h2>
+            <button
+              onClick={() => setShowUpdateForm(!showUpdateForm)}
+              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+            >
+              {showUpdateForm ? "Cancel" : "New Update"}
+            </button>
+          </div>
+          {showUpdateForm && (
+            <CrisisUpdateForm
+              crisisEventId={crisisEvent.id}
+              currentStatus={crisisEvent.status}
+              onSubmit={() => {
+                setShowUpdateForm(false);
+                loadUpdates();
+              }}
+            />
+          )}
+          <div className="mt-4">
+            <UpdateTimeline entries={updates} isAdmin={user?.role === "ADMIN"} />
           </div>
         </section>
       )}

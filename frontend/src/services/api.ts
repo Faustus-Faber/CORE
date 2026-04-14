@@ -19,7 +19,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
 
 // ── HTTP client ──────────────────────────────────────────────────────────────
 
-type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
 type RequestInit = {
   method: HttpMethod;
@@ -460,4 +460,98 @@ export async function deactivateResource(resourceId: string) {
 
 export async function deleteResource(resourceId: string) {
   return httpClient<MessageResponse>(`/resources/delete/${resourceId}`, "DELETE");
+}
+
+// ── Crisis Updates (Module 3.1) ──────────────────────────────────────────────
+
+export type CrisisUpdateInput = {
+  status: string;
+  updateNote: string;
+  newSeverity?: string;
+  affectedArea?: string;
+  casualtyCount?: number;
+  displacedCount?: number;
+  damageNotes?: string;
+};
+
+export type CrisisUpdateEntry = {
+  id: string;
+  crisisEventId: string;
+  updaterId: string;
+  updaterName: string;
+  previousStatus: string;
+  newStatus: string;
+  updateNote: string;
+  newSeverity: string | null;
+  affectedArea: string | null;
+  casualtyCount: number | null;
+  displacedCount: number | null;
+  damageNotes: string | null;
+  isFlagged: boolean;
+  createdAt: string;
+};
+
+export async function submitCrisisUpdate(crisisEventId: string, payload: CrisisUpdateInput) {
+  return httpClient<{ entry: CrisisUpdateEntry; isTrusted: boolean }>(
+    `/crises/${crisisEventId}/updates`,
+    "POST",
+    payload
+  );
+}
+
+export async function getCrisisUpdates(crisisEventId: string) {
+  return httpClient<{ entries: CrisisUpdateEntry[] }>(`/crises/${crisisEventId}/updates`);
+}
+
+export async function dismissFlaggedUpdate(updateId: string) {
+  return httpClient<MessageResponse>(`/crises/updates/${updateId}/dismiss`, "PATCH");
+}
+
+export async function revertCrisisStatus(crisisEventId: string, targetStatus: string, note: string) {
+  return httpClient<MessageResponse>(`/crises/${crisisEventId}/revert`, "PATCH", {
+    targetStatus,
+    note
+  });
+}
+
+// ── Notifications (Module 3.5) ───────────────────────────────────────────────
+
+export type NotificationPreferencesInput = {
+  incidentTypes: string[];
+  radiusKm: number;
+  isActive: boolean;
+};
+
+export type NotificationItem = {
+  id: string;
+  title: string;
+  body: string;
+  survivalInstruction: string | null;
+  isRead: boolean;
+  crisisEventId: string | null;
+  createdAt: string;
+};
+
+export async function getNotificationPreferences() {
+  return httpClient<{ incidentTypes: string[]; radiusKm: number; isActive: boolean }>(
+    "/notifications/preferences"
+  );
+}
+
+export async function updateNotificationPreferences(payload: NotificationPreferencesInput) {
+  return httpClient<MessageResponse>("/notifications/preferences", "PUT", payload);
+}
+
+export async function getNotifications(page = 1, limit = 20) {
+  return httpClient<{ notifications: NotificationItem[]; unreadCount: number }>(
+    `/notifications/inbox?page=${page}&limit=${limit}`
+  );
+}
+
+export async function markNotificationRead(notificationId: string) {
+  return httpClient<MessageResponse>(`/notifications/inbox/${notificationId}/read`, "PATCH");
+}
+
+export async function markAllNotificationsRead() {
+  return httpClient<MessageResponse>("/notifications/inbox/read-all", "POST");
 }

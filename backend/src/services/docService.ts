@@ -35,7 +35,7 @@ export async function getUserFolders(ownerId: string, includeDeleted = false) {
 export async function listActiveCrises() {
     return prisma.crisisEvent.findMany({
         where: {
-            status: { in: ["ACTIVE", "CONTAINED"] }
+            status: { in: ["REPORTED", "CONTAINED"] }
         },
         select: {
             id: true,

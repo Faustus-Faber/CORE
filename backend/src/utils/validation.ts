@@ -384,3 +384,41 @@ export function validateIncidentId(id: string): string {
   }
   return id;
 }
+
+// ==================== MODULE 3.1: CRISIS UPDATES ====================
+
+export const crisisStatusSchema = z.enum([
+  "REPORTED",
+  "VERIFIED",
+  "UNDER_INVESTIGATION",
+  "RESPONSE_IN_PROGRESS",
+  "CONTAINED",
+  "RESOLVED",
+  "CLOSED"
+]);
+
+export const crisisUpdateSchema = z.object({
+  status: crisisStatusSchema,
+  updateNote: z.string().trim().min(1, "Update note is required").max(1000, "Update note is too long"),
+  newSeverity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
+  affectedArea: z.string().trim().max(500).optional().or(z.literal("")),
+  casualtyCount: z.number().int().min(0).optional(),
+  displacedCount: z.number().int().min(0).optional(),
+  damageNotes: z.string().trim().max(1000).optional().or(z.literal(""))
+});
+
+export function validateCrisisUpdateInput(payload: unknown) {
+  return crisisUpdateSchema.parse(payload);
+}
+
+// ==================== MODULE 3.5: NOTIFICATIONS ====================
+
+export const notificationPreferencesSchema = z.object({
+  incidentTypes: z.array(z.enum(["FLOOD", "FIRE", "EARTHQUAKE", "BUILDING_COLLAPSE", "ROAD_ACCIDENT", "VIOLENCE", "MEDICAL_EMERGENCY", "OTHER"])).min(1, "At least one category required"),
+  radiusKm: z.number().min(5).max(50),
+  isActive: z.boolean()
+});
+
+export function validateNotificationPreferences(payload: unknown) {
+  return notificationPreferencesSchema.parse(payload);
+}

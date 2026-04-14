@@ -8,17 +8,19 @@ import { AdminReportModerationPage } from "./pages/AdminReportModerationPage";
 import AddResource from "./pages/AddResource";
 import { DashboardPage } from "./pages/DashboardPage";
 import { IncidentDetailPage } from "./pages/IncidentDetailPage";
-import { FolderDetailsPage } from "./pages/FolderDetailsPage"; // Feature 4
-import { SharedFolderPage } from "./pages/SharedFolderPage"; // Shared Link Feature
+import { FolderDetailsPage } from "./pages/FolderDetailsPage";
+import { SharedFolderPage } from "./pages/SharedFolderPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import MapPage from "./pages/MapPage";
-import { MyDocumentsPage } from "./pages/MyDocumentsPage"; // Feature 4
+import { MyDocumentsPage } from "./pages/MyDocumentsPage";
 import MyResourcesPage from "./pages/MyResourcesPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { NotificationPreferencesPage } from "./pages/NotificationPreferencesPage";
+import { NotificationInbox } from "./pages/NotificationInbox";
 import { ReportIncidentPage } from "./pages/ReportIncidentPage";
 import { ReportsExplorerPage } from "./pages/ReportsExplorerPage";
 import { ReportDetailPage } from "./pages/ReportDetailPage";
@@ -57,7 +59,10 @@ export default function App() {
           {/* Feature 4: Secure Documentation Routes */}
           <Route path="/docs" element={<MyDocumentsPage />} />
           <Route path="/docs/:folderId" element={<FolderDetailsPage />} />
-          
+
+          <Route path="/notifications" element={<NotificationInbox />} />
+          <Route path="/notifications/preferences" element={<NotificationPreferencesPage />} />
+
           <Route
             path="/leaderboard"
             element={

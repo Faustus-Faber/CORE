@@ -12,7 +12,7 @@ import { haversineDistanceKm } from "../utils/geo.js";
 import { severityRanking } from "../utils/incidentMapping.js";
 import { fetchReporters, buildReporterMap } from "../utils/reporterLookup.js";
 
-const ACTIVE_STATUSES: CrisisEventStatus[] = ["ACTIVE", "CONTAINED"];
+const ACTIVE_STATUSES: CrisisEventStatus[] = ["REPORTED", "CONTAINED"];
 const SIMILARITY_THRESHOLD = 0.8;
 const NEARBY_RESOURCE_LIMIT = 5;
 const DEFAULT_NEARBY_RADIUS_KM = 10;
@@ -375,7 +375,7 @@ async function createNewCrisisEvent(report: {
       locationText: report.locationText,
       latitude: report.latitude,
       longitude: report.longitude,
-      status: "ACTIVE",
+      status: "REPORTED",
       reportCount: 1,
       reporterCount: 1
     }
@@ -518,7 +518,7 @@ function buildWarningsData(events: CrisisEvent[]) {
     .map((e) => ({
       zone: e.locationText,
       reason: `${e.severityLevel} ${e.incidentType}`,
-      until: e.status === "ACTIVE" ? "Until further notice" : "Monitoring in progress"
+      until: e.status === "REPORTED" ? "Until further notice" : "Monitoring in progress"
     }));
 }
 
@@ -623,7 +623,7 @@ async function generateAiAdvisories(
   resources: ResourceSummary[]
 ): Promise<string[]> {
   const incidentContext = events
-    .map((e) => `${e.title} (${e.severityLevel}) at ${e.locationText} - ${e.sitRepText ?? "Active"}`)
+    .map((e) => `${e.title} (${e.severityLevel}) at ${e.locationText} - ${e.sitRepText ?? "REPORTED"}`)
     .join("; ");
 
   const resourceContext = resources

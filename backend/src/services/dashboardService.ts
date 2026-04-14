@@ -11,6 +11,7 @@ import { env } from "../config/env.js";
 import { haversineDistanceKm } from "../utils/geo.js";
 import { severityRanking } from "../utils/incidentMapping.js";
 import { fetchReporters, buildReporterMap } from "../utils/reporterLookup.js";
+import { stripThinkingTagsFromJson } from "../utils/sanitize.js";
 
 const ACTIVE_STATUSES: CrisisEventStatus[] = ["REPORTED", "CONTAINED"];
 const SIMILARITY_THRESHOLD = 0.8;
@@ -345,7 +346,7 @@ async function computeSimilarity(textA: string, textB: string): Promise<number> 
     if (!response.ok) return fallbackSimilarity(textA, textB);
 
     const payload = await response.json();
-    const content = payload.choices?.[0]?.message?.content ?? "";
+    const content = stripThinkingTagsFromJson(payload.choices?.[0]?.message?.content ?? "");
 
     try {
       const parsed = JSON.parse(content);
@@ -659,7 +660,7 @@ async function generateAiAdvisories(
   if (!response.ok) return [];
 
   const payload = await response.json();
-  const content = payload.choices?.[0]?.message?.content ?? "";
+  const content = stripThinkingTagsFromJson(payload.choices?.[0]?.message?.content ?? "");
 
   try {
     const parsed = JSON.parse(content);

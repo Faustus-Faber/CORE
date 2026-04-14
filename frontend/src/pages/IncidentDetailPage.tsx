@@ -10,6 +10,7 @@ import {
   normalizeMediaUrl,
   isImageFile
 } from "../utils/incident";
+import { stripThinkingTags } from "../utils/sanitize";
 import type { IncidentDetailResponse, ContributingReport } from "../types";
 import { CrisisUpdateForm } from "../components/CrisisUpdateForm";
 import { UpdateTimeline } from "../components/UpdateTimeline";
@@ -206,7 +207,7 @@ export function IncidentDetailPage() {
       {crisisEvent.sitRepText && (
         <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Situation Update</h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-700">{crisisEvent.sitRepText}</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-700">{stripThinkingTags(crisisEvent.sitRepText)}</p>
         </section>
       )}
 

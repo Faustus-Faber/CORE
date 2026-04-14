@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { env } from "../config/env.js";
+import { stripThinkingTagsFromJson } from "../utils/sanitize.js";
 
 const textAnalysisResultSchema = z.object({
   credibility_score: z.number(),
@@ -103,7 +104,7 @@ export async function classifyIncidentText(
     }
 
     const payload = groqChatCompletionSchema.parse(await response.json());
-    const content = payload.choices[0]?.message.content ?? "";
+    const content = stripThinkingTagsFromJson(payload.choices[0]?.message.content ?? "");
 
     try {
       return textAnalysisResultSchema.parse(JSON.parse(content));

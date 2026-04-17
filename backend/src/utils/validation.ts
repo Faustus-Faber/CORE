@@ -278,7 +278,7 @@ export const createResourceSchema = z.object({
 export const updateResourceSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   category: resourceCategorySchema.optional(),
-  quantity: z.number().min(1).optional(),
+  quantity: z.number().min(0).optional(),
   unit: resourceUnitSchema.optional(),
   condition: resourceConditionSchema.optional(),
   address: z.string().min(1).max(500).optional(),

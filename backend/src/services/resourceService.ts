@@ -74,20 +74,41 @@ export async function deleteResource(id: string) {
 }
 
 export async function updateResource(id: string, data: UpdateResourceData) {
-  const { userId, ...updateData } = data as UpdateResourceData & { userId?: string };
+  const existing = await prisma.resource.findUnique({ where: { id } });
+  if (!existing) return null;
 
-  const prismaData: Record<string, unknown> = { ...updateData };
-  if (updateData.availabilityStart && typeof updateData.availabilityStart === "string") {
-    prismaData.availabilityStart = updateData.availabilityStart ? new Date(updateData.availabilityStart) : null;
-  }
-  if (updateData.availabilityEnd && typeof updateData.availabilityEnd === "string") {
-    prismaData.availabilityEnd = updateData.availabilityEnd ? new Date(updateData.availabilityEnd) : null;
+  // ❗ Rule: quantity cannot exceed original
+  if (data.quantity !== undefined && data.quantity > existing.quantity) {
+    throw new Error("Quantity cannot exceed original amount");
   }
 
-  return prisma.resource.update({
+  let newStatus = data.status;
+
+  // ❗ Auto rule: quantity = 0 → Depleted
+  if (data.quantity === 0) {
+    newStatus = "Depleted";
+  }
+
+  const updated = await prisma.resource.update({
     where: { id },
-    data: prismaData
-  }).catch(() => null);
+    data: {
+      ...data,
+      status: newStatus ?? existing.status
+    }
+  });
+
+  // ✅ Add history log
+  await prisma.resourceHistory.create({
+    data: {
+      resourceId: id,
+      oldStatus: existing.status,
+      newStatus: newStatus || existing.status,
+      oldQuantity: existing.quantity,
+      newQuantity: data.quantity ?? existing.quantity
+    }
+  });
+
+  return updated;
 }
 
 export async function getMapResources() {
@@ -105,4 +126,113 @@ export async function getMapResources() {
       status: true
     }
   });
+}
+
+
+export async function createReservation(userId: string, resourceId: string, quantity: number, justification: string, pickupTime?: Date) {
+
+  const resource = await prisma.resource.findUnique({ where: { id: resourceId } });
+  if (!resource) throw new Error("Resource not found");
+
+  // ❗ Only Available / Low Stock
+  if (!["Available", "Low Stock"].includes(resource.status)) {
+    throw new Error("Resource not reservable");
+  }
+
+  // ❗ 30% rule
+  const maxAllowed = Math.floor(resource.quantity * 0.3);
+  if (quantity > maxAllowed) {
+    throw new Error("Exceeds 30% limit");
+  }
+
+  // ❗ Max 3 active reservations
+  const activeCount = await prisma.reservation.count({
+    where: {
+      userId,
+      resourceId,
+      status: { in: ["Pending", "Approved"] }
+    }
+  });
+
+  if (activeCount >= 3) {
+    throw new Error("Max 3 active reservations reached");
+  }
+
+  // ❗ Check available stock (IMPORTANT)
+  const pendingSum = await prisma.reservation.aggregate({
+    where: {
+      resourceId,
+      status: "Pending"
+    },
+    _sum: { quantity: true }
+  });
+
+  const held = pendingSum._sum.quantity || 0;
+  const available = resource.quantity - held;
+
+  if (quantity > available) {
+    throw new Error("Not enough available stock");
+  }
+
+  return prisma.reservation.create({
+    data: {
+      userId,
+      resourceId,
+      quantity,
+      justification,
+      pickupTime,
+      status: "Pending"
+    }
+  });
+}
+
+
+
+export async function approveReservation(reservationId: string) {
+  return prisma.$transaction(async (tx) => {
+    const reservation = await tx.reservation.findUnique({ where: { id: reservationId } });
+    if (!reservation) throw new Error("Not found");
+
+    const resource = await tx.resource.findUnique({ where: { id: reservation.resourceId } });
+
+    if (!resource || resource.quantity < reservation.quantity) {
+      throw new Error("Insufficient stock");
+    }
+
+    // Deduct real stock
+    await tx.resource.update({
+      where: { id: resource.id },
+      data: {
+        quantity: resource.quantity - reservation.quantity
+      }
+    });
+
+    return tx.reservation.update({
+      where: { id: reservationId },
+      data: { status: "Approved" }
+    });
+  });
+}
+
+
+export async function declineReservation(reservationId: string) {
+  return prisma.reservation.update({
+    where: { id: reservationId },
+    data: { status: "Declined" }
+  });
+}
+
+
+export async function expireReservations() {
+  const now = new Date();
+
+  const expired = await prisma.reservation.updateMany({
+    where: {
+      status: "Approved",
+      pickupTime: { lt: now }
+    },
+    data: { status: "Expired" }
+  });
+
+  return expired;
 }

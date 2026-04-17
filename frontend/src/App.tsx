@@ -29,6 +29,7 @@ import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { EvidenceGalleryPage } from "./pages/EvidenceGalleryPage";
 import { VolunteerDirectoryPage } from "./pages/VolunteerDirectoryPage";
 import { VolunteerProfilePage } from "./pages/VolunteerProfilePage";
+import BrowseResourcesPage from "./pages/BrowseResourcesPage";
 
 export default function App() {
   return (
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/resources" element={<Navigate to="/resources/add" replace />} />
           <Route path="/resources/add" element={<AddResource />} />
           <Route path="/resources/my" element={<MyResourcesPage />} />
+          <Route path="/browse-resources" element={<BrowseResourcesPage />} />
           <Route path="/volunteers" element={<VolunteerDirectoryPage />} />
           <Route path="/volunteers/:volunteerId" element={<VolunteerProfilePage />} />
           

@@ -462,6 +462,27 @@ export async function deleteResource(resourceId: string) {
   return httpClient<MessageResponse>(`/resources/delete/${resourceId}`, "DELETE");
 }
 
+export const getReservationsForResource = (resourceId: string) =>
+  request<any[]>(`/resources/${resourceId}/reservations`);
+
+export const approveReservationApi = (id: string) =>
+  request(`/resources/reservation/${id}/approve`, { method: "PATCH" });
+
+export const declineReservationApi = (id: string) =>
+  request(`/resources/reservation/${id}/decline`, { method: "PATCH" });
+
+
+export const createReservationApi = (payload: {
+  resourceId: string;
+  quantity: number;
+  justification: string;
+  pickupTime?: string | null;
+}) =>
+  request("/resources/reserve", {
+    method: "POST",
+    body: payload
+  });
+
 // ── Crisis Updates (Module 3.1) ──────────────────────────────────────────────
 
 export type CrisisUpdateInput = {

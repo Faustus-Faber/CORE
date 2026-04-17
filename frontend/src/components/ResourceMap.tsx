@@ -14,6 +14,8 @@ interface Resource {
   unit: string;
   address: string;
   contactPreference: string;
+  status: string;
+  notes?: string;
 }
 
 interface Incident {
@@ -213,7 +215,16 @@ export default function ResourceMap() {
                   const lat = Number(r.latitude);
                   const lng = Number(r.longitude);
                   if (isNaN(lat) || isNaN(lng)) return null;
-
+                  if (r.status === "Depleted" || r.status === "Unavailable") {
+      return (
+        <Marker
+          key={r.id}
+          position={{ lat, lng }}
+          icon="http://maps.google.com/mapfiles/ms/icons/grey-dot.png"
+          onClick={() => setSelectedResource(r)}
+        />
+      );
+    }
                   return (
                     <Marker
                       key={r.id}
@@ -280,6 +291,10 @@ export default function ResourceMap() {
                 <span className="font-semibold">Contact:</span>{" "}
                 {selectedResource.contactPreference}
               </p>
+              <p><b>Status:</b> {selectedResource.status}</p>
+              {selectedResource.notes && (
+                <p><b>Notes:</b> {selectedResource.notes}</p>
+              )}
               <a
                 href={`/resources/reserve/${selectedResource.id}`}
                 className="block text-center bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-semibold"

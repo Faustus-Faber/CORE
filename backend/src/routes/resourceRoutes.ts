@@ -13,6 +13,11 @@ import {
   updateResource
 } from "../services/resourceService.js";
 import { validateUpdateResourceInput } from "../utils/validation.js";
+import {
+  createReservation,
+  approveReservation,
+  declineReservation
+} from "../services/resourceService.js";
 
 const router = Router();
 
@@ -92,7 +97,6 @@ router.post("/add", requireAuth, upload.array("photos", 3), async (req, res) => 
 router.get("/all", async (req, res) => {
   try {
     const resources = await prisma.resource.findMany({
-      where: { status: "Available" },
       select: {
         id: true,
         name: true,
@@ -102,13 +106,14 @@ router.get("/all", async (req, res) => {
         quantity: true,
         unit: true,
         address: true,
-        contactPreference: true
+        contactPreference: true,
+        status: true,
+        notes: true
       }
     });
     res.json(resources);
   } catch (err: any) {
-    console.error("Get all resources error:", err);
-    res.status(500).json({ error: err.message ?? "Server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -197,6 +202,93 @@ router.delete("/delete/:id", requireAuth, requireResourceOwner, async (req, res)
   } catch (err: any) {
     console.error("Delete resource error:", err);
     res.status(500).json({ error: err.message ?? "Server error" });
+  }
+});
+
+router.post("/reserve", requireAuth, async (req, res) => {
+  try {
+    const { resourceId, quantity, justification, pickupTime } = req.body;
+
+    const userId = req.authUser?.userId;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const reservation = await createReservation(
+      userId,
+      resourceId,
+      Number(quantity),
+      justification,
+      pickupTime ? new Date(pickupTime) : undefined
+    );
+
+    res.status(201).json(reservation);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get("/:id/reservations", requireAuth, async (req, res) => {
+  try {
+    const resourceId = Array.isArray(req.params.id)
+      ? req.params.id[0]
+      : req.params.id;
+
+    if (!resourceId) {
+      return res.status(400).json({ error: "Resource ID required" });
+    }
+
+    const reservations = await prisma.reservation.findMany({
+      where: { resourceId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    res.json(reservations);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/reservation/:id/approve", requireAuth, async (req, res) => {
+  try {
+    const id = Array.isArray(req.params.id)
+  ? req.params.id[0]
+  : req.params.id;
+
+    const result = await approveReservation(id);
+
+    res.json({ message: "Reservation approved", reservation: result });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch("/reservation/:id/decline", requireAuth, async (req, res) => {
+  try {
+    const id = Array.isArray(req.params.id)
+  ? req.params.id[0]
+  : req.params.id;
+
+    const result = await declineReservation(id);
+
+    res.json({ message: "Reservation declined", reservation: result });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get("/:id/history", requireAuth, async (req, res) => {
+  try {
+    const id = Array.isArray(req.params.id)
+      ? req.params.id[0]
+      : req.params.id;
+
+    const history = await prisma.resourceHistory.findMany({
+      where: { resourceId: id },
+      orderBy: { createdAt: "desc" }
+    });
+
+    res.json(history);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

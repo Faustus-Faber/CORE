@@ -39,7 +39,8 @@ function buildReportMenuItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
 function buildResourceMenuItems(): NavItem[] {
   return [
     { to: "/resources/add", label: "Add Resource" },
-    { to: "/resources/my", label: "My Resources" }
+    { to: "/resources/my", label: "My Resources" },
+    { to: "/browse-resources", label: "Browse Resources" }
   ];
 }
 

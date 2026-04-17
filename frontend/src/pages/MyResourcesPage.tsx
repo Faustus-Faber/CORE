@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { getMyResources, updateResource, deactivateResource as deactivateResourceApi, deleteResource as deleteResourceApi } from "../services/api";
+import { getMyResources, updateResource, deactivateResource as deactivateResourceApi, deleteResource as deleteResourceApi, request } from "../services/api";
+import {
+  getReservationsForResource,
+  approveReservationApi,
+  declineReservationApi
+} from "../services/api";
 
 interface Resource {
   id: string;
@@ -20,6 +25,15 @@ interface Resource {
   condition?: string;
 }
 
+interface Reservation {
+  id: string;
+  userId: string;
+  quantity: number;
+  status: string;
+  justification: string;
+  pickupTime?: string;
+}
+
 interface EditForm {
   name: string;
   quantity: number;
@@ -29,7 +43,11 @@ interface EditForm {
 
 export default function MyResourcesPage() {
   const [resources, setResources] = useState<Resource[]>([]);
+  const [reservationsMap, setReservationsMap] = useState<Record<string, Reservation[]>>({});
   const [editingResource, setEditingResource] = useState<Resource | null>(null);
+  const [historyMap, setHistoryMap] = useState<Record<string, any[]>>({});
+const [showHistoryModal, setShowHistoryModal] = useState(false);
+const [selectedHistory, setSelectedHistory] = useState<any[]>([]);
   const [editForm, setEditForm] = useState<EditForm>({
     name: "",
     quantity: 1,
@@ -55,6 +73,39 @@ export default function MyResourcesPage() {
     setShowEditModal(true);
   };
 
+const loadReservations = async (resourceId: string) => {
+  try {
+    const data = await getReservationsForResource(resourceId);
+    setReservationsMap(prev => ({
+      ...prev,
+      [resourceId]: data
+    }));
+  } catch (err) {
+    console.error("Failed to load reservations", err);
+  }
+};
+
+
+const loadHistory = async (resourceId: string) => {
+  try {
+    const data = await request<any[]>(`/resources/${resourceId}/history`);
+    setSelectedHistory(data);
+    setShowHistoryModal(true);
+  } catch (err) {
+    console.error("Failed to load history", err);
+  }
+};
+
+const handleApprove = async (reservationId: string, resourceId: string) => {
+  await approveReservationApi(reservationId);
+  await loadReservations(resourceId);
+};
+
+const handleDecline = async (reservationId: string, resourceId: string) => {
+  await declineReservationApi(reservationId);
+  await loadReservations(resourceId);
+};
+  
   const handleSaveEdit = async () => {
     if (!editingResource) return;
 
@@ -194,6 +245,60 @@ export default function MyResourcesPage() {
               </button>
             </div>
 
+            <button
+  className="text-purple-600 underline mt-2"
+  onClick={() => loadHistory(r.id)}
+>
+  Update History
+</button>
+
+            <div className="mt-4">
+  <button
+    className="text-blue-600 underline"
+    onClick={() => loadReservations(r.id)}
+  >
+    View Reservations
+  </button>
+
+  {reservationsMap[r.id] && (
+    <div className="mt-2 border-t pt-2">
+      {reservationsMap[r.id].length === 0 && (
+        <p className="text-gray-500 text-sm">No reservations yet.</p>
+      )}
+
+      {reservationsMap[r.id].map(res => (
+        <div key={res.id} className="border p-2 rounded mb-2">
+          <p><b>Qty:</b> {res.quantity}</p>
+          <p><b>Status:</b> {res.status}</p>
+          <p><b>Reason:</b> {res.justification}</p>
+
+          {res.pickupTime && (
+            <p><b>Pickup:</b> {new Date(res.pickupTime).toLocaleString()}</p>
+          )}
+
+          {res.status === "Pending" && (
+            <div className="flex gap-2 mt-2">
+              <button
+                className="bg-green-500 text-white px-2 py-1 rounded"
+                onClick={() => handleApprove(res.id, r.id)}
+              >
+                Approve
+              </button>
+
+              <button
+                className="bg-red-500 text-white px-2 py-1 rounded"
+                onClick={() => handleDecline(res.id, r.id)}
+              >
+                Decline
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
             <p className="text-xs text-gray-400 mt-2">
               Created at: {new Date(r.createdAt).toLocaleString()}
             </p>
@@ -225,7 +330,7 @@ export default function MyResourcesPage() {
                   value={editForm.quantity}
                   onChange={(e) => setEditForm({ ...editForm, quantity: Number(e.target.value) })}
                   className="border rounded p-2 w-full"
-                  min={1}
+                  min={0}
                 />
               </div>
 
@@ -273,6 +378,43 @@ export default function MyResourcesPage() {
           </div>
         </div>
       )}
+
+      {showHistoryModal && (
+<div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+  <div className="bg-white rounded max-w-lg w-full max-h-[80vh] flex flex-col">
+    
+    {/* Header */}
+    <div className="p-4 border-b">
+      <h2 className="text-xl font-bold">Update History</h2>
+    </div>
+
+    {/* Scrollable content */}
+    <div className="p-4 overflow-y-auto flex-1">
+      {selectedHistory.length === 0 && <p>No history found.</p>}
+
+      {selectedHistory.map((h, i) => (
+        <div key={i} className="border-b py-2">
+          <p>Status: {h.oldStatus} → {h.newStatus}</p>
+          <p>Qty: {h.oldQuantity} → {h.newQuantity}</p>
+          <p className="text-sm text-gray-500">
+            {new Date(h.createdAt).toLocaleString()}
+          </p>
+        </div>
+      ))}
+    </div>
+
+    {/* Footer */}
+    <div className="p-4 border-t">
+      <button
+        onClick={() => setShowHistoryModal(false)}
+        className="bg-gray-400 text-white px-4 py-2 rounded w-full"
+      >
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+)}
     </div>
   );
 }

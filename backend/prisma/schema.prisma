@@ -152,7 +152,8 @@ model Resource {
   userId            String
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
-
+  histories    ResourceHistory[]
+  reservations Reservation[]
   @@index([latitude, longitude])
 }
 
@@ -288,6 +289,31 @@ model EvidencePost {
   flags    EvidenceFlag[]
 
   @@index([userId, createdAt(sort: Desc)])
+}
+
+model ResourceHistory {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  resourceId   String   @db.ObjectId
+  oldStatus    String
+  newStatus    String
+  oldQuantity  Int
+  newQuantity  Int
+  createdAt    DateTime @default(now())
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+}
+
+model Reservation {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  resourceId  String   @db.ObjectId
+  quantity    Int
+  status      String   // Pending | Approved | Declined | Expired
+  justification String
+  pickupTime  DateTime?
+  createdAt   DateTime @default(now())
+  
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 }
 
 model EvidenceFlag {

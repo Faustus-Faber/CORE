@@ -13,6 +13,13 @@ enum Role {
   ADMIN
 }
 
+enum NotificationType {
+  CRISIS_ALERT
+  RESERVATION_REQUEST
+  RESERVATION_APPROVED
+  RESERVATION_DECLINED
+}
+
 enum IncidentSeverity {
   CRITICAL
   HIGH
@@ -396,6 +403,9 @@ model Notification {
   survivalInstruction String?
   isRead          Boolean           @default(false)
   createdAt       DateTime          @default(now())
+  reservationId String? @db.ObjectId
+  type NotificationType?
+  statusSnapshot  String?  // "REQUESTED | APPROVED | DECLINED"
 
   @@index([userId, isRead, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])

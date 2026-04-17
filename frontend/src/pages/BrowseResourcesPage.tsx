@@ -29,7 +29,7 @@ export default function BrowseResourcesPage() {
     if (!selectedResource) return;
 
     try {
-      const res = await fetch("/api/resources/reserve", {
+      const res = await fetch("http://localhost:5000/api/resources/reserve", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

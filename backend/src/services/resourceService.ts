@@ -174,32 +174,55 @@ export async function createReservation(userId: string, resourceId: string, quan
     throw new Error("Not enough available stock");
   }
 
-  return prisma.reservation.create({
+const reservation = await prisma.reservation.create({
+  data: {
+    userId,
+    resourceId,
+    quantity,
+    justification,
+    pickupTime,
+    status: "Pending"
+  }
+});
+
+// 🔔 Send notification to resource owner
+const owner = await prisma.resource.findUnique({
+  where: { id: resourceId },
+  select: { userId: true, name: true }
+});
+
+if (owner) {
+  await prisma.notification.create({
     data: {
-      userId,
-      resourceId,
-      quantity,
-      justification,
-      pickupTime,
-      status: "Pending"
+      userId: owner.userId,
+      title: "New Reservation Request",
+      body: `Request for ${quantity} ${resource.unit} of ${resource.name}`,
+      type: "RESERVATION_REQUEST",
+      reservationId: reservation.id
     }
+
   });
 }
 
-
+return reservation;
+}
 
 export async function approveReservation(reservationId: string) {
   return prisma.$transaction(async (tx) => {
-    const reservation = await tx.reservation.findUnique({ where: { id: reservationId } });
+    const reservation = await tx.reservation.findUnique({
+      where: { id: reservationId }
+    });
     if (!reservation) throw new Error("Not found");
 
-    const resource = await tx.resource.findUnique({ where: { id: reservation.resourceId } });
+    const resource = await tx.resource.findUnique({
+      where: { id: reservation.resourceId }
+    });
 
     if (!resource || resource.quantity < reservation.quantity) {
       throw new Error("Insufficient stock");
     }
 
-    // Deduct real stock
+    // 1. Deduct stock
     await tx.resource.update({
       where: { id: resource.id },
       data: {
@@ -207,21 +230,66 @@ export async function approveReservation(reservationId: string) {
       }
     });
 
-    return tx.reservation.update({
+    // 2. Update reservation
+    const updated = await tx.reservation.update({
       where: { id: reservationId },
       data: { status: "Approved" }
     });
+
+    // ⭐ STEP 2 GOES HERE (IMPORTANT)
+    await tx.notification.create({
+      data: {
+        userId: reservation.userId, // requester
+        title: "Reservation Approved",
+        body: `Your request for ${reservation.quantity} ${resource.unit} of ${resource.name} was approved`,
+        type: "RESERVATION_APPROVED",
+        reservationId: reservation.id
+      }
+    });
+
+    await tx.notification.deleteMany({
+  where: {
+    reservationId: reservation.id,
+    type: "RESERVATION_REQUEST"
+  }
+});
+
+    return updated;
   });
 }
 
 
 export async function declineReservation(reservationId: string) {
-  return prisma.reservation.update({
+  const reservation = await prisma.reservation.update({
     where: { id: reservationId },
     data: { status: "Declined" }
   });
-}
 
+  const resource = await prisma.resource.findUnique({
+    where: { id: reservation.resourceId }
+  });
+
+  if (resource) {
+    await prisma.notification.create({
+      data: {
+        userId: reservation.userId,
+        title: "Reservation Declined",
+        body: `Your request for ${resource.name} was declined`,
+        type: "RESERVATION_DECLINED",
+        reservationId: reservation.id
+      }
+    });
+
+    await prisma.notification.deleteMany({
+  where: {
+    reservationId: reservation.id,
+    type: "RESERVATION_REQUEST"
+  }
+});
+  }
+
+  return reservation;
+}
 
 export async function expireReservations() {
   const now = new Date();

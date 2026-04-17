@@ -6,7 +6,8 @@ import {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
-  triggerDispatch
+  triggerDispatch,
+  clearHandledNotificationsController
 } from "../controllers/notificationController.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -19,3 +20,8 @@ notificationRoutes.get("/inbox", requireAuth, asyncHandler(listNotifications));
 notificationRoutes.patch("/inbox/:id/read", requireAuth, asyncHandler(markNotificationRead));
 notificationRoutes.post("/inbox/read-all", requireAuth, asyncHandler(markAllNotificationsRead));
 notificationRoutes.post("/dispatch", requireAuth, asyncHandler(triggerDispatch));
+notificationRoutes.delete(
+  "/inbox/clear-handled",
+  requireAuth,
+  asyncHandler(clearHandledNotificationsController)
+);

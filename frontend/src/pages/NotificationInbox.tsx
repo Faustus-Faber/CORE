@@ -3,6 +3,9 @@ import { getNotifications, markNotificationRead, NotificationItem } from "../ser
 import { stripThinkingTags } from "../utils/sanitize";
 import { severityBadgeClass, severityDotClass, timeAgo } from "../utils/incident";
 import type { IncidentSeverity } from "../types";
+import { approveReservationApi, declineReservationApi } from "../services/api";
+import { clearHandledNotifications } from "../services/api";
+
 
 /* ── Markdown-lite renderer for AI safety instructions ─────────────── */
 
@@ -64,7 +67,11 @@ export function NotificationInbox() {
       })
       .finally(() => setLoading(false));
   }, [page]);
-
+const refreshNotifications = async (targetPage = page) => {
+  const data = await getNotifications(targetPage);
+  setNotifications(data.notifications);
+  setUnreadCount(data.unreadCount);
+};
   const handleSelect = async (n: NotificationItem) => {
     if (!n.isRead) {
       await markNotificationRead(n.id);
@@ -75,6 +82,27 @@ export function NotificationInbox() {
     }
     setExpandedId(expandedId === n.id ? null : n.id);
   };
+
+const handleApprove = async (reservationId: string) => {
+  await approveReservationApi(reservationId);
+
+  await refreshNotifications(page); // 👈 PUT IT HERE
+
+  setExpandedId(null);
+};
+
+const handleDecline = async (reservationId: string) => {
+  await declineReservationApi(reservationId);
+
+  await refreshNotifications(page); // 👈 SAME PLACE
+
+  setExpandedId(null);
+};
+
+const handleClearHandled = async () => {
+  await clearHandledNotifications();
+  await refreshNotifications(page);
+};
 
   /* ──── Loading skeleton (matches ReportDetailPage) ─────────────── */
   if (loading) {
@@ -123,6 +151,12 @@ export function NotificationInbox() {
               {unreadCount} unread
             </span>
           )}
+          <button
+      onClick={handleClearHandled}
+      className="rounded-md border border-slate-300 px-3 py-1 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+    >
+      Clear handled
+    </button>
         </div>
       </section>
 
@@ -135,6 +169,7 @@ export function NotificationInbox() {
 
         <div className="space-y-3">
           {notifications.map((n) => {
+            console.log("NOTIFICATION:", n.id, n.type, n.reservationId);
             const severity = extractSeverity(n.title);
             const type = extractType(n.title);
             const isExpanded = expandedId === n.id;
@@ -223,6 +258,7 @@ export function NotificationInbox() {
 
                 {/* ── Expanded: Safety Instructions panel ──────────────── */}
                 {isExpanded && hasInstruction && (
+                  
                   <div className="mt-4 rounded-xl bg-white p-5 ring-1 ring-slate-200">
                     <h4 className="text-sm font-bold uppercase tracking-wider text-slate-700">
                       Safety Instructions
@@ -238,6 +274,33 @@ export function NotificationInbox() {
                     />
                   </div>
                 )}
+
+                {isExpanded && (
+  n.type === "RESERVATION_REQUEST" && n.reservationId ? (
+    <div className="mt-4 flex gap-3">
+      <button
+        onClick={() => handleApprove(n.reservationId!)}
+        className="rounded-md bg-green-600 px-4 py-2 text-white"
+      >
+        Accept
+      </button>
+      <button
+        onClick={() => handleDecline(n.reservationId!)}
+        className="rounded-md bg-red-600 px-4 py-2 text-white"
+      >
+        Decline
+      </button>
+    </div>
+  ) : n.type === "RESERVATION_APPROVED" ? (
+    <p className="mt-3 text-sm font-semibold text-green-700">
+      Request approved
+    </p>
+  ) : n.type === "RESERVATION_DECLINED" ? (
+    <p className="mt-3 text-sm font-semibold text-red-700">
+      Request denied
+    </p>
+  ) : null
+)}
               </article>
             );
           })}

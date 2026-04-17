@@ -106,7 +106,8 @@ export async function dispatchNotifications(
         crisisEventId,
         title: `${severity} ${incidentType.replace(/_/g, " ")} Alert`,
         body: description.slice(0, 200),
-        survivalInstruction
+        survivalInstruction,
+        type: "CRISIS_ALERT"
       }
     });
   }
@@ -132,7 +133,9 @@ export async function getNotifications(
         survivalInstruction: true,
         isRead: true,
         crisisEventId: true,
-        createdAt: true
+        createdAt: true,
+        reservationId: true,
+        type: true
       }
     }),
     prisma.notification.count({
@@ -148,6 +151,8 @@ export async function getNotifications(
       survivalInstruction: n.survivalInstruction,
       isRead: n.isRead,
       crisisEventId: n.crisisEventId,
+      reservationId: n.reservationId,
+      type: n.type,
       createdAt: n.createdAt.toISOString()
     })),
     unreadCount
@@ -185,4 +190,15 @@ Provide only actionable safety advice. No preamble.`;
 
   const response = await generateText(prompt);
   return response.trim();
+}
+
+export async function clearHandledNotifications(userId: string) {
+  return prisma.notification.deleteMany({
+    where: {
+      userId,
+      type: {
+        in: ["RESERVATION_APPROVED", "RESERVATION_DECLINED"]
+      }
+    }
+  });
 }

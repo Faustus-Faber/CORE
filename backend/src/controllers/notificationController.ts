@@ -10,6 +10,7 @@ import {
 } from "../services/notificationService.js";
 import { validateNotificationPreferences } from "../utils/validation.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { clearHandledNotifications } from "../services/notificationService.js";
 
 function requireUserId(request: Request, response: Response): string | null {
   const userId = request.authUser?.userId;
@@ -118,4 +119,20 @@ export async function triggerDispatch(
   );
 
   return response.status(200).json({ message: "Notifications dispatched" });
+}
+
+
+export async function clearHandledNotificationsController(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const userId = requireUserId(request, response);
+  if (!userId) return;
+
+  await clearHandledNotifications(userId);
+
+  return response.status(200).json({
+    message: "Handled notifications cleared"
+  });
 }

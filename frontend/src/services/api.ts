@@ -551,6 +551,8 @@ export type NotificationItem = {
   isRead: boolean;
   crisisEventId: string | null;
   createdAt: string;
+  reservationId: string | null;
+  type: string | null;
 };
 
 export async function getNotificationPreferences() {
@@ -575,4 +577,8 @@ export async function markNotificationRead(notificationId: string) {
 
 export async function markAllNotificationsRead() {
   return httpClient<MessageResponse>("/notifications/inbox/read-all", "POST");
+}
+
+export async function clearHandledNotifications() {
+  return httpClient<MessageResponse>("/notifications/inbox/clear-handled", "DELETE");
 }

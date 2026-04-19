@@ -81,7 +81,7 @@ export function DashboardPage() {
   }, [filters, location]);
 
   const stats = useMemo(() => {
-    const active = events.filter((e) => e.status === "ACTIVE" || e.status === "CONTAINED").length;
+    const active = events.filter((e) => e.status !== "RESOLVED" && e.status !== "CLOSED").length;
     const totalReports = events.reduce((sum, e) => sum + e.reportCount, 0);
     const critical = events.filter((e) => e.severityLevel === "CRITICAL").length;
     return { active, totalReports, critical };

@@ -2,8 +2,10 @@ import type { CrisisEventStatus, IncidentSeverity } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
 import { generateText } from "../services/aiService.js";
-import { haversineDistanceKm } from "../utils/geo.js";
-import { validateCrisisUpdateInput } from "../utils/validation.js";
+import {
+  dispatchCrisisUpdateNotifications,
+  promptAdminsForNgoReport
+} from "./notificationService.js";
 
 const STATUS_ORDER = [
   "REPORTED",
@@ -15,10 +17,15 @@ const STATUS_ORDER = [
   "CLOSED"
 ] as const;
 
-const TRUSTED_VOLUNTEER_THRESHOLD = 4.0;
+const FINAL_STATUSES: CrisisEventStatus[] = ["RESOLVED", "CLOSED"];
 
-export type CrisisUpdateInput = {
-  status: string;
+const TRUSTED_VOLUNTEER_THRESHOLD = 4.0;
+const MIN_REVIEWS_FOR_TRUST = 3;
+
+type CrisisStatusLiteral = (typeof STATUS_ORDER)[number];
+
+export type ValidatedCrisisUpdateInput = {
+  status: CrisisStatusLiteral;
   updateNote: string;
   newSeverity?: IncidentSeverity;
   affectedArea?: string;
@@ -44,138 +51,18 @@ export type CrisisUpdateEntry = {
   createdAt: string;
 };
 
-export async function submitCrisisUpdate(
-  crisisEventId: string,
-  userId: string,
-  userRole: string,
-  rawInput: unknown
-): Promise<{ entry: CrisisUpdateEntry; isTrusted: boolean }> {
-  const validated = validateCrisisUpdateInput(rawInput);
-
-  const crisisEvent = await prisma.crisisEvent.findUnique({
-    where: { id: crisisEventId }
-  });
-
-  if (!crisisEvent) {
-    throw new Error("Crisis event not found");
-  }
-
-  const previousStatus = crisisEvent.status;
-  const newStatus = validated.status;
-  const isConflict = hasSkippedSteps(previousStatus, newStatus);
-
-  const isTrusted = await isTrustedUser(userId, userRole);
-  const isFlagged = isConflict && !isTrusted;
-
-  const entry = await prisma.crisisEventUpdate.create({
-    data: {
-      crisisEventId,
-      updaterId: userId,
-      previousStatus,
-      newStatus,
-      updateNote: validated.updateNote,
-      newSeverity: validated.newSeverity ?? null,
-      affectedArea: validated.affectedArea ?? null,
-      casualtyCount: validated.casualtyCount ?? null,
-      displacedCount: validated.displacedCount ?? null,
-      damageNotes: validated.damageNotes ?? null,
-      isFlagged
-    },
-    include: {
-      updater: { select: { fullName: true } }
-    }
-  });
-
-  if (!isFlagged) {
-    await prisma.crisisEvent.update({
-      where: { id: crisisEventId },
-      data: {
-        status: newStatus as typeof previousStatus,
-        ...(validated.newSeverity && { severityLevel: validated.newSeverity })
-      }
-    });
-
-    const updated = await prisma.crisisEvent.findUnique({ where: { id: crisisEventId } });
-    if (updated) {
-      const sitRepText = await generateSituationSummary(crisisEventId, {
-        title: updated.title,
-        incidentType: updated.incidentType,
-        severityLevel: updated.severityLevel,
-        locationText: updated.locationText,
-        status: updated.status
-      });
-      if (sitRepText) {
-        await prisma.crisisEvent.update({
-          where: { id: crisisEventId },
-          data: { sitRepText }
-        });
-      }
-    }
-  }
-
-  const mappedEntry = mapUpdateEntry(entry);
-
-  return { entry: mappedEntry, isTrusted };
+function isValidCrisisStatus(value: string): value is CrisisStatusLiteral {
+  return STATUS_ORDER.includes(value as CrisisStatusLiteral);
 }
 
-export async function getCrisisUpdates(
-  crisisEventId: string
-): Promise<CrisisUpdateEntry[]> {
-  const updates = await prisma.crisisEventUpdate.findMany({
-    where: { crisisEventId },
-    orderBy: { createdAt: "asc" },
-    include: {
-      updater: { select: { fullName: true } }
-    }
-  });
-
-  return updates.map(mapUpdateEntry);
-}
-
-export async function dismissFlaggedUpdate(
-  updateId: string,
-  adminId: string
-): Promise<void> {
-  await prisma.crisisEventUpdate.update({
-    where: { id: updateId },
-    data: { isFlagged: false }
-  });
-}
-
-export async function revertCrisisStatus(
-  crisisEventId: string,
-  targetStatus: string,
-  adminId: string,
-  note: string
-): Promise<void> {
-  const statusEnum = targetStatus as CrisisEventStatus;
-
-  await prisma.crisisEvent.update({
-    where: { id: crisisEventId },
-    data: { status: statusEnum }
-  });
-
-  await prisma.crisisEventUpdate.create({
-    data: {
-      crisisEventId,
-      updaterId: adminId,
-      previousStatus: statusEnum,
-      newStatus: statusEnum,
-      updateNote: `Admin revert: ${note}`,
-      isFlagged: false
-    }
-  });
-}
-
-function hasSkippedSteps(from: string, to: string): boolean {
-  const fromIndex = STATUS_ORDER.indexOf(from as typeof STATUS_ORDER[number]);
-  const toIndex = STATUS_ORDER.indexOf(to as typeof STATUS_ORDER[number]);
+function isConflictingTransition(from: string, to: string): boolean {
+  const fromIndex = STATUS_ORDER.indexOf(from as CrisisStatusLiteral);
+  const toIndex = STATUS_ORDER.indexOf(to as CrisisStatusLiteral);
 
   if (fromIndex === -1 || toIndex === -1) return false;
+  if (toIndex === fromIndex) return false;
 
-  if (toIndex <= fromIndex) return false;
-
-  return toIndex - fromIndex > 1;
+  return toIndex < fromIndex || toIndex - fromIndex > 1;
 }
 
 async function isTrustedUser(userId: string, userRole: string): Promise<boolean> {
@@ -193,8 +80,7 @@ async function isTrustedUser(userId: string, userRole: string): Promise<boolean>
   });
 
   if (!volunteer || volunteer.isFlagged) return false;
-
-  if (volunteer.reviewsReceived.length < 3) return false;
+  if (volunteer.reviewsReceived.length < MIN_REVIEWS_FOR_TRUST) return false;
 
   const avgRating =
     volunteer.reviewsReceived.reduce((sum, r) => sum + r.rating, 0) /
@@ -225,7 +111,7 @@ async function generateSituationSummary(
       }
     });
 
-    const prompt = `Generate a concise situation summary (150-300 words) for a crisis event.
+    const prompt = `You are an emergency response analyst writing a situation update for a crisis event.
 
 Event: ${crisisEvent.title}
 Type: ${crisisEvent.incidentType}
@@ -241,7 +127,16 @@ ${updates
   )
   .join("\n")}
 
-Provide only the summary text.`;
+Output format (strict Markdown):
+- Line 1: a single **bold** one-sentence headline describing the current state (under 25 words).
+- Blank line.
+- A short paragraph (2 to 3 sentences) summarising what has happened so far.
+- Blank line.
+- 3 to 5 bullet points starting with "- " describing the latest operational developments, response actions, or outstanding risks.
+- Do not use headings, numbered lists, code fences, links, or any preamble.
+- Total length between 120 and 220 words.
+
+Return only the Markdown content.`;
 
     const response = await generateText(prompt);
     return response.trim();
@@ -271,4 +166,180 @@ function mapUpdateEntry(
     isFlagged: entry.isFlagged as boolean,
     createdAt: (entry.createdAt as Date).toISOString()
   };
+}
+
+export async function submitCrisisUpdate(
+  crisisEventId: string,
+  userId: string,
+  userRole: string,
+  input: ValidatedCrisisUpdateInput
+): Promise<{ entry: CrisisUpdateEntry; isTrusted: boolean }> {
+  const crisisEvent = await prisma.crisisEvent.findUnique({
+    where: { id: crisisEventId }
+  });
+
+  if (!crisisEvent) {
+    throw new Error("Crisis event not found");
+  }
+
+  const previousStatus = crisisEvent.status;
+  const newStatus = input.status;
+  const isConflict = isConflictingTransition(previousStatus, newStatus);
+  const isTrusted = await isTrustedUser(userId, userRole);
+  const isFlagged = isConflict && !isTrusted;
+
+  const entry = await prisma.$transaction(async (tx) => {
+    const created = await tx.crisisEventUpdate.create({
+      data: {
+        crisisEventId,
+        updaterId: userId,
+        previousStatus,
+        newStatus,
+        updateNote: input.updateNote,
+        newSeverity: input.newSeverity ?? null,
+        affectedArea: input.affectedArea ?? null,
+        casualtyCount: input.casualtyCount ?? null,
+        displacedCount: input.displacedCount ?? null,
+        damageNotes: input.damageNotes ?? null,
+        isFlagged
+      },
+      include: {
+        updater: { select: { fullName: true } }
+      }
+    });
+
+    if (!isFlagged) {
+      await tx.crisisEvent.update({
+        where: { id: crisisEventId },
+        data: {
+          status: newStatus,
+          ...(input.newSeverity && { severityLevel: input.newSeverity })
+        }
+      });
+    }
+
+    return created;
+  });
+
+  if (!isFlagged) {
+    await refreshSituationSummary(crisisEventId);
+    if (previousStatus !== newStatus) {
+      await publishUpdateSideEffects(crisisEventId, newStatus, input.updateNote);
+    }
+  }
+
+  return { entry: mapUpdateEntry(entry), isTrusted };
+}
+
+async function refreshSituationSummary(crisisEventId: string): Promise<void> {
+  const updated = await prisma.crisisEvent.findUnique({ where: { id: crisisEventId } });
+  if (!updated) return;
+
+  const sitRepText = await generateSituationSummary(crisisEventId, {
+    title: updated.title,
+    incidentType: updated.incidentType,
+    severityLevel: updated.severityLevel,
+    locationText: updated.locationText,
+    status: updated.status
+  });
+
+  if (sitRepText) {
+    await prisma.crisisEvent.update({
+      where: { id: crisisEventId },
+      data: { sitRepText }
+    });
+  }
+}
+
+async function publishUpdateSideEffects(
+  crisisEventId: string,
+  newStatus: CrisisStatusLiteral,
+  updateNote: string
+): Promise<void> {
+  const event = await prisma.crisisEvent.findUnique({ where: { id: crisisEventId } });
+  if (!event) return;
+
+  await dispatchCrisisUpdateNotifications(
+    crisisEventId,
+    event.incidentType,
+    event.severityLevel,
+    event.title,
+    updateNote,
+    newStatus,
+    event.latitude,
+    event.longitude
+  );
+
+  if (FINAL_STATUSES.includes(newStatus)) {
+    await promptAdminsForNgoReport(crisisEventId, event.title, newStatus);
+  }
+}
+
+export async function getCrisisUpdates(
+  crisisEventId: string
+): Promise<CrisisUpdateEntry[]> {
+  const updates = await prisma.crisisEventUpdate.findMany({
+    where: { crisisEventId },
+    orderBy: { createdAt: "asc" },
+    include: {
+      updater: { select: { fullName: true } }
+    }
+  });
+
+  return updates.map(mapUpdateEntry);
+}
+
+export async function dismissFlaggedUpdate(
+  updateId: string,
+  adminId: string
+): Promise<void> {
+  await prisma.crisisEventUpdate.update({
+    where: { id: updateId },
+    data: {
+      isFlagged: false,
+      dismissedById: adminId,
+      dismissedAt: new Date()
+    }
+  });
+}
+
+export async function revertCrisisStatus(
+  crisisEventId: string,
+  targetStatus: string,
+  adminId: string,
+  note: string
+): Promise<void> {
+  if (!isValidCrisisStatus(targetStatus)) {
+    throw new Error("Invalid target status");
+  }
+
+  const crisisEvent = await prisma.crisisEvent.findUnique({
+    where: { id: crisisEventId },
+    select: { status: true }
+  });
+
+  if (!crisisEvent) {
+    throw new Error("Crisis event not found");
+  }
+
+  const previousStatus = crisisEvent.status;
+
+  await prisma.$transaction([
+    prisma.crisisEvent.update({
+      where: { id: crisisEventId },
+      data: { status: targetStatus }
+    }),
+    prisma.crisisEventUpdate.create({
+      data: {
+        crisisEventId,
+        updaterId: adminId,
+        previousStatus,
+        newStatus: targetStatus,
+        updateNote: `Admin revert: ${note}`,
+        isFlagged: false
+      }
+    })
+  ]);
+
+  await refreshSituationSummary(crisisEventId);
 }

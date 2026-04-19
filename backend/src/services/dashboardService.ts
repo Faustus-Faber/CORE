@@ -13,7 +13,13 @@ import { severityRanking } from "../utils/incidentMapping.js";
 import { fetchReporters, buildReporterMap } from "../utils/reporterLookup.js";
 import { stripThinkingTagsFromJson } from "../utils/sanitize.js";
 
-const ACTIVE_STATUSES: CrisisEventStatus[] = ["REPORTED", "CONTAINED"];
+const ACTIVE_STATUSES: CrisisEventStatus[] = [
+  "REPORTED",
+  "VERIFIED",
+  "UNDER_INVESTIGATION",
+  "RESPONSE_IN_PROGRESS",
+  "CONTAINED"
+];
 const SIMILARITY_THRESHOLD = 0.8;
 const NEARBY_RESOURCE_LIMIT = 5;
 const DEFAULT_NEARBY_RADIUS_KM = 10;
@@ -329,6 +335,8 @@ async function computeSimilarity(textA: string, textB: string): Promise<number> 
       body: JSON.stringify({
         model: env.groqQwenModel,
         temperature: 0,
+        max_tokens: 200,
+        reasoning_effort: "none",
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: similaritySystemPrompt },
@@ -643,6 +651,8 @@ async function generateAiAdvisories(
     body: JSON.stringify({
       model: env.groqQwenModel,
       temperature: 0,
+      max_tokens: 600,
+      reasoning_effort: "none",
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: advisorySystemPrompt },

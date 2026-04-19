@@ -367,6 +367,18 @@ export async function getIncidentDetail(incidentId: string) {
   return httpClient<{ incident: IncidentDetailResponse }>(`/dashboard/incidents/${incidentId}`);
 }
 
+export function openCriticalIncidentStream(lat?: number, lng?: number, radiusKm?: number): EventSource {
+  const params = new URLSearchParams();
+
+  if (lat != null) params.set("lat", String(lat));
+  if (lng != null) params.set("lng", String(lng));
+  if (radiusKm != null) params.set("radius", String(radiusKm));
+
+  return new EventSource(`${API_BASE}/dashboard/critical-incidents/stream${buildQueryString(params)}`, {
+    withCredentials: true
+  });
+}
+
 // ── Resources ────────────────────────────────────────────────────────────────
 
 export type ResourceSummary = {
@@ -379,14 +391,14 @@ export type ResourceSummary = {
   unit: string;
   address: string;
   contactPreference: string;
+  status: string;
+  notes?: string;
 };
 
 export type ResourceDetail = ResourceSummary & {
-  status: string;
   createdAt: string;
   availabilityStart?: string;
   availabilityEnd?: string;
-  notes?: string;
   photos?: string[];
   condition?: string;
 };
@@ -566,7 +578,7 @@ export async function updateNotificationPreferences(payload: NotificationPrefere
 }
 
 export async function getNotifications(page = 1, limit = 20) {
-  return httpClient<{ notifications: NotificationItem[]; unreadCount: number }>(
+  return httpClient<{ notifications: NotificationItem[]; unreadCount: number; total: number }>(
     `/notifications/inbox?page=${page}&limit=${limit}`
   );
 }

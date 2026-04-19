@@ -3,7 +3,7 @@ import { submitCrisisUpdate } from "../services/api";
 import { SEVERITY_OPTIONS } from "../utils/incident";
 import type { IncidentSeverity } from "../types";
 
-const STATUS_OPTIONS = [
+const STATUS_ORDER = [
   "REPORTED",
   "VERIFIED",
   "UNDER_INVESTIGATION",
@@ -13,6 +13,13 @@ const STATUS_OPTIONS = [
   "CLOSED"
 ] as const;
 
+function getAllowedStatuses(currentStatus: string): string[] {
+  const currentIndex = STATUS_ORDER.indexOf(currentStatus as typeof STATUS_ORDER[number]);
+  if (currentIndex === -1) return [currentStatus];
+  const nextIndex = Math.min(currentIndex + 1, STATUS_ORDER.length - 1);
+  return Array.from(new Set([STATUS_ORDER[currentIndex], STATUS_ORDER[nextIndex]]));
+}
+
 type CrisisUpdateFormProps = {
   crisisEventId: string;
   currentStatus: string;
@@ -20,6 +27,7 @@ type CrisisUpdateFormProps = {
 };
 
 export function CrisisUpdateForm({ crisisEventId, currentStatus, onSubmit }: CrisisUpdateFormProps) {
+  const allowedStatuses = getAllowedStatuses(currentStatus);
   const [status, setStatus] = useState(currentStatus);
   const [updateNote, setUpdateNote] = useState("");
   const [newSeverity, setNewSeverity] = useState("");
@@ -59,7 +67,7 @@ export function CrisisUpdateForm({ crisisEventId, currentStatus, onSubmit }: Cri
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           required
         >
-          {STATUS_OPTIONS.map((s) => (
+          {allowedStatuses.map((s) => (
             <option key={s} value={s}>
               {s.replace(/_/g, " ")}
             </option>

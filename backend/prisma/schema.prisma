@@ -15,6 +15,8 @@ enum Role {
 
 enum NotificationType {
   CRISIS_ALERT
+  CRISIS_UPDATE
+  NGO_REPORT_PROMPT
   RESERVATION_REQUEST
   RESERVATION_APPROVED
   RESERVATION_DECLINED
@@ -374,6 +376,8 @@ model CrisisEventUpdate {
   displacedCount  Int?
   damageNotes     String?
   isFlagged       Boolean           @default(false)
+  dismissedById   String?           @db.ObjectId
+  dismissedAt     DateTime?
   createdAt       DateTime          @default(now())
 
   @@index([crisisEventId, createdAt(sort: Desc)])

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { getSitRep } from "../services/api";
+import { getSitRep, openCriticalIncidentStream } from "../services/api";
 import { useLoadScript, GoogleMap, Marker } from "@react-google-maps/api";
 import type { SitRepBlueprint, ThreatLevel } from "../types";
+
+const SITREP_REFRESH_INTERVAL_MS = 600000;
 
 type SitRepPanelProps = {
   lat?: number;
@@ -340,9 +342,19 @@ export function SitRepPanel({ lat, lng, radiusKm }: SitRepPanelProps) {
 
   useEffect(() => {
     void fetchBlueprint();
-    const interval = setInterval(fetchBlueprint, 600000);
+    const interval = setInterval(fetchBlueprint, SITREP_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [fetchBlueprint]);
+
+  useEffect(() => {
+    const source = openCriticalIncidentStream(lat, lng, radiusKm);
+    const handleCriticalIncident = () => { void fetchBlueprint(); };
+    source.addEventListener("critical-incident", handleCriticalIncident);
+    return () => {
+      source.removeEventListener("critical-incident", handleCriticalIncident);
+      source.close();
+    };
+  }, [fetchBlueprint, lat, lng, radiusKm]);
 
   return (
     <section className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-opacity duration-500 ${isUpdating ? "opacity-50" : "opacity-100"}`}>

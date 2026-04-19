@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { getIncidentDetail } from "../services/api";
 import {
@@ -14,6 +16,7 @@ import { stripThinkingTags } from "../utils/sanitize";
 import type { IncidentDetailResponse, ContributingReport } from "../types";
 import { CrisisUpdateForm } from "../components/CrisisUpdateForm";
 import { UpdateTimeline } from "../components/UpdateTimeline";
+import { AdminCrisisControls } from "../components/AdminCrisisControls";
 import { getCrisisUpdates, CrisisUpdateEntry } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -114,6 +117,7 @@ export function IncidentDetailPage() {
   });
 
   const canUpdate = user != null && CAN_UPDATE_ROLES.includes(user.role);
+  const isAdmin = user?.role === "ADMIN";
 
   const loadUpdates = () => {
     if (id) {
@@ -121,21 +125,22 @@ export function IncidentDetailPage() {
     }
   };
 
-  useEffect(() => {
+  const fetchDetail = async () => {
     if (!id) return;
-    const fetchDetail = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const response = await getIncidentDetail(id);
-        setDetail(response.incident);
-        loadUpdates();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load incident details");
-      } finally {
-        setLoading(false);
-      }
-    };
+    setLoading(true);
+    setError("");
+    try {
+      const response = await getIncidentDetail(id);
+      setDetail(response.incident);
+      loadUpdates();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load incident details");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     void fetchDetail();
   }, [id]);
 
@@ -207,7 +212,41 @@ export function IncidentDetailPage() {
       {crisisEvent.sitRepText && (
         <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Situation Update</h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-700">{stripThinkingTags(crisisEvent.sitRepText)}</p>
+          <div className="sitrep-content mt-2 text-sm leading-relaxed text-slate-700">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {stripThinkingTags(crisisEvent.sitRepText)}
+            </ReactMarkdown>
+          </div>
+          <style>{`
+            .sitrep-content p { margin-bottom: 0.625rem; }
+            .sitrep-content p:last-child { margin-bottom: 0; }
+            .sitrep-content strong { color: #1f2a37; font-weight: 600; }
+            .sitrep-content ul,
+            .sitrep-content ol {
+              list-style: none;
+              padding: 0;
+              margin: 0.5rem 0;
+              display: flex;
+              flex-direction: column;
+              gap: 0.375rem;
+            }
+            .sitrep-content li {
+              position: relative;
+              padding-left: 1.25rem;
+              line-height: 1.6;
+            }
+            .sitrep-content li::before {
+              content: "";
+              position: absolute;
+              left: 0;
+              top: 0.55em;
+              width: 0.45rem;
+              height: 0.45rem;
+              border-radius: 50%;
+              background: #0e7490;
+              opacity: 0.6;
+            }
+          `}</style>
         </section>
       )}
 
@@ -240,8 +279,8 @@ export function IncidentDetailPage() {
       )}
 
       {canUpdate && detail && (
-        <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
-          <div className="flex items-center justify-between mb-4">
+        <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200 space-y-4">
+          <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Update Crisis Status</h2>
             <button
               onClick={() => setShowUpdateForm(!showUpdateForm)}
@@ -256,13 +295,22 @@ export function IncidentDetailPage() {
               currentStatus={crisisEvent.status}
               onSubmit={() => {
                 setShowUpdateForm(false);
-                loadUpdates();
+                void fetchDetail();
               }}
             />
           )}
-          <div className="mt-4">
-            <UpdateTimeline entries={updates} isAdmin={user?.role === "ADMIN"} />
-          </div>
+          {isAdmin && (
+            <AdminCrisisControls
+              crisisEventId={crisisEvent.id}
+              currentStatus={crisisEvent.status}
+              onReverted={() => void fetchDetail()}
+            />
+          )}
+          <UpdateTimeline
+            entries={updates}
+            isAdmin={isAdmin}
+            onRefresh={() => void fetchDetail()}
+          />
         </section>
       )}
 

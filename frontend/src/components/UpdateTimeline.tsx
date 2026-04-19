@@ -1,15 +1,33 @@
-import { CrisisUpdateEntry } from "../services/api";
+import { useState } from "react";
+
+import { CrisisUpdateEntry, dismissFlaggedUpdate } from "../services/api";
 import { severityBadgeClass } from "../utils/incident";
+import type { IncidentSeverity } from "../types";
 
 type UpdateTimelineProps = {
   entries: CrisisUpdateEntry[];
   isAdmin?: boolean;
+  onRefresh?: () => void;
 };
 
-export function UpdateTimeline({ entries, isAdmin }: UpdateTimelineProps) {
+export function UpdateTimeline({ entries, isAdmin, onRefresh }: UpdateTimelineProps) {
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
+
   if (entries.length === 0) {
     return <p className="text-center text-sm text-slate-500 py-6">No updates yet</p>;
   }
+
+  const handleDismiss = async (entryId: string) => {
+    setDismissingId(entryId);
+    try {
+      await dismissFlaggedUpdate(entryId);
+      onRefresh?.();
+    } catch {
+      alert("Failed to dismiss flagged update");
+    } finally {
+      setDismissingId(null);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -51,7 +69,7 @@ export function UpdateTimeline({ entries, isAdmin }: UpdateTimelineProps) {
               <p className="text-sm text-slate-700 mb-2">{entry.updateNote}</p>
 
               {entry.newSeverity && (
-                <span className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${severityBadgeClass(entry.newSeverity as import("../types").IncidentSeverity)}`}>
+                <span className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${severityBadgeClass(entry.newSeverity as IncidentSeverity)}`}>
                   {entry.newSeverity}
                 </span>
               )}
@@ -68,6 +86,17 @@ export function UpdateTimeline({ entries, isAdmin }: UpdateTimelineProps) {
                 </span>
               )}
             </div>
+
+            {isAdmin && entry.isFlagged && (
+              <button
+                type="button"
+                onClick={() => handleDismiss(entry.id)}
+                disabled={dismissingId === entry.id}
+                className="flex-shrink-0 rounded-md border border-amber-400 bg-white px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60"
+              >
+                {dismissingId === entry.id ? "Dismissing..." : "Dismiss"}
+              </button>
+            )}
           </div>
         </div>
       ))}

@@ -2,21 +2,7 @@ import { useEffect, useState } from "react";
 import { GoogleMap, Marker, InfoWindow, useLoadScript } from "@react-google-maps/api";
 import { MarkerClusterer } from "@react-google-maps/api";
 import { Autocomplete } from "@react-google-maps/api";
-import { getAllResources, getMapReports } from "../services/api";
-
-interface Resource {
-  id: string;
-  name: string;
-  latitude: number;
-  longitude: number;
-  category: string;
-  quantity: number;
-  unit: string;
-  address: string;
-  contactPreference: string;
-  status: string;
-  notes?: string;
-}
+import { getAllResources, getMapReports, type ResourceSummary } from "../services/api";
 
 interface Incident {
   id: string;
@@ -37,9 +23,9 @@ export default function ResourceMap() {
     libraries: MAP_LIBRARIES
   });
 
-  const [resources, setResources] = useState<Resource[]>([]);
+  const [resources, setResources] = useState<ResourceSummary[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
+  const [selectedResource, setSelectedResource] = useState<ResourceSummary | null>(null);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [showIncidents, setShowIncidents] = useState(true);
   const [showResources, setShowResources] = useState(true);

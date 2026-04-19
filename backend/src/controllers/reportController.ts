@@ -5,6 +5,7 @@ import path from "node:path";
 
 import type { NextFunction, Request, Response } from "express";
 
+import { publishCriticalIncident } from "../lib/criticalIncidentStream.js";
 import { dispatchNotifications } from "../services/notificationService.js";
 import {
   createIncidentReport,
@@ -72,21 +73,22 @@ async function tryDispatchNotifications(report: {
   classifiedIncidentType: string;
   severityLevel: string;
   classifiedIncidentTitle: string;
+  spamFlagged: boolean;
 }, incidentType: string, description: string, latitude: number | null, longitude: number | null) {
-  if (report.severityLevel === "CRITICAL" || report.severityLevel === "HIGH") {
-    try {
-      await dispatchNotifications(
-        report.id,
-        incidentType,
-        report.severityLevel,
-        report.classifiedIncidentTitle,
-        description,
-        latitude,
-        longitude
-      );
-    } catch {
-      // Silent failure — notifications are non-critical
-    }
+  if (report.spamFlagged) return;
+
+  try {
+    await dispatchNotifications(
+      report.id,
+      incidentType,
+      report.severityLevel,
+      report.classifiedIncidentTitle,
+      description,
+      latitude,
+      longitude
+    );
+  } catch (error) {
+    console.error("Failed to dispatch notifications:", error);
   }
 }
 
@@ -121,14 +123,17 @@ export async function createReport(
   });
   const storedMediaFiles = await persistMediaFiles(mediaFiles);
 
+  const latitude = request.body.latitude ? parseFloat(request.body.latitude) : null;
+  const longitude = request.body.longitude ? parseFloat(request.body.longitude) : null;
+
   const report = await createIncidentReport({
     reporterId,
     incidentTitle: payload.incidentTitle,
     description: payload.description,
     incidentType: payload.incidentType,
     locationText: payload.locationText,
-    latitude: request.body.latitude ? parseFloat(request.body.latitude) : null,
-    longitude: request.body.longitude ? parseFloat(request.body.longitude) : null,
+    latitude,
+    longitude,
     mediaFiles: storedMediaFiles,
     voiceFile: voiceFile
       ? {
@@ -144,9 +149,18 @@ export async function createReport(
     report,
     payload.incidentType as IncidentType,
     payload.description,
-    request.body.latitude ? parseFloat(request.body.latitude) : null,
-    request.body.longitude ? parseFloat(request.body.longitude) : null
+    latitude,
+    longitude
   );
+
+  if (report.severityLevel === "CRITICAL") {
+    publishCriticalIncident({
+      incidentId: report.id,
+      latitude,
+      longitude,
+      occurredAt: new Date().toISOString()
+    });
+  }
 
   return response.status(201).json({
     message: "Incident report submitted successfully",

@@ -90,6 +90,8 @@ export async function classifyIncidentText(
       body: JSON.stringify({
         model: env.groqQwenModel,
         temperature: 0,
+        max_tokens: 400,
+        reasoning_effort: "none",
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: classifierSystemPrompt },

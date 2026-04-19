@@ -4,27 +4,21 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { useAuth } from "../context/AuthContext";
 import { getNotifications } from "../services/api";
 
+type Role = "USER" | "VOLUNTEER" | "ADMIN";
+
 type NavItem = {
   to: string;
   label: string;
 };
 
-function buildPrimaryNav(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
-  const items: NavItem[] = [
+function buildPrimaryNav(): NavItem[] {
+  return [
     { to: "/dashboard", label: "Dashboard" },
-    { to: "/map", label: "Map" },
-    { to: "/gallery", label: "Gallery" },
-    { to: "/docs", label: "My Documents" },
-    { to: "/volunteers", label: "Volunteers" },
-    { to: "/leaderboard", label: "Leaderboard" }
+    { to: "/map", label: "Map" }
   ];
-  if (role === "ADMIN") {
-    items.push({ to: "/admin", label: "Admin Panel" });
-  }
-  return items;
 }
 
-function buildReportMenuItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
+function buildReportMenuItems(role: Role): NavItem[] {
   const items: NavItem[] = [
     { to: "/report-incident", label: "Submit Incident" },
     { to: "/reports/explore", label: "Browse Reports" }
@@ -44,14 +38,26 @@ function buildResourceMenuItems(): NavItem[] {
   ];
 }
 
-function buildUserMenuItems(role: "USER" | "VOLUNTEER" | "ADMIN"): NavItem[] {
+function buildCommunityMenuItems(): NavItem[] {
+  return [
+    { to: "/gallery", label: "Gallery" },
+    { to: "/volunteers", label: "Volunteers" },
+    { to: "/leaderboard", label: "Leaderboard" }
+  ];
+}
+
+function buildUserMenuItems(role: Role): NavItem[] {
   const items: NavItem[] = [
     { to: "/profile", label: "Profile" },
     { to: "/notifications", label: "Notifications" },
-    { to: "/notifications/preferences", label: "Notification Settings" }
+    { to: "/notifications/preferences", label: "Notification Settings" },
+    { to: "/docs", label: "My Documents" }
   ];
   if (role === "VOLUNTEER") {
     items.push({ to: "/tasks", label: "My Tasks" });
+  }
+  if (role === "ADMIN") {
+    items.push({ to: "/admin", label: "Admin Panel" });
   }
   return items;
 }
@@ -70,13 +76,11 @@ function useClickOutside(ref: React.RefObject<HTMLElement | null>, handler: () =
 function Dropdown({
   label,
   items,
-  isActive,
-  onNavigate
+  isActive
 }: {
   label: string;
   items: NavItem[];
   isActive: boolean;
-  onNavigate?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -107,7 +111,7 @@ function Dropdown({
             <NavLink
               key={item.to}
               to={item.to}
-              onClick={() => { setOpen(false); onNavigate?.(); }}
+              onClick={() => setOpen(false)}
               className={({ isActive: active }) =>
                 `block rounded-lg px-3 py-2 text-sm font-medium transition ${
                   active
@@ -225,6 +229,37 @@ function NotificationBell({ unreadCount }: { unreadCount: number }) {
   );
 }
 
+function MobileSection({
+  title,
+  items,
+  onNavigate,
+  navLinkClass
+}: {
+  title: string;
+  items: NavItem[];
+  onNavigate: () => void;
+  navLinkClass: (args: { isActive: boolean }) => string;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        {title}
+      </p>
+      {items.map(item => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          onClick={onNavigate}
+          className={navLinkClass}
+        >
+          <span className="block">{item.label}</span>
+        </NavLink>
+      ))}
+    </div>
+  );
+}
+
 export function AppShell() {
   const { user, logoutUser } = useAuth();
   const navigate = useNavigate();
@@ -233,12 +268,16 @@ export function AppShell() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const navItems = user ? buildPrimaryNav(user.role) : [];
-  const reportMenuItems = user ? buildReportMenuItems(user.role) : [];
-  const resourceMenuItems = buildResourceMenuItems();
-  const userMenuItems = user ? buildUserMenuItems(user.role) : [];
+  const role = (user?.role ?? "USER") as Role;
+  const primaryNav = user ? buildPrimaryNav() : [];
+  const reportMenuItems = user ? buildReportMenuItems(role) : [];
+  const resourceMenuItems = user ? buildResourceMenuItems() : [];
+  const communityMenuItems = user ? buildCommunityMenuItems() : [];
+  const userMenuItems = user ? buildUserMenuItems(role) : [];
+
   const isReportRoute = location.pathname.startsWith("/report") || location.pathname.startsWith("/reports");
-  const isResourceRoute = location.pathname.startsWith("/resources");
+  const isResourceRoute = location.pathname.startsWith("/resources") || location.pathname.startsWith("/browse-resources");
+  const isCommunityRoute = communityMenuItems.some(item => location.pathname.startsWith(item.to));
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
@@ -269,13 +308,13 @@ export function AppShell() {
         : "text-slate-600 hover:bg-slate-100 hover:text-ink"
     }`;
 
-  const roleBadge = user?.role === "ADMIN" ? "Admin" : user?.role === "VOLUNTEER" ? "Volunteer" : "User";
+  const roleBadge = role === "ADMIN" ? "Admin" : role === "VOLUNTEER" ? "Volunteer" : "User";
+  const closeMobile = () => setMobileOpen(false);
 
   return (
     <div className="min-h-screen bg-canvas">
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-lg">
         <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-2.5">
-          {/* Brand */}
           <Link to="/" className="text-xl font-black tracking-tight text-ink">
             CORE
           </Link>
@@ -293,24 +332,16 @@ export function AppShell() {
             </nav>
           ) : (
             <>
-              {/* Desktop nav — pushed to the right */}
               <nav className="ml-auto hidden items-center gap-1 lg:flex">
-                {navItems.map(item => (
+                {primaryNav.map(item => (
                   <NavLink key={item.to} to={item.to} className={navLinkClass}>
                     {item.label}
                   </NavLink>
                 ))}
                 <Dropdown label="Reports" items={reportMenuItems} isActive={isReportRoute} />
                 <Dropdown label="Resources" items={resourceMenuItems} isActive={isResourceRoute} />
+                <Dropdown label="Community" items={communityMenuItems} isActive={isCommunityRoute} />
                 <span className="mx-1 h-5 w-px bg-slate-200" />
-                {user.role === "VOLUNTEER" && (
-                  <button
-                    type="button"
-                    className="rounded-lg bg-ember/10 px-3 py-2 text-sm font-semibold text-ember transition hover:bg-ember/20"
-                  >
-                    Dispatch Alert
-                  </button>
-                )}
                 <NotificationBell unreadCount={unreadCount} />
                 <UserMenu
                   userName={user.fullName}
@@ -321,7 +352,6 @@ export function AppShell() {
                 />
               </nav>
 
-              {/* Mobile hamburger */}
               <button
                 type="button"
                 onClick={() => setMobileOpen(v => !v)}
@@ -342,7 +372,6 @@ export function AppShell() {
           )}
         </div>
 
-        {/* Mobile menu */}
         {mobileOpen && user && (
           <nav className="animate-[fadeIn_150ms_ease-out] border-t border-slate-200/80 bg-white px-4 pb-4 pt-3 lg:hidden">
             <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
@@ -356,11 +385,11 @@ export function AppShell() {
             </div>
 
             <div className="mt-3 space-y-0.5">
-              {navItems.map(item => (
+              {primaryNav.map(item => (
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  onClick={() => setMobileOpen(false)}
+                  onClick={closeMobile}
                   className={navLinkClass}
                 >
                   <span className="block">{item.label}</span>
@@ -368,63 +397,12 @@ export function AppShell() {
               ))}
             </div>
 
-            <div className="mt-3 border-t border-slate-100 pt-3">
-              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Reports
-              </p>
-              {reportMenuItems.map(item => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setMobileOpen(false)}
-                  className={navLinkClass}
-                >
-                  <span className="block">{item.label}</span>
-                </NavLink>
-              ))}
-            </div>
+            <MobileSection title="Reports" items={reportMenuItems} onNavigate={closeMobile} navLinkClass={navLinkClass} />
+            <MobileSection title="Resources" items={resourceMenuItems} onNavigate={closeMobile} navLinkClass={navLinkClass} />
+            <MobileSection title="Community" items={communityMenuItems} onNavigate={closeMobile} navLinkClass={navLinkClass} />
+            <MobileSection title="Account" items={userMenuItems} onNavigate={closeMobile} navLinkClass={navLinkClass} />
 
             <div className="mt-3 border-t border-slate-100 pt-3">
-              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Resources
-              </p>
-              {resourceMenuItems.map(item => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setMobileOpen(false)}
-                  className={navLinkClass}
-                >
-                  <span className="block">{item.label}</span>
-                </NavLink>
-              ))}
-            </div>
-
-            <div className="mt-3 border-t border-slate-100 pt-3">
-              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Account
-              </p>
-              {userMenuItems.map(item => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setMobileOpen(false)}
-                  className={navLinkClass}
-                >
-                  <span className="block">{item.label}</span>
-                </NavLink>
-              ))}
-            </div>
-
-            <div className="mt-3 border-t border-slate-100 pt-3">
-              {user.role === "VOLUNTEER" && (
-                <button
-                  type="button"
-                  className="mb-2 w-full rounded-lg bg-ember/10 px-3 py-2.5 text-sm font-semibold text-ember"
-                >
-                  Dispatch Alert
-                </button>
-              )}
               <button
                 type="button"
                 disabled={isLoggingOut}

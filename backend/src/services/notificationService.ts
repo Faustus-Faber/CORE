@@ -1,7 +1,6 @@
-import type { IncidentType } from "@prisma/client";
+import type { IncidentType, NotificationType } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
-import { env } from "../config/env.js";
 import { haversineDistanceKm } from "../utils/geo.js";
 import { generateText } from "./aiService.js";
 
@@ -53,6 +52,71 @@ export async function getSubscription(
   return sub;
 }
 
+async function findSubscribersWithinRadius(
+  incidentType: string,
+  latitude: number,
+  longitude: number
+) {
+  const subscribers = await prisma.notificationSubscription.findMany({
+    where: {
+      isActive: true,
+      incidentTypes: { has: incidentType as IncidentType }
+    },
+    include: {
+      user: { select: { id: true, latitude: true, longitude: true } }
+    }
+  });
+
+  return subscribers.filter((sub) => {
+    if (sub.user.latitude == null || sub.user.longitude == null) return false;
+    const distance = haversineDistanceKm(
+      latitude,
+      longitude,
+      sub.user.latitude,
+      sub.user.longitude
+    );
+    return distance <= sub.radiusKm;
+  });
+}
+
+async function createNotificationsInBulk(
+  subscriberIds: string[],
+  crisisEventId: string,
+  title: string,
+  body: string,
+  survivalInstruction: string | null,
+  type: NotificationType
+): Promise<void> {
+  await Promise.all(
+    subscriberIds.map((userId) =>
+      prisma.notification.create({
+        data: {
+          userId,
+          crisisEventId,
+          title,
+          body: body.slice(0, 200),
+          survivalInstruction,
+          type
+        }
+      })
+    )
+  );
+}
+
+async function safelyGenerateSurvivalInstruction(
+  incidentType: string,
+  severity: string,
+  title: string,
+  description: string
+): Promise<string | null> {
+  try {
+    return await generateSurvivalInstruction(incidentType, severity, title, description);
+  } catch (error) {
+    console.error("Failed to generate survival instruction:", error);
+    return null;
+  }
+}
+
 export async function dispatchNotifications(
   crisisEventId: string,
   incidentType: string,
@@ -62,65 +126,93 @@ export async function dispatchNotifications(
   latitude: number | null,
   longitude: number | null
 ): Promise<void> {
-  const subscribers = await prisma.notificationSubscription.findMany({
-    where: {
-      isActive: true,
-      incidentTypes: { has: incidentType as IncidentType }
-    },
-    include: {
-      user: { select: { id: true, fullName: true, location: true, latitude: true, longitude: true } }
-    }
+  if (latitude == null || longitude == null) return;
+
+  const matchedSubscribers = await findSubscribersWithinRadius(
+    incidentType,
+    latitude,
+    longitude
+  );
+
+  if (matchedSubscribers.length === 0) return;
+
+  const survivalInstruction = await safelyGenerateSurvivalInstruction(
+    incidentType,
+    severity,
+    title,
+    description
+  );
+
+  await createNotificationsInBulk(
+    matchedSubscribers.map((sub) => sub.userId),
+    crisisEventId,
+    `${severity} ${incidentType.replace(/_/g, " ")} Alert`,
+    description,
+    survivalInstruction,
+    "CRISIS_ALERT"
+  );
+}
+
+export async function dispatchCrisisUpdateNotifications(
+  crisisEventId: string,
+  incidentType: string,
+  severity: string,
+  title: string,
+  updateNote: string,
+  newStatus: string,
+  latitude: number | null,
+  longitude: number | null
+): Promise<void> {
+  if (latitude == null || longitude == null) return;
+
+  const matchedSubscribers = await findSubscribersWithinRadius(
+    incidentType,
+    latitude,
+    longitude
+  );
+
+  if (matchedSubscribers.length === 0) return;
+
+  await createNotificationsInBulk(
+    matchedSubscribers.map((sub) => sub.userId),
+    crisisEventId,
+    `${severity} ${incidentType.replace(/_/g, " ")} Update: ${newStatus.replace(/_/g, " ")}`,
+    `${title} — ${updateNote}`,
+    null,
+    "CRISIS_UPDATE"
+  );
+}
+
+export async function promptAdminsForNgoReport(
+  crisisEventId: string,
+  crisisTitle: string,
+  resolvedStatus: string
+): Promise<void> {
+  const admins = await prisma.user.findMany({
+    where: { role: "ADMIN", isBanned: false },
+    select: { id: true }
   });
 
-  for (const sub of subscribers) {
-    if (
-      latitude != null &&
-      longitude != null &&
-      sub.user.latitude != null &&
-      sub.user.longitude != null
-    ) {
-      const distance = haversineDistanceKm(
-        latitude,
-        longitude,
-        sub.user.latitude,
-        sub.user.longitude
-      );
-      if (distance > sub.radiusKm) continue;
-    }
+  if (admins.length === 0) return;
 
-    let survivalInstruction: string | null = null;
-    try {
-      survivalInstruction = await generateSurvivalInstruction(
-        incidentType,
-        severity,
-        title,
-        description
-      );
-    } catch {
-      survivalInstruction = null;
-    }
-
-    await prisma.notification.create({
-      data: {
-        userId: sub.userId,
-        crisisEventId,
-        title: `${severity} ${incidentType.replace(/_/g, " ")} Alert`,
-        body: description.slice(0, 200),
-        survivalInstruction,
-        type: "CRISIS_ALERT"
-      }
-    });
-  }
+  await createNotificationsInBulk(
+    admins.map((admin) => admin.id),
+    crisisEventId,
+    `NGO Summary Report requested`,
+    `Crisis "${crisisTitle}" has reached status ${resolvedStatus}. Trigger an NGO summary report for stakeholders.`,
+    null,
+    "NGO_REPORT_PROMPT"
+  );
 }
 
 export async function getNotifications(
   userId: string,
   page: number,
   limit: number
-): Promise<{ notifications: NotificationEntry[]; unreadCount: number }> {
+): Promise<{ notifications: NotificationEntry[]; unreadCount: number; total: number }> {
   const skip = (page - 1) * limit;
 
-  const [notifications, unreadCount] = await Promise.all([
+  const [notifications, unreadCount, total] = await Promise.all([
     prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
@@ -140,6 +232,9 @@ export async function getNotifications(
     }),
     prisma.notification.count({
       where: { userId, isRead: false }
+    }),
+    prisma.notification.count({
+      where: { userId }
     })
   ]);
 
@@ -155,7 +250,8 @@ export async function getNotifications(
       type: n.type,
       createdAt: n.createdAt.toISOString()
     })),
-    unreadCount
+    unreadCount,
+    total
   };
 }
 
@@ -179,14 +275,22 @@ async function generateSurvivalInstruction(
   title: string,
   description: string
 ): Promise<string> {
-  const prompt = `Generate a concise survival instruction (50-150 words) for this emergency:
+  const prompt = `You are a public safety officer writing emergency instructions for residents affected by the incident below.
 
-Type: ${incidentType}
-Severity: ${severity}
-Title: ${title}
-Description: ${description.slice(0, 300)}
+Incident:
+- Type: ${incidentType}
+- Severity: ${severity}
+- Title: ${title}
+- Description: ${description.slice(0, 300)}
 
-Provide only actionable safety advice. No preamble.`;
+Output format (strict Markdown):
+- Line 1: a single **bold** imperative directive (one sentence, under 20 words).
+- Blank line.
+- 4 to 6 bullet points, each starting with "- ", each one actionable imperative sentence under 25 words.
+- Do not use headings, numbered lists, code fences, links, or any preamble.
+- Total length between 80 and 150 words.
+
+Return only the Markdown content.`;
 
   const response = await generateText(prompt);
   return response.trim();
@@ -194,11 +298,6 @@ Provide only actionable safety advice. No preamble.`;
 
 export async function clearHandledNotifications(userId: string) {
   return prisma.notification.deleteMany({
-    where: {
-      userId,
-      type: {
-        in: ["RESERVATION_APPROVED", "RESERVATION_DECLINED"]
-      }
-    }
+    where: { userId, isRead: true }
   });
 }

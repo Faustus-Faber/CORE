@@ -1,20 +1,9 @@
 import { useEffect, useState } from "react";
-import { getAllResources } from "../services/api";
-
-interface Resource {
-  id: string;
-  name: string;
-  category: string;
-  quantity: number;
-  unit: string;
-  address: string;
-  contactPreference: string;
-  status: string;
-}
+import { getAllResources, type ResourceSummary } from "../services/api";
 
 export default function BrowseResourcesPage() {
-  const [resources, setResources] = useState<Resource[]>([]);
-  const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
+  const [resources, setResources] = useState<ResourceSummary[]>([]);
+  const [selectedResource, setSelectedResource] = useState<ResourceSummary | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [justification, setJustification] = useState("");
   const [pickupTime, setPickupTime] = useState("");

@@ -110,6 +110,39 @@ CORE enables communities to coordinate emergency response efforts through real-t
 - Responsive modal viewer for full media detail view
 - Owner-only post editing and deletion
 
+### ✅ Module 3, Feature 1: Live Crisis Updates (Complete)
+- Append-only crisis update timeline with status, severity, affected area, casualty, displacement, and damage fields
+- Status progression enforcement (`Reported → Verified → Under Investigation → Response in Progress → Contained → Resolved → Closed`)
+- Conflict-resolution check that flags skipped-state transitions for admin review
+- Trusted-volunteer bypass (trust rating ≥ 4.0, not flagged) for immediate updates
+- AI-regenerated Situation Update via Groq Qwen 3-32B after each change, rendered as structured Markdown on the incident detail page
+- Admin override controls: dismiss flagged updates, revert status to any prior state with correction note
+- Auto-prompt to admins for NGO Summary Report on `Resolved`/`Closed`
+
+### ✅ Module 3, Feature 2: Resource Status Management (Complete)
+- Owner-managed "Update Resource" form with status (`Available → Low Stock → Reserved → Depleted → Unavailable`), remaining quantity, availability window, and notes
+- Quantity validation capped at the originally registered amount
+- Automatic transition to `Depleted` when remaining quantity reaches 0
+- Resource history log capturing every status and quantity change with timestamps
+- Live propagation to the Interactive Crisis Map resource markers (greyed-out/removed when `Depleted` or `Unavailable`)
+
+### ✅ Module 3, Feature 5: Targeted Push Notifications (Complete)
+- Notification preferences page with multi-select crisis categories, 5–50 km radius slider, and master enable/disable toggle
+- Category + radius matching on every new verified incident (Haversine geo-filter)
+- AI-generated survival instructions via Groq Qwen 3-32B (`reasoning_effort: "none"` for reliable token budgeting)
+- Structured Markdown output rendered with `react-markdown` + `remark-gfm` in the notification inbox
+- Paginated notification inbox (20/page) with unread count, mark-as-read, mark-all-read, and clear-handled actions
+- Crisis update notifications for subscribers when an incident's status changes
+- NGO report prompt notifications to admins when a crisis resolves
+- Reservation lifecycle notifications (request / approved / declined) between requester and resource owner
+
+### ✅ Module 3, Feature 6: Resource Reservation (Complete)
+- "Reserve" action on the Crisis Map info window and resource detail page (visible only when status is `Available` or `Low Stock`)
+- Reservation form with requested quantity (bounded by remaining availability), justification, and preferred pickup time
+- Pending-state reservation record with temporary quantity hold
+- Owner-managed "Reservations" tab under My Resources with approve/decline workflow
+- In-app notifications to owners on new requests, and to requesters on approval/decline
+
 ---
 
 ## Tech Stack
@@ -540,6 +573,36 @@ After running `npm run seed`, the following accounts are available:
 | GET | `/api/dashboard/sitrep` | Get AI-generated Situation Report |
 | GET | `/api/dashboard/incidents/:id` | Get incident detail with contributing reports |
 
+### Crisis Updates (Module 3.1)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/dashboard/incidents/:id/updates` | Submit a crisis status/severity update |
+| GET | `/api/dashboard/incidents/:id/updates` | List crisis update timeline |
+| PATCH | `/api/dashboard/incidents/updates/:updateId/dismiss` | Dismiss a flagged update (Admin) |
+| PATCH | `/api/dashboard/incidents/:id/revert` | Revert a crisis to a prior status (Admin) |
+
+### Notifications (Module 3.5)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/notifications/preferences` | Get the user's notification subscription |
+| PUT | `/api/notifications/preferences` | Update category, radius, and enable flag |
+| GET | `/api/notifications/inbox` | Paginated notification inbox with unread count |
+| PATCH | `/api/notifications/inbox/:id/read` | Mark a single notification as read |
+| POST | `/api/notifications/inbox/read-all` | Mark every notification as read |
+| DELETE | `/api/notifications/inbox/clear-handled` | Delete all read notifications |
+| POST | `/api/notifications/dispatch` | Manually dispatch a crisis notification (Admin) |
+
+### Resource Reservation & Status (Module 3.2, 3.6)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| PATCH | `/api/resources/update/:id` | Update status, quantity, window, and notes |
+| PATCH | `/api/resources/deactivate/:id` | Deactivate a resource (owner only) |
+| GET | `/api/resources/:id/history` | List the resource status/quantity change log |
+| POST | `/api/resources/reserve` | Create a reservation with justification |
+| GET | `/api/resources/:id/reservations` | List reservations for a resource |
+| PATCH | `/api/resources/reservation/:id/approve` | Approve a pending reservation (owner) |
+| PATCH | `/api/resources/reservation/:id/decline` | Decline a pending reservation (owner) |
+
 ### Evidence Gallery
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -662,14 +725,15 @@ cd frontend && npm run build
 - [x] Feature 3: Volunteer Directory Search
 - [x] Feature 4: Visual Evidence Gallery
 
-### 📋 Module 3 (Planned)
-- [ ] Live Crisis Updates
-- [ ] Resource Status Management
-- [ ] Automated SMS Dispatch (Twilio)
-- [ ] NGO Summary Reports (PDF)
-- [ ] Resource Reservation System
-- [ ] Volunteer Gamification (leaderboards, badges)
-- [ ] Disaster Damage OCR (Google Vision API)
+### 📋 Module 3 (In Progress)
+- [x] Feature 1: Live Crisis Updates
+- [x] Feature 2: Resource Status Management
+- [ ] Feature 3: Automated Dispatch SMS (Twilio)
+- [ ] Feature 4: NGO Summary Reports (PDF)
+- [x] Feature 5: Targeted Push Notifications
+- [x] Feature 6: Resource Reservation
+- [ ] Feature 7: Volunteer Timesheet & Gamification
+- [ ] Feature 8: Disaster Damage OCR (Google Vision API)
 
 ---
 

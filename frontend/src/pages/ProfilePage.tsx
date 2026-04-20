@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "../context/AuthContext";
-import { changePassword, updateProfile } from "../services/api";
-import type { AuthUser } from "../types";
+import { changePassword, getMySmsLogsApi, updateProfile } from "../services/api";
+import type { AuthUser, SmsLog } from "../types";
 
 type PasswordForm = {
   currentPassword: string;
@@ -25,6 +25,7 @@ export function ProfilePage() {
   const [error, setError] = useState("");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [smsLogs, setSmsLogs] = useState<SmsLog[]>([]);
 
   useEffect(() => {
     if (!user) {
@@ -44,6 +45,14 @@ export function ProfilePage() {
   }, [user]);
 
   const isVolunteer = useMemo(() => user?.role === "VOLUNTEER", [user?.role]);
+
+  useEffect(() => {
+    if (isVolunteer) {
+      getMySmsLogsApi()
+        .then(res => setSmsLogs(res.logs))
+        .catch(console.error);
+    }
+  }, [isVolunteer]);
 
   if (!user) {
     return null;
@@ -272,6 +281,50 @@ export function ProfilePage() {
           </button>
         </form>
       </section>
+
+      {isVolunteer && (
+        <section className="md:col-span-2 rounded-xl bg-white p-6 shadow-panel ring-1 ring-slate-200">
+          <h2 className="text-2xl font-bold text-ink mb-4 flex items-center gap-2">
+            <svg className="h-6 w-6 text-amber-500" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+            </svg>
+            My Alerts
+          </h2>
+          {smsLogs.length === 0 ? (
+            <p className="text-sm text-slate-500 bg-slate-50 p-4 rounded-lg border border-slate-100 text-center">
+              No dispatch alerts received yet. Make sure you opt in using the bell icon!
+            </p>
+          ) : (
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+              {smsLogs.map(log => (
+                <div key={log.id} className="flex flex-col gap-1 p-3 rounded-lg border border-slate-200 bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-ink text-sm">
+                      {log.crisisEvent?.title || "Unknown Emergency"}
+                    </span>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      log.status === "SENT" || log.status === "DELIVERED" 
+                        ? "bg-emerald-100 text-emerald-700" 
+                        : "bg-red-100 text-red-700"
+                    }`}>
+                      {log.status}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 flex justify-between items-center">
+                    <span>To: {log.phoneMasked}</span>
+                    <span>{new Date(log.createdAt).toLocaleString()}</span>
+                  </div>
+                  {log.errorMessage && (
+                    <div className="text-xs text-red-600 mt-1 italic">
+                      Error: {log.errorMessage}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   dispatchCrisisUpdateNotifications,
   promptAdminsForNgoReport
 } from "./notificationService.js";
+import { triggerAlertsForCrisis } from "./twilioService.js";
 
 const STATUS_ORDER = [
   "REPORTED",
@@ -225,6 +226,12 @@ export async function submitCrisisUpdate(
     await refreshSituationSummary(crisisEventId);
     if (previousStatus !== newStatus) {
       await publishUpdateSideEffects(crisisEventId, newStatus, input.updateNote);
+    }
+    
+    const currentSeverity = input.newSeverity ?? crisisEvent.severityLevel;
+    if (newStatus === "VERIFIED" && (currentSeverity === "CRITICAL" || currentSeverity === "HIGH")) {
+      // Fire and forget
+      triggerAlertsForCrisis(crisisEventId).catch(console.error);
     }
   }
 

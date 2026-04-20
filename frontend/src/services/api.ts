@@ -8,14 +8,26 @@ import type {
   IncidentDetailResponse,
   IncidentReportListItem,
   ReportDetailResponse,
-  ReportListQuery,
-  Review,
+  LeaderboardEntry,
+  TimesheetSummary,
+  VolunteerTask,
   Role,
-  SitRepResponse
+  SitRepResponse,
+  SmsLog,
+  Review
 } from "../types";
 import { buildEmergencyReportFormData } from "./reportPayload";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
+
+export type ReportListQuery = {
+  search?: string;
+  severity?: string;
+  sortBy?: string;
+  order?: "asc" | "desc";
+  page?: number;
+  limit?: number;
+};
 
 // ── HTTP client ──────────────────────────────────────────────────────────────
 
@@ -55,26 +67,10 @@ async function httpClient<T>(endpoint: string, method: HttpMethod = "GET", body?
     credentials: "include"
   });
 
-  const data = (await response.json().catch(() => ({}))) as any;
+  const data = (await response.json().catch(() => ({}))) as ErrorResponse;
 
   if (!response.ok) {
     throw new Error(formatError(data));
-  }
-
-  // Prepend base URL to fileUrl if it exists and is relative
-  if (data && typeof data === "object") {
-    const baseUrl = API_BASE.replace("/api", "");
-    const processItem = (item: any) => {
-      if (item && item.fileUrl && typeof item.fileUrl === "string" && item.fileUrl.startsWith("/")) {
-        item.fileUrl = `${baseUrl}${item.fileUrl}`;
-      }
-    };
-
-    if (Array.isArray(data)) {
-      data.forEach(processItem);
-    } else {
-      processItem(data);
-    }
   }
 
   return data as T;
@@ -157,6 +153,14 @@ type ProfileResponse = { message: string; profile: AuthUser };
 
 export async function updateProfile(payload: Partial<AuthUser>) {
   return httpClient<ProfileResponse>("/profile", "PATCH", payload);
+}
+
+export async function toggleDispatchOptInApi(dispatchOptIn: boolean) {
+  return httpClient<{ dispatchOptIn: boolean }>("/profile/dispatch-opt-in", "PATCH", { dispatchOptIn });
+}
+
+export async function getMySmsLogsApi() {
+  return httpClient<{ logs: SmsLog[] }>("/profile/sms-logs");
 }
 
 export async function changePassword(payload: {
@@ -611,41 +615,59 @@ export async function clearHandledNotifications() {
   return httpClient<MessageResponse>("/notifications/inbox/clear-handled", "DELETE");
 }
 
-export interface NGOReport {
-  id: string;
-  crisisEventId: string;
-  generatedById: string;
+// ── Timesheet & Gamification (Feature 3.7) ─────────────────────────────────
+
+export async function logTaskApi(payload: {
   title: string;
-  fileUrl: string;
-  summary: string | null;
-  createdAt: string;
-  crisisEvent?: {
-    title: string;
-  };
-  generatedBy?: {
-    fullName: string;
-  };
+  description: string;
+  category: string;
+  hoursSpent: number;
+  dateOfTask: string;
+  crisisEventId?: string | null;
+}, files?: File[]) {
+  const formData = new FormData();
+  formData.append("title", payload.title);
+  formData.append("description", payload.description);
+  formData.append("category", payload.category);
+  formData.append("hoursSpent", String(payload.hoursSpent));
+  formData.append("dateOfTask", payload.dateOfTask);
+  
+  if (payload.crisisEventId) {
+    formData.append("crisisEventId", payload.crisisEventId);
+  }
+  
+  if (files && files.length > 0) {
+    files.forEach(f => formData.append("evidence", f));
+  }
+
+  return httpClient<{ message: string; task: VolunteerTask }>("/timesheet/tasks", "POST", formData);
 }
 
-export interface NGOReportResource {
-  name: string;
-  amount: string;
+export async function getMyTimesheetApi(page = 1, limit = 20) {
+  return httpClient<{
+    tasks: VolunteerTask[];
+    total: number;
+    summary: TimesheetSummary;
+  }>(`/timesheet/my?page=${page}&limit=${limit}`);
 }
 
-export interface NGOReportGeneratePayload {
-  assignedVolunteers: string[]; // User IDs
-  resources: NGOReportResource[];
+export async function getLeaderboardApi(period: "all" | "month" | "week" = "all", limit = 50) {
+  return httpClient<{ entries: LeaderboardEntry[]; period: string }>(
+    `/timesheet/leaderboard?period=${period}&limit=${limit}`
+  );
 }
 
-export async function generateNGOReport(crisisId: string, payload?: NGOReportGeneratePayload): Promise<NGOReport> {
-  return httpClient<NGOReport>(`/ngo-reports/${crisisId}`, "POST", payload);
+export async function getPendingTasksApi(page = 1, limit = 20) {
+  return httpClient<{ tasks: VolunteerTask[]; total: number }>(`/timesheet/tasks/pending?page=${page}&limit=${limit}`);
 }
 
-export async function listNGOReports(crisisId?: string): Promise<NGOReport[]> {
-  const query = crisisId ? `?crisisId=${crisisId}` : "";
-  return httpClient<NGOReport[]>(`/ngo-reports${query}`, "GET");
+export async function verifyTaskApi(taskId: string, decision: "VERIFIED" | "REJECTED", rejectionReason?: string) {
+  return httpClient<{ message: string; pointsAwarded: number }>(`/timesheet/tasks/${taskId}/verify`, "PATCH", {
+    decision,
+    rejectionReason
+  });
 }
 
-export async function getNGOReport(id: string): Promise<NGOReport> {
-  return httpClient<NGOReport>(`/ngo-reports/${id}`, "GET");
+export async function getCrisesForDropdownApi() {
+  return httpClient<{ crises: { id: string; title: string; status: string; incidentType: string }[] }>("/timesheet/crises");
 }

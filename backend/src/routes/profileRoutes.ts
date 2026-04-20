@@ -2,7 +2,9 @@ import { Router } from "express";
 
 import {
   updateCurrentPassword,
-  updateCurrentProfile
+  updateCurrentProfile,
+  toggleDispatchOptIn,
+  getMySmsLogs
 } from "../controllers/profileController.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -15,3 +17,6 @@ profileRoutes.post(
   requireAuth,
   asyncHandler(updateCurrentPassword)
 );
+
+profileRoutes.patch("/dispatch-opt-in", requireAuth, asyncHandler(toggleDispatchOptIn));
+profileRoutes.get("/sms-logs", requireAuth, asyncHandler(getMySmsLogs));

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
-import { approveReview, approveVolunteer, banVolunteer, deleteReview, getFlaggedReviews, getFlaggedVolunteers, listUsers, updateUserBanStatus, updateUserRole } from "../services/api";
-import type { FlaggedVolunteer, Review } from "../types";
+import { approveReview, approveVolunteer, banVolunteer, deleteReview, getFlaggedReviews, getFlaggedVolunteers, listUsers, updateUserBanStatus, updateUserRole, getPendingTasksApi, verifyTaskApi } from "../services/api";
+import type { FlaggedVolunteer, Review, VolunteerTask } from "../types";
 
 type AdminUser = {
   id: string;
@@ -15,7 +15,7 @@ type AdminUser = {
   createdAt: string;
 };
 
-type Tab = "users" | "flagged-reviews" | "flagged-volunteers";
+type Tab = "users" | "flagged-reviews" | "flagged-volunteers" | "task-verification";
 
 function StarDisplay({ rating }: { rating: number }) {
   return (
@@ -43,6 +43,7 @@ export function AdminPanelPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [flaggedReviews, setFlaggedReviews] = useState<Review[]>([]);
   const [flaggedVolunteers, setFlaggedVolunteers] = useState<FlaggedVolunteer[]>([]);
+  const [pendingTasks, setPendingTasks] = useState<VolunteerTask[]>([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -90,13 +91,30 @@ export function AdminPanelPage() {
     }
   };
 
+  const loadPendingTasks = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const response = await getPendingTasksApi();
+      setPendingTasks(response.tasks);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Could not load pending tasks"
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === "users") {
       void loadUsers();
     } else if (activeTab === "flagged-reviews") {
       void loadFlaggedReviews();
-    } else {
+    } else if (activeTab === "flagged-volunteers") {
       void loadFlaggedVolunteers();
+    } else if (activeTab === "task-verification") {
+      void loadPendingTasks();
     }
   }, [activeTab]);
 
@@ -182,6 +200,18 @@ export function AdminPanelPage() {
     }
   };
 
+  const handleVerifyTask = async (taskId: string, decision: "VERIFIED" | "REJECTED", reason?: string) => {
+    setMessage("");
+    setError("");
+    try {
+      const { pointsAwarded } = await verifyTaskApi(taskId, decision, reason);
+      setMessage(`Task ${decision.toLowerCase()} ${decision === "VERIFIED" ? `(+${pointsAwarded} pts)` : ""}`);
+      await loadPendingTasks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not verify task");
+    }
+  };
+
   const tabs: { id: Tab; label: string }[] = [
     { id: "users", label: "Users" },
     {
@@ -191,6 +221,10 @@ export function AdminPanelPage() {
     {
       id: "flagged-volunteers",
       label: `Flagged Volunteers${flaggedVolunteers.length > 0 ? ` (${flaggedVolunteers.length})` : ""}`
+    },
+    {
+      id: "task-verification",
+      label: `Task Verification${pendingTasks.length > 0 ? ` (${pendingTasks.length})` : ""}`
     }
   ];
 
@@ -198,21 +232,13 @@ export function AdminPanelPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-ink">Admin Panel</h1>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => navigate("/reports/review")}
-            className="rounded-md bg-tide px-4 py-2 text-sm font-semibold text-white hover:bg-tide/90"
-          >
-            Moderate Reports
-          </button>
-          <Link
-            to="/admin/ngo-reports"
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-          >
-            NGO Reports
-          </Link>
-        </div>
+        <button
+          type="button"
+          onClick={() => navigate("/reports/review")}
+          className="rounded-md bg-tide px-4 py-2 text-sm font-semibold text-white hover:bg-tide/90"
+        >
+          Moderate Reports
+        </button>
       </div>
 
       {/* Tab switcher */}
@@ -496,6 +522,81 @@ export function AdminPanelPage() {
                 })}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+
+      {/* ── Task Verification tab ── */}
+      {activeTab === "task-verification" && (
+        <div className="space-y-4">
+          {isLoading ? (
+            <div className="rounded-xl bg-white p-8 shadow-panel ring-1 ring-slate-200 text-center text-sm text-slate-500">
+              Loading pending tasks…
+            </div>
+          ) : pendingTasks.length === 0 ? (
+            <div className="rounded-xl bg-white p-8 shadow-panel ring-1 ring-slate-200 text-center text-sm text-slate-500">
+              No tasks pending verification. 🎉
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {pendingTasks.map(task => (
+                <div key={task.id} className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-bold text-ink">{task.title}</h3>
+                        <p className="text-sm text-slate-500">by <span className="font-semibold text-slate-700">{task.volunteer?.fullName}</span></p>
+                      </div>
+                      <span className="flex items-center gap-1 font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-xs whitespace-nowrap">
+                        {task.category}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100 italic">
+                      "{task.description}"
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-600">
+                      <div>
+                        <span className="text-xs font-semibold uppercase text-slate-400 block tracking-wider">Date</span>
+                        {formatDate(task.dateOfTask)}
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold uppercase text-slate-400 block tracking-wider">Hours</span>
+                        {task.hoursSpent} hrs
+                      </div>
+                      {task.evidenceUrls && task.evidenceUrls.length > 0 && (
+                        <div className="w-full mt-2">
+                          <span className="text-xs font-semibold uppercase text-slate-400 block tracking-wider mb-2">Evidence</span>
+                          <div className="flex gap-2">
+                            {task.evidenceUrls.map(url => (
+                              <img key={url} src={`http://localhost:4000/uploads/${url}`} alt="Evidence" className="h-16 w-24 rounded-md object-cover border border-slate-200" />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-5 pt-4 border-t border-slate-100 flex gap-2">
+                    <button
+                      onClick={() => void handleVerifyTask(task.id, "VERIFIED")}
+                      className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 font-bold text-white transition hover:bg-emerald-700 active:scale-95"
+                    >
+                      Verify ✓
+                    </button>
+                    <button
+                      onClick={() => {
+                        const reason = prompt("Enter a reason for rejection (optional):");
+                        if (reason !== null) {
+                          void handleVerifyTask(task.id, "REJECTED", reason);
+                        }
+                      }}
+                      className="flex-1 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 font-bold text-rose-700 transition hover:bg-rose-100 active:scale-95"
+                    >
+                      Reject ✗
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

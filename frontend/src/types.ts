@@ -7,6 +7,27 @@ export type InteractionContext =
   | "SHELTER_MANAGEMENT"
   | "OTHER";
 
+export type TaskCategory =
+  | "RESCUE"
+  | "MEDICAL_AID"
+  | "SUPPLY_DISTRIBUTION"
+  | "SHELTER_SETUP"
+  | "CLEANUP"
+  | "COUNSELING"
+  | "TRANSPORTATION"
+  | "OTHER";
+
+export type TaskStatus = "PENDING" | "VERIFIED" | "REJECTED";
+
+export type BadgeType =
+  | "FIRST_RESPONDER"
+  | "RISING_STAR"
+  | "CRISIS_HERO"
+  | "COMMUNITY_GUARDIAN"
+  | "ELITE_VOLUNTEER"
+  | "CENTURY"
+  | "TEAM_PLAYER";
+
 export type AuthUser = {
   id: string;
   fullName: string;
@@ -26,6 +47,9 @@ export type AuthUser = {
   avgRating?: number;
   reviewCount?: number;
   distance?: number;
+  totalPoints?: number;
+  totalVerifiedHours?: number;
+  badges?: Badge[];
 };
 
 export type IncidentType =
@@ -40,14 +64,7 @@ export type IncidentType =
 
 export type IncidentSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 export type IncidentStatus = "PUBLISHED" | "UNDER_REVIEW";
-export type CrisisEventStatus =
-  | "REPORTED"
-  | "VERIFIED"
-  | "UNDER_INVESTIGATION"
-  | "RESPONSE_IN_PROGRESS"
-  | "CONTAINED"
-  | "RESOLVED"
-  | "CLOSED";
+export type CrisisEventStatus = "ACTIVE" | "CONTAINED" | "RESOLVED" | "CLOSED";
 export type ReportSortBy = "createdAt" | "severity" | "credibility";
 export type SortOrder = "asc" | "desc";
 export type DashboardSortBy = "mostRecent" | "highestSeverity" | "mostReports";
@@ -138,6 +155,64 @@ export type FlaggedVolunteer = {
     isFlagged: boolean;
     createdAt: string;
   }[];
+};
+
+// ── Feature 3.7: Gamification Types ──────────────────────────────────────────
+
+export type Badge = {
+  id: string;
+  userId: string;
+  badgeType: BadgeType;
+  awardedAt: string;
+};
+
+export type SmsLog = {
+  id: string;
+  userId: string;
+  crisisEventId?: string | null;
+  crisisEvent?: { title: string; severityLevel: string };
+  phoneMasked: string;
+  status: "SENT" | "DELIVERED" | "FAILED";
+  errorMessage?: string | null;
+  createdAt: string;
+};
+
+export type VolunteerTask = {
+  id: string;
+  volunteerId: string;
+  volunteer?: { id: string; fullName: string; email: string; avatarUrl?: string | null };
+  title: string;
+  description: string;
+  category: TaskCategory;
+  hoursSpent: number;
+  dateOfTask: string;
+  crisisEventId?: string | null;
+  status: TaskStatus;
+  pointsAwarded: number;
+  evidenceUrls: string[];
+  verifiedById?: string | null;
+  verifiedAt?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+};
+
+export type LeaderboardEntry = {
+  rank: number;
+  id: string;
+  fullName: string;
+  avatarUrl?: string | null;
+  totalPoints: number;
+  totalVerifiedHours: number;
+  badgeCount: number;
+  badges: Pick<Badge, "badgeType" | "awardedAt">[];
+  avgRating: number | null;
+  reviewCount: number;
+};
+
+export type TimesheetSummary = {
+  totalPoints: number;
+  totalVerifiedHours: number;
+  badges: Badge[];
 };
 
 // Feature 4: Secure Documentation Types

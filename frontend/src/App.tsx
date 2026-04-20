@@ -5,7 +5,6 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { RoleRoute } from "./components/RoleRoute";
 import { AdminPanelPage } from "./pages/AdminPanelPage";
 import { AdminReportModerationPage } from "./pages/AdminReportModerationPage";
-import { NGOReportsArchivePage } from "./pages/NGOReportsArchivePage";
 import AddResource from "./pages/AddResource";
 import { DashboardPage } from "./pages/DashboardPage";
 import { IncidentDetailPage } from "./pages/IncidentDetailPage";
@@ -31,6 +30,8 @@ import { EvidenceGalleryPage } from "./pages/EvidenceGalleryPage";
 import { VolunteerDirectoryPage } from "./pages/VolunteerDirectoryPage";
 import { VolunteerProfilePage } from "./pages/VolunteerProfilePage";
 import BrowseResourcesPage from "./pages/BrowseResourcesPage";
+import { MyTimesheetPage } from "./pages/MyTimesheetPage";
+import { LeaderboardPage } from "./pages/LeaderboardPage";
 
 export default function App() {
   return (
@@ -68,29 +69,18 @@ export default function App() {
 
           <Route
             path="/leaderboard"
-            element={
-              <PlaceholderPage
-                title="Leaderboard"
-                description="Gamification leaderboard is available to authenticated users."
-              />
-            }
+            element={<LeaderboardPage />}
           />
 
           <Route element={<RoleRoute allowedRoles={["VOLUNTEER"]} />}>
             <Route
               path="/tasks"
-              element={
-                <PlaceholderPage
-                  title="My Tasks"
-                  description="Volunteer task log and dispatch tools are volunteer-only."
-                />
-              }
+              element={<MyTimesheetPage />}
             />
           </Route>
 
           <Route element={<RoleRoute allowedRoles={["ADMIN"]} />}>
             <Route path="/admin" element={<AdminPanelPage />} />
-            <Route path="/admin/ngo-reports" element={<NGOReportsArchivePage />} />
             <Route
               path="/reports/review"
               element={<AdminReportModerationPage />}
@@ -104,7 +94,7 @@ export default function App() {
               element={
                 <PlaceholderPage
                   title="Generate Reports"
-                  description="NGO summary reports are generated from the detail page of a Resolved or Closed crisis event."
+                  description="NGO summary report generation is admin-only."
                 />
               }
             />

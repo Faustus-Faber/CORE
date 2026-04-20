@@ -85,13 +85,12 @@ export default function BrowseResourcesPage() {
                 <input
                   type="number"
                   min={1}
-                  max={Math.max(1, Math.floor(selectedResource.quantity * 0.3))}
                   value={quantity}
                   onChange={(e) => setQuantity(Number(e.target.value))}
                   className="border p-2 w-full rounded"
                 />
                 <p className="text-xs text-gray-500">
-                  Max allowed: {Math.max(1, Math.floor(selectedResource.quantity * 0.3))}
+                  Max allowed: {Math.floor(selectedResource.quantity * 0.3)}
                 </p>
               </div>
 

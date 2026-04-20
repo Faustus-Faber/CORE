@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
-import { getNotifications } from "../services/api";
+import { getNotifications, toggleDispatchOptInApi } from "../services/api";
 
 type Role = "USER" | "VOLUNTEER" | "ADMIN";
 
@@ -25,7 +25,7 @@ function buildReportMenuItems(role: Role): NavItem[] {
   ];
   if (role === "ADMIN") {
     items.push({ to: "/reports/review", label: "Review Unpublished" });
-    items.push({ to: "/admin/ngo-reports", label: "NGO Reports Archive" });
+    items.push({ to: "/reports/generate", label: "Generate Reports" });
   }
   return items;
 }
@@ -54,7 +54,7 @@ function buildUserMenuItems(role: Role): NavItem[] {
     { to: "/docs", label: "My Documents" }
   ];
   if (role === "VOLUNTEER") {
-    items.push({ to: "/tasks", label: "My Tasks" });
+    items.push({ to: "/tasks", label: "My Timesheet" });
   }
   if (role === "ADMIN") {
     items.push({ to: "/admin", label: "Admin Panel" });
@@ -229,6 +229,38 @@ function NotificationBell({ unreadCount }: { unreadCount: number }) {
   );
 }
 
+function DispatchBell({ initialOptIn }: { initialOptIn: boolean }) {
+  const [optIn, setOptIn] = useState(initialOptIn);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const toggle = async () => {
+    setIsLoading(true);
+    try {
+      const res = await toggleDispatchOptInApi(!optIn);
+      setOptIn(res.dispatchOptIn);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={() => void toggle()}
+      disabled={isLoading}
+      title={optIn ? "Dispatch SMS: Enabled" : "Dispatch SMS: Disabled"}
+      className={`relative rounded-lg p-2 transition disabled:opacity-50 ${
+        optIn ? "text-amber-500 hover:bg-amber-50" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+      }`}
+    >
+      <svg className="h-5 w-5" viewBox="0 0 24 24" fill={optIn ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+      </svg>
+    </button>
+  );
+}
+
 function MobileSection({
   title,
   items,
@@ -342,6 +374,9 @@ export function AppShell() {
                 <Dropdown label="Resources" items={resourceMenuItems} isActive={isResourceRoute} />
                 <Dropdown label="Community" items={communityMenuItems} isActive={isCommunityRoute} />
                 <span className="mx-1 h-5 w-px bg-slate-200" />
+                {role === "VOLUNTEER" && (
+                  <DispatchBell initialOptIn={user.dispatchOptIn ?? false} />
+                )}
                 <NotificationBell unreadCount={unreadCount} />
                 <UserMenu
                   userName={user.fullName}

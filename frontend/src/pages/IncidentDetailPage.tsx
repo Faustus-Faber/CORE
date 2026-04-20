@@ -17,7 +17,6 @@ import type { IncidentDetailResponse, ContributingReport } from "../types";
 import { CrisisUpdateForm } from "../components/CrisisUpdateForm";
 import { UpdateTimeline } from "../components/UpdateTimeline";
 import { AdminCrisisControls } from "../components/AdminCrisisControls";
-import { NGOReportSection } from "../components/NGOReportSection";
 import { getCrisisUpdates, CrisisUpdateEntry } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -305,13 +304,6 @@ export function IncidentDetailPage() {
               crisisEventId={crisisEvent.id}
               currentStatus={crisisEvent.status}
               onReverted={() => void fetchDetail()}
-            />
-          )}
-          {isAdmin && (
-            <NGOReportSection
-              crisisEventId={crisisEvent.id}
-              status={crisisEvent.status}
-              isAdmin={isAdmin}
             />
           )}
           <UpdateTimeline

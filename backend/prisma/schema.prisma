@@ -76,16 +76,19 @@ model User {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  reviewsGiven    Review[]       @relation("ReviewsGiven")
-  reviewsReceived Review[]       @relation("ReviewsReceived")
-  folders         SecureFolder[] // Feature 4: Secure Documentation
-  evidencePosts   EvidencePost[]
-  comments        Comment[]
-  likes           Like[]
-  evidenceFlags   EvidenceFlag[]
-  crisisUpdates   CrisisEventUpdate[]
-  notificationSub NotificationSubscription?
-  notifications   Notification[]
+  reviewsGiven         Review[]                  @relation("ReviewsGiven")
+  reviewsReceived      Review[]                  @relation("ReviewsReceived")
+  folders              SecureFolder[] // Feature 4: Secure Documentation
+  evidencePosts        EvidencePost[]
+  comments             Comment[]
+  likes                Like[]
+  evidenceFlags        EvidenceFlag[]
+  crisisUpdates        CrisisEventUpdate[]
+  ocrResults           OCRResult[]
+  volunteerAssignments VolunteerAssignment[]
+  generatedReports     NGOReport[]
+  notificationSub      NotificationSubscription?
+  notifications        Notification[]
 
   @@index([role, isBanned])
   @@index([role, isFlagged])
@@ -143,7 +146,7 @@ model Review {
 }
 
 model Resource {
-  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  id                String            @id @default(auto()) @map("_id") @db.ObjectId
   name              String
   category          String
   quantity          Int
@@ -157,12 +160,13 @@ model Resource {
   contactPreference String
   photos            String[]
   notes             String?
-  status            String    @default("Available")
+  status            String            @default("Available")
   userId            String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  histories    ResourceHistory[]
-  reservations Reservation[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  histories         ResourceHistory[]
+  reservations      Reservation[]
+
   @@index([latitude, longitude])
 }
 
@@ -202,6 +206,24 @@ model FolderFile {
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
   createdAt DateTime  @default(now())
+
+  ocrResult   OCRResult? @relation(fields: [ocrResultId], references: [id])
+  ocrResultId String?    @db.ObjectId
+}
+
+model OCRResult {
+  id     String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId String  @db.ObjectId
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileId String? @unique @db.ObjectId
+
+  fullText    String
+  annotations Json // Bounding boxes, individual text strings, confidence, categories
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  FolderFile FolderFile[]
 }
 
 model FolderNote {
@@ -257,8 +279,11 @@ model CrisisEvent {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
-  reports CrisisEventReport[]
-  updates CrisisEventUpdate[]
+  reports              CrisisEventReport[]
+  updates              CrisisEventUpdate[]
+  reservations         Reservation[]
+  volunteerAssignments VolunteerAssignment[]
+  ngoReports           NGOReport[]
 
   @@index([status, severityLevel, createdAt(sort: Desc)])
   @@index([latitude, longitude])
@@ -301,28 +326,60 @@ model EvidencePost {
 }
 
 model ResourceHistory {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  resourceId   String   @db.ObjectId
-  oldStatus    String
-  newStatus    String
-  oldQuantity  Int
-  newQuantity  Int
-  createdAt    DateTime @default(now())
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  resourceId  String   @db.ObjectId
+  oldStatus   String
+  newStatus   String
+  oldQuantity Int
+  newQuantity Int
+  createdAt   DateTime @default(now())
 
   resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 }
 
 model Reservation {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String   @db.ObjectId
-  resourceId  String   @db.ObjectId
-  quantity    Int
-  status      String   // Pending | Approved | Declined | Expired
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String    @db.ObjectId
+  resourceId    String    @db.ObjectId
+  crisisEventId String?   @db.ObjectId
+  quantity      Int
+  status        String // Pending | Approved | Declined | Expired
   justification String
-  pickupTime  DateTime?
-  createdAt   DateTime @default(now())
-  
-  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  pickupTime    DateTime?
+  createdAt     DateTime  @default(now())
+
+  resource    Resource     @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  crisisEvent CrisisEvent? @relation(fields: [crisisEventId], references: [id])
+}
+
+model VolunteerAssignment {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  volunteerId   String    @db.ObjectId
+  crisisEventId String    @db.ObjectId
+  status        String // DISPATCHED | ON_SITE | COMPLETED
+  hoursLogged   Float     @default(0)
+  dispatchedAt  DateTime  @default(now())
+  completedAt   DateTime?
+
+  volunteer   User        @relation(fields: [volunteerId], references: [id])
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+
+  @@index([volunteerId, crisisEventId])
+}
+
+model NGOReport {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId String   @db.ObjectId
+  generatedById String   @db.ObjectId
+  title         String
+  fileUrl       String
+  summary       String?
+  createdAt     DateTime @default(now())
+
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  generatedBy User        @relation(fields: [generatedById], references: [id])
+
+  @@index([crisisEventId])
 }
 
 model EvidenceFlag {
@@ -362,54 +419,54 @@ model Like {
 }
 
 model CrisisEventUpdate {
-  id              String            @id @default(auto()) @map("_id") @db.ObjectId
-  crisisEventId   String            @db.ObjectId
-  crisisEvent     CrisisEvent       @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
-  updaterId       String            @db.ObjectId
-  updater         User              @relation(fields: [updaterId], references: [id])
-  previousStatus  CrisisEventStatus
-  newStatus       CrisisEventStatus
-  updateNote      String
-  newSeverity     IncidentSeverity?
-  affectedArea    String?
-  casualtyCount   Int?
-  displacedCount  Int?
-  damageNotes     String?
-  isFlagged       Boolean           @default(false)
-  dismissedById   String?           @db.ObjectId
-  dismissedAt     DateTime?
-  createdAt       DateTime          @default(now())
+  id             String            @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId  String            @db.ObjectId
+  crisisEvent    CrisisEvent       @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  updaterId      String            @db.ObjectId
+  updater        User              @relation(fields: [updaterId], references: [id])
+  previousStatus CrisisEventStatus
+  newStatus      CrisisEventStatus
+  updateNote     String
+  newSeverity    IncidentSeverity?
+  affectedArea   String?
+  casualtyCount  Int?
+  displacedCount Int?
+  damageNotes    String?
+  isFlagged      Boolean           @default(false)
+  dismissedById  String?           @db.ObjectId
+  dismissedAt    DateTime?
+  createdAt      DateTime          @default(now())
 
   @@index([crisisEventId, createdAt(sort: Desc)])
 }
 
 model NotificationSubscription {
-  id              String            @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String            @db.ObjectId
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  incidentTypes   IncidentType[]
-  radiusKm        Float             @default(10)
-  isActive        Boolean           @default(true)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String         @db.ObjectId
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  incidentTypes IncidentType[]
+  radiusKm      Float          @default(10)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@unique([userId])
   @@index([userId, isActive])
 }
 
 model Notification {
-  id              String            @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String            @db.ObjectId
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  crisisEventId   String?           @db.ObjectId
-  title           String
-  body            String
+  id                  String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId              String            @db.ObjectId
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  crisisEventId       String?           @db.ObjectId
+  title               String
+  body                String
   survivalInstruction String?
-  isRead          Boolean           @default(false)
-  createdAt       DateTime          @default(now())
-  reservationId String? @db.ObjectId
-  type NotificationType?
-  statusSnapshot  String?  // "REQUESTED | APPROVED | DECLINED"
+  isRead              Boolean           @default(false)
+  createdAt           DateTime          @default(now())
+  reservationId       String?           @db.ObjectId
+  type                NotificationType?
+  statusSnapshot      String? // "REQUESTED | APPROVED | DECLINED"
 
   @@index([userId, isRead, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])

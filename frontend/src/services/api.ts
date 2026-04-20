@@ -55,10 +55,26 @@ async function httpClient<T>(endpoint: string, method: HttpMethod = "GET", body?
     credentials: "include"
   });
 
-  const data = (await response.json().catch(() => ({}))) as ErrorResponse;
+  const data = (await response.json().catch(() => ({}))) as any;
 
   if (!response.ok) {
     throw new Error(formatError(data));
+  }
+
+  // Prepend base URL to fileUrl if it exists and is relative
+  if (data && typeof data === "object") {
+    const baseUrl = API_BASE.replace("/api", "");
+    const processItem = (item: any) => {
+      if (item && item.fileUrl && typeof item.fileUrl === "string" && item.fileUrl.startsWith("/")) {
+        item.fileUrl = `${baseUrl}${item.fileUrl}`;
+      }
+    };
+
+    if (Array.isArray(data)) {
+      data.forEach(processItem);
+    } else {
+      processItem(data);
+    }
   }
 
   return data as T;
@@ -593,4 +609,43 @@ export async function markAllNotificationsRead() {
 
 export async function clearHandledNotifications() {
   return httpClient<MessageResponse>("/notifications/inbox/clear-handled", "DELETE");
+}
+
+export interface NGOReport {
+  id: string;
+  crisisEventId: string;
+  generatedById: string;
+  title: string;
+  fileUrl: string;
+  summary: string | null;
+  createdAt: string;
+  crisisEvent?: {
+    title: string;
+  };
+  generatedBy?: {
+    fullName: string;
+  };
+}
+
+export interface NGOReportResource {
+  name: string;
+  amount: string;
+}
+
+export interface NGOReportGeneratePayload {
+  assignedVolunteers: string[]; // User IDs
+  resources: NGOReportResource[];
+}
+
+export async function generateNGOReport(crisisId: string, payload?: NGOReportGeneratePayload): Promise<NGOReport> {
+  return httpClient<NGOReport>(`/ngo-reports/${crisisId}`, "POST", payload);
+}
+
+export async function listNGOReports(crisisId?: string): Promise<NGOReport[]> {
+  const query = crisisId ? `?crisisId=${crisisId}` : "";
+  return httpClient<NGOReport[]>(`/ngo-reports${query}`, "GET");
+}
+
+export async function getNGOReport(id: string): Promise<NGOReport> {
+  return httpClient<NGOReport>(`/ngo-reports/${id}`, "GET");
 }

@@ -25,7 +25,7 @@ function buildReportMenuItems(role: Role): NavItem[] {
   ];
   if (role === "ADMIN") {
     items.push({ to: "/reports/review", label: "Review Unpublished" });
-    items.push({ to: "/reports/generate", label: "Generate Reports" });
+    items.push({ to: "/admin/ngo-reports", label: "NGO Reports Archive" });
   }
   return items;
 }

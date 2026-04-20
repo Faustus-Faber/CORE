@@ -40,7 +40,14 @@ export type IncidentType =
 
 export type IncidentSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 export type IncidentStatus = "PUBLISHED" | "UNDER_REVIEW";
-export type CrisisEventStatus = "ACTIVE" | "CONTAINED" | "RESOLVED" | "CLOSED";
+export type CrisisEventStatus =
+  | "REPORTED"
+  | "VERIFIED"
+  | "UNDER_INVESTIGATION"
+  | "RESPONSE_IN_PROGRESS"
+  | "CONTAINED"
+  | "RESOLVED"
+  | "CLOSED";
 export type ReportSortBy = "createdAt" | "severity" | "credibility";
 export type SortOrder = "asc" | "desc";
 export type DashboardSortBy = "mostRecent" | "highestSeverity" | "mostReports";

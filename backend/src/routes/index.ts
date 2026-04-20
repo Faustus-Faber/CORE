@@ -13,6 +13,7 @@ import { volunteerRoutes } from "./volunteerRoutes.js";
 import { resourceRoutes } from "./resourceRoutes.js";
 import { docRoutes } from "./docRoutes.js";
 import { evidenceRoutes } from "./evidenceRoutes.js";
+import { ocrRoutes } from "./ocrRoutes.js";
 
 export const apiRoutes = Router();
 
@@ -29,6 +30,7 @@ apiRoutes.use("/volunteers", volunteerRoutes);
 apiRoutes.use("/resources", resourceRoutes);
 apiRoutes.use("/docs", docRoutes);
 apiRoutes.use("/evidence", evidenceRoutes);
+apiRoutes.use("/ocr", ocrRoutes);
 apiRoutes.use("/dashboard", dashboardRoutes);
 apiRoutes.use("/crises", crisisUpdateRoutes);
 apiRoutes.use("/ngo-reports", ngoReportRoutes);

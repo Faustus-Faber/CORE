@@ -1,5 +1,7 @@
 import React from 'react';
 import { FolderFile } from '../../types';
+import { ocrApi, OCRAnnotation, OCRResult } from '../../services/ocrApi';
+import { toast } from 'react-hot-toast';
 
 interface FileSectionProps {
     files: FolderFile[];
@@ -18,6 +20,7 @@ interface FileSectionProps {
     setSelectedMediaType: (type: 'image' | 'video' | null) => void;
     API_BASE: string;
     isReadOnly?: boolean;
+    onOCRUpdate?: () => void;
 }
 
 export const FileSection: React.FC<FileSectionProps> = ({
@@ -36,10 +39,87 @@ export const FileSection: React.FC<FileSectionProps> = ({
     setSelectedMedia,
     setSelectedMediaType,
     API_BASE,
-    isReadOnly = false
+    isReadOnly = false,
+    onOCRUpdate
 }) => {
+    const [ocrLoading, setOcrLoading] = React.useState<string | null>(null);
+    const [ocrResult, setOcrResult] = React.useState<OCRResult | null>(null);
+    const [showOCRModal, setShowOCRModal] = React.useState(false);
+
+    const handleExtractText = async (file: FolderFile) => {
+        setOcrLoading(file.id);
+        try {
+            const res = await ocrApi.extractText(undefined, file.id);
+            const saved = await ocrApi.saveOCR({
+                fileId: file.id,
+                fullText: res.fullText,
+                annotations: res.annotations,
+                imageUrl: res.imageUrl
+            });
+            setOcrResult(saved);
+            setShowOCRModal(true);
+            toast.success("OCR completed and saved!");
+            if (onOCRUpdate) onOCRUpdate();
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || "OCR failed");
+        } finally {
+            setOcrLoading(null);
+        }
+    };
+
+    const handleViewOCR = async (file: FolderFile) => {
+        try {
+            const res = await ocrApi.getOCRByFile(file.id);
+            setOcrResult(res);
+            setShowOCRModal(true);
+        } catch (err: any) {
+            toast.error("No OCR data found for this file. Try Extract Text.");
+        }
+    };
+
     return (
         <div className="space-y-6">
+            {showOCRModal && ocrResult && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold text-slate-800">OCR Results</h3>
+                            <button onClick={() => setShowOCRModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-4">
+                                <h4 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">Original Image</h4>
+                                <div className="border rounded-xl overflow-hidden bg-slate-100 relative">
+                                    <img src={`${API_BASE}${ocrResult.imageUrl}`} alt="OCR Source" className="w-full h-auto" />
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                <h4 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">Extracted Text</h4>
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 h-full">
+                                    <p className="text-slate-800 whitespace-pre-wrap leading-relaxed">{ocrResult.fullText}</p>
+                                    <div className="mt-4 pt-4 border-t border-slate-200">
+                                        <h5 className="text-xs font-bold text-slate-500 mb-2 uppercase">Detected Items</h5>
+                                        <div className="flex flex-wrap gap-2">
+                                            {ocrResult.annotations.map((a, i) => (
+                                                <span key={i} className="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded-full shadow-sm">
+                                                    {a.category || 'Text'}: {a.text}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                            <button onClick={() => setShowOCRModal(false)} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm">
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="flex justify-between items-center">
                 <h3 className="text-sm font-semibold text-slate-900">Uploaded Files ({files.length})</h3>
                 <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -156,12 +236,28 @@ export const FileSection: React.FC<FileSectionProps> = ({
                                             )}
                                         </div>
                                         {!isReadOnly && (
-                                            <button
-                                                onClick={() => handleDeleteFile(file.id)}
-                                                className="text-slate-300 hover:text-red-500 transition-colors p-1"
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                            </button>
+                                            <div className="flex gap-1">
+                                                {file.fileType.startsWith('image/') && (
+                                                    <button
+                                                        onClick={() => handleExtractText(file)}
+                                                        disabled={ocrLoading === file.id}
+                                                        className="text-slate-300 hover:text-blue-500 transition-colors p-1"
+                                                        title="Extract Text (OCR)"
+                                                    >
+                                                        {ocrLoading === file.id ? (
+                                                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                        ) : (
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                        )}
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => handleDeleteFile(file.id)}
+                                                    className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
                                 </div>

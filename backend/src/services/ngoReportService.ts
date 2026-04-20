@@ -55,7 +55,11 @@ export async function aggregateCrisisData(crisisId: string) {
   const ocrData = await prisma.secureFolder.findMany({
     where: { crisisId },
     include: {
-      files: true
+      files: {
+        include: {
+          ocrResult: true
+        }
+      }
     }
   });
 
@@ -207,12 +211,28 @@ export async function generateNGOReportPDF(
     doc.fontSize(20).text("Appendix: Document Data", { underline: true });
     doc.moveDown();
     ocrData.forEach((folder: any) => {
-      doc.fontSize(14).text(`Folder: ${folder.name}`);
+      doc.fontSize(14).text(`Folder: ${folder.name}`, { underline: true });
+      doc.moveDown(0.5);
       folder.files.forEach((item: any) => {
         doc.fontSize(12).text(`- ${item.fileName}`);
         if (item.description) {
-          doc.fontSize(10).text(item.description, { indent: 20 });
+          doc.fontSize(10).text(`Description: ${item.description}`, { indent: 20 });
         }
+        if (item.ocrResult) {
+          doc.fontSize(10).font("Helvetica-Bold").text("Extracted Text:", { indent: 20 });
+          doc.font("Helvetica").fontSize(9).text(item.ocrResult.fullText, { indent: 40 });
+          
+          if (Array.isArray(item.ocrResult.annotations)) {
+            const tags = item.ocrResult.annotations
+              .map((a: any) => a.category)
+              .filter((c: any, i: number, self: any[]) => c && self.indexOf(c) === i);
+            if (tags.length > 0) {
+              doc.fontSize(9).font("Helvetica-Oblique").text(`Detected: ${tags.join(", ")}`, { indent: 20 });
+              doc.font("Helvetica");
+            }
+          }
+        }
+        doc.moveDown(0.5);
       });
       doc.moveDown();
     });

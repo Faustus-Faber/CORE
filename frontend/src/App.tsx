@@ -28,6 +28,8 @@ import { ReportDetailPage } from "./pages/ReportDetailPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { EvidenceGalleryPage } from "./pages/EvidenceGalleryPage";
+import OCRToolPage from "./pages/OCRToolPage";
+import OCRHistoryPage from "./pages/OCRHistoryPage";
 import { VolunteerDirectoryPage } from "./pages/VolunteerDirectoryPage";
 import { VolunteerProfilePage } from "./pages/VolunteerProfilePage";
 import BrowseResourcesPage from "./pages/BrowseResourcesPage";
@@ -62,6 +64,9 @@ export default function App() {
           {/* Feature 4: Secure Documentation Routes */}
           <Route path="/docs" element={<MyDocumentsPage />} />
           <Route path="/docs/:folderId" element={<FolderDetailsPage />} />
+
+          <Route path="/ocr-tool" element={<OCRToolPage />} />
+          <Route path="/ocr-history" element={<OCRHistoryPage />} />
 
           <Route path="/notifications" element={<NotificationInbox />} />
           <Route path="/notifications/preferences" element={<NotificationPreferencesPage />} />

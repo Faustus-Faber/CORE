@@ -207,8 +207,12 @@ model FolderFile {
   deletedAt DateTime?
   createdAt DateTime  @default(now())
 
-  ocrResult   OCRResult? @relation(fields: [ocrResultId], references: [id])
-  ocrResultId String?    @db.ObjectId
+  FolderFile   FolderFile[] @relation(fields: [ocrResultId], references: [id])
+  ocrResultId  String?      @db.ObjectId
+  folderFile   FolderFile?  @relation(fields: [folderFileId], references: [id])
+  folderFileId String?      @db.ObjectId
+  ocrresult    OCRResult?   @relation(fields: [oCRResultId], references: [id])
+  oCRResultId  String?      @db.ObjectId
 }
 
 model OCRResult {
@@ -219,6 +223,7 @@ model OCRResult {
 
   fullText    String
   annotations Json // Bounding boxes, individual text strings, confidence, categories
+  imageUrl    String? // Original image URL at the time of OCR
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

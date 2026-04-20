@@ -5,6 +5,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { RoleRoute } from "./components/RoleRoute";
 import { AdminPanelPage } from "./pages/AdminPanelPage";
 import { AdminReportModerationPage } from "./pages/AdminReportModerationPage";
+import { NGOReportsArchivePage } from "./pages/NGOReportsArchivePage";
 import AddResource from "./pages/AddResource";
 import { DashboardPage } from "./pages/DashboardPage";
 import { IncidentDetailPage } from "./pages/IncidentDetailPage";
@@ -89,6 +90,7 @@ export default function App() {
 
           <Route element={<RoleRoute allowedRoles={["ADMIN"]} />}>
             <Route path="/admin" element={<AdminPanelPage />} />
+            <Route path="/admin/ngo-reports" element={<NGOReportsArchivePage />} />
             <Route
               path="/reports/review"
               element={<AdminReportModerationPage />}
@@ -102,7 +104,7 @@ export default function App() {
               element={
                 <PlaceholderPage
                   title="Generate Reports"
-                  description="NGO summary report generation is admin-only."
+                  description="NGO summary reports are generated from the detail page of a Resolved or Closed crisis event."
                 />
               }
             />

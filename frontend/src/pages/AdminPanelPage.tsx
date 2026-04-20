@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { approveReview, approveVolunteer, banVolunteer, deleteReview, getFlaggedReviews, getFlaggedVolunteers, listUsers, updateUserBanStatus, updateUserRole } from "../services/api";
 import type { FlaggedVolunteer, Review } from "../types";
@@ -198,13 +198,21 @@ export function AdminPanelPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-ink">Admin Panel</h1>
-        <button
-          type="button"
-          onClick={() => navigate("/reports/review")}
-          className="rounded-md bg-tide px-4 py-2 text-sm font-semibold text-white hover:bg-tide/90"
-        >
-          Moderate Reports
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => navigate("/reports/review")}
+            className="rounded-md bg-tide px-4 py-2 text-sm font-semibold text-white hover:bg-tide/90"
+          >
+            Moderate Reports
+          </button>
+          <Link
+            to="/admin/ngo-reports"
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+          >
+            NGO Reports
+          </Link>
+        </div>
       </div>
 
       {/* Tab switcher */}

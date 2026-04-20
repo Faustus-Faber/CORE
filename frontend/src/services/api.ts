@@ -671,3 +671,30 @@ export async function verifyTaskApi(taskId: string, decision: "VERIFIED" | "REJE
 export async function getCrisesForDropdownApi() {
   return httpClient<{ crises: { id: string; title: string; status: string; incidentType: string }[] }>("/timesheet/crises");
 }
+
+// ── NGO Reports (Module 3.6) ─────────────────────────────────────────────────
+
+export type NGOReportResource = {
+  name: string;
+  amount: string;
+};
+
+export type NGOReport = {
+  id: string;
+  title: string;
+  crisisEventId: string;
+  fileUrl: string;
+  createdAt: string;
+};
+
+export async function generateNGOReport(
+  crisisEventId: string,
+  payload: { assignedVolunteers: string[]; resources: NGOReportResource[] }
+) {
+  return httpClient<NGOReport>(`/ngo-reports/${crisisEventId}`, "POST", payload);
+}
+
+export async function listNGOReports(crisisId?: string) {
+  const query = crisisId ? `?crisisId=${crisisId}` : "";
+  return httpClient<NGOReport[]>(`/ngo-reports${query}`);
+}

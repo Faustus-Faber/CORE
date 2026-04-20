@@ -18,6 +18,7 @@ import { MyDocumentsPage } from "./pages/MyDocumentsPage";
 import MyResourcesPage from "./pages/MyResourcesPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { NGOReportsArchivePage } from "./pages/NGOReportsArchivePage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { NotificationPreferencesPage } from "./pages/NotificationPreferencesPage";
 import { NotificationInbox } from "./pages/NotificationInbox";
@@ -91,12 +92,7 @@ export default function App() {
             />
             <Route
               path="/reports/generate"
-              element={
-                <PlaceholderPage
-                  title="Generate Reports"
-                  description="NGO summary report generation is admin-only."
-                />
-              }
+              element={<NGOReportsArchivePage />}
             />
           </Route>
         </Route>

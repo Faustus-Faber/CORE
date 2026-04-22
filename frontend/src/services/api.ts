@@ -2,6 +2,8 @@ import type {
   AuthUser,
   CrisisResponder,
   CrisisResponderStatus,
+  CrisisUpdateEntry,
+  CrisisUpdateInput,
   DispatchAlertLog,
   EligibleReviewCrisis,
   CrisisEventCard,
@@ -526,35 +528,8 @@ export const createReservationApi = (payload: {
 
 // ── Crisis Updates (Module 3.1) ──────────────────────────────────────────────
 
-export type CrisisUpdateInput = {
-  status: string;
-  updateNote: string;
-  newSeverity?: string;
-  affectedArea?: string;
-  casualtyCount?: number;
-  displacedCount?: number;
-  damageNotes?: string;
-};
-
-export type CrisisUpdateEntry = {
-  id: string;
-  crisisEventId: string;
-  updaterId: string;
-  updaterName: string;
-  previousStatus: string;
-  newStatus: string;
-  updateNote: string;
-  newSeverity: string | null;
-  affectedArea: string | null;
-  casualtyCount: number | null;
-  displacedCount: number | null;
-  damageNotes: string | null;
-  isFlagged: boolean;
-  createdAt: string;
-};
-
 export async function submitCrisisUpdate(crisisEventId: string, payload: CrisisUpdateInput) {
-  return httpClient<{ entry: CrisisUpdateEntry; isTrusted: boolean }>(
+  return httpClient<{ entry: CrisisUpdateEntry; applied: boolean }>(
     `/crises/${crisisEventId}/updates`,
     "POST",
     payload

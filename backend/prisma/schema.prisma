@@ -294,6 +294,30 @@ enum CrisisEventStatus {
   CLOSED
 }
 
+enum CrisisUpdateType {
+  STATUS_CHANGE
+  FIELD_OBSERVATION
+  ACCESS_UPDATE
+  IMPACT_UPDATE
+  RESOURCE_NEED
+  CLOSURE_NOTE
+  ADMIN_CORRECTION
+  RESPONDER_STATUS
+}
+
+enum CrisisUpdateVerificationStatus {
+  RESPONDER_CONFIRMED
+  ADMIN_CONFIRMED
+  SYSTEM_LOGGED
+}
+
+enum CrisisAccessStatus {
+  OPEN
+  LIMITED
+  BLOCKED
+  UNKNOWN
+}
+
 model CrisisEvent {
   id            String            @id @default(auto()) @map("_id") @db.ObjectId
   title         String
@@ -435,23 +459,30 @@ model Like {
 }
 
 model CrisisEventUpdate {
-  id              String            @id @default(auto()) @map("_id") @db.ObjectId
-  crisisEventId   String            @db.ObjectId
-  crisisEvent     CrisisEvent       @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
-  updaterId       String            @db.ObjectId
-  updater         User              @relation(fields: [updaterId], references: [id])
-  previousStatus  CrisisEventStatus
-  newStatus       CrisisEventStatus
-  updateNote      String
-  newSeverity     IncidentSeverity?
-  affectedArea    String?
-  casualtyCount   Int?
-  displacedCount  Int?
-  damageNotes     String?
-  isFlagged       Boolean           @default(false)
-  dismissedById   String?           @db.ObjectId
-  dismissedAt     DateTime?
-  createdAt       DateTime          @default(now())
+  id                     String                          @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId          String                          @db.ObjectId
+  crisisEvent            CrisisEvent                     @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  updaterId              String                          @db.ObjectId
+  updater                User                            @relation(fields: [updaterId], references: [id])
+  previousStatus         CrisisEventStatus
+  newStatus              CrisisEventStatus
+  updateNote             String
+  updateType             CrisisUpdateType?
+  verificationStatus     CrisisUpdateVerificationStatus?
+  newSeverity            IncidentSeverity?
+  affectedArea           String?
+  accessStatus           CrisisAccessStatus?
+  casualtyCount          Int?
+  displacedCount         Int?
+  damageNotes            String?
+  resourceNeedsText      String?
+  closureAreaSafe        Boolean?
+  closurePeopleAccounted Boolean?
+  closureNeedsStabilized Boolean?
+  isFlagged              Boolean                         @default(false)
+  dismissedById          String?                         @db.ObjectId
+  dismissedAt            DateTime?
+  createdAt              DateTime                        @default(now())
 
   @@index([crisisEventId, createdAt(sort: Desc)])
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
+  $transaction: vi.fn(),
   crisisEvent: {
     findUnique: vi.fn()
   },
@@ -13,11 +14,20 @@ const prismaMock = vi.hoisted(() => ({
     update: vi.fn(),
     findMany: vi.fn(),
     findFirst: vi.fn()
+  },
+  crisisEventUpdate: {
+    create: vi.fn()
   }
 }));
 
+const refreshSituationSummaryMock = vi.hoisted(() => vi.fn());
+
 vi.mock("../lib/prisma.js", () => ({
   prisma: prismaMock
+}));
+
+vi.mock("../services/crisisUpdateService.js", () => ({
+  refreshSituationSummary: refreshSituationSummaryMock
 }));
 
 import {
@@ -31,7 +41,16 @@ const volunteerId = "507f1f77bcf86cd799439012";
 describe("crisisResponderService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    prismaMock.crisisEvent.findUnique.mockResolvedValue({ id: crisisEventId });
+    prismaMock.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        crisisResponder: prismaMock.crisisResponder,
+        crisisEventUpdate: prismaMock.crisisEventUpdate
+      })
+    );
+    prismaMock.crisisEvent.findUnique.mockResolvedValue({
+      id: crisisEventId,
+      status: "REPORTED"
+    });
     prismaMock.user.findUnique.mockResolvedValue({
       role: "VOLUNTEER",
       isBanned: false
@@ -62,6 +81,19 @@ describe("crisisResponderService", () => {
     );
 
     expect(prismaMock.crisisResponder.create).toHaveBeenCalledOnce();
+    expect(prismaMock.crisisEventUpdate.create).toHaveBeenCalledWith({
+      data: {
+        crisisEventId,
+        updaterId: volunteerId,
+        previousStatus: "REPORTED",
+        newStatus: "REPORTED",
+        updateNote: "Jamal Hossain opted in and is now responding.",
+        updateType: "RESPONDER_STATUS",
+        verificationStatus: "SYSTEM_LOGGED",
+        isFlagged: false
+      }
+    });
+    expect(refreshSituationSummaryMock).toHaveBeenCalledWith(crisisEventId);
     expect(result.status).toBe("RESPONDING");
     expect(result.volunteerName).toBe("Jamal Hossain");
   });
@@ -86,6 +118,7 @@ describe("crisisResponderService", () => {
       upsertCrisisResponderStatus(crisisEventId, volunteerId, "RESPONDING")
     ).rejects.toThrow("Invalid responder status transition: EN_ROUTE -> RESPONDING");
     expect(prismaMock.crisisResponder.update).not.toHaveBeenCalled();
+    expect(prismaMock.crisisEventUpdate.create).not.toHaveBeenCalled();
   });
 
   it("filters unavailable responders from public list", async () => {

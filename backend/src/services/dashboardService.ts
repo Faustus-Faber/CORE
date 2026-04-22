@@ -12,6 +12,7 @@ import { haversineDistanceKm } from "../utils/geo.js";
 import { severityRanking } from "../utils/incidentMapping.js";
 import { fetchReporters, buildReporterMap } from "../utils/reporterLookup.js";
 import { stripThinkingTagsFromJson } from "../utils/sanitize.js";
+import { getCrisisCommandCenter, type CrisisCommandCenter } from "./crisisUpdateService.js";
 
 const ACTIVE_STATUSES: CrisisEventStatus[] = [
   "REPORTED",
@@ -20,6 +21,7 @@ const ACTIVE_STATUSES: CrisisEventStatus[] = [
   "RESPONSE_IN_PROGRESS",
   "CONTAINED"
 ];
+const FINAL_STATUSES: CrisisEventStatus[] = ["RESOLVED", "CLOSED"];
 const SIMILARITY_THRESHOLD = 0.8;
 const NEARBY_RESOURCE_LIMIT = 5;
 const DEFAULT_NEARBY_RADIUS_KM = 10;
@@ -104,6 +106,7 @@ type IncidentReportListItem = {
 
 export type IncidentDetailResponse = {
   crisisEvent: CrisisEvent;
+  commandCenter: CrisisCommandCenter;
   contributingReports: IncidentReportListItem[];
   nearbyResources: ResourceSummary[];
 };
@@ -142,6 +145,14 @@ function sortEvents(
   sortOrder: "asc" | "desc"
 ): CrisisEvent[] {
   return [...events].sort((a, b) => {
+    const finalStatusComparison =
+      Number(FINAL_STATUSES.includes(a.status)) -
+      Number(FINAL_STATUSES.includes(b.status));
+
+    if (finalStatusComparison !== 0) {
+      return finalStatusComparison;
+    }
+
     let comparison = 0;
     if (sortBy === "highestSeverity") {
       comparison = severityRanking[a.severityLevel] - severityRanking[b.severityLevel];
@@ -793,5 +804,7 @@ export async function getIncidentDetail(
     );
   }
 
-  return { crisisEvent, contributingReports, nearbyResources };
+  const commandCenter = await getCrisisCommandCenter(incidentId);
+
+  return { crisisEvent, commandCenter, contributingReports, nearbyResources };
 }

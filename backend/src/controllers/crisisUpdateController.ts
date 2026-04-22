@@ -25,13 +25,17 @@ function normalizeEmpty<T extends string>(value: T | "" | undefined): T | undefi
 function toValidatedInput(raw: unknown): ValidatedCrisisUpdateInput {
   const parsed = validateCrisisUpdateInput(raw);
   return {
+    updateType: parsed.updateType,
     status: parsed.status,
     updateNote: parsed.updateNote,
     newSeverity: parsed.newSeverity,
     affectedArea: normalizeEmpty(parsed.affectedArea),
+    accessStatus: parsed.accessStatus,
     casualtyCount: parsed.casualtyCount,
     displacedCount: parsed.displacedCount,
-    damageNotes: normalizeEmpty(parsed.damageNotes)
+    damageNotes: normalizeEmpty(parsed.damageNotes),
+    resourceNeeds: parsed.resourceNeeds,
+    closureChecklist: parsed.closureChecklist
   };
 }
 
@@ -50,15 +54,15 @@ export async function createUpdate(
   const crisisEventId = paramAsString(request.params.id);
   const validated = toValidatedInput(request.body);
 
-  const { entry, isTrusted } = await submitCrisisUpdate(
+  const { entry, applied } = await submitCrisisUpdate(
     crisisEventId,
     userId,
     request.authUser!.role,
     validated
   );
 
-  const status = entry.isFlagged ? 202 : 201;
-  return response.status(status).json({ entry, isTrusted });
+  const status = applied ? 201 : 202;
+  return response.status(status).json({ entry, applied });
 }
 
 export async function listUpdates(

@@ -409,14 +409,45 @@ export const crisisResponderStatusSchema = z.enum([
   "UNAVAILABLE"
 ]);
 
+export const crisisUpdateTypeSchema = z.enum([
+  "STATUS_CHANGE",
+  "FIELD_OBSERVATION",
+  "ACCESS_UPDATE",
+  "IMPACT_UPDATE",
+  "RESOURCE_NEED",
+  "CLOSURE_NOTE",
+  "ADMIN_CORRECTION",
+  "RESPONDER_STATUS"
+]);
+
+export const crisisAccessStatusSchema = z.enum([
+  "OPEN",
+  "LIMITED",
+  "BLOCKED",
+  "UNKNOWN"
+]);
+
 export const crisisUpdateSchema = z.object({
+  updateType: crisisUpdateTypeSchema,
   status: crisisStatusSchema,
   updateNote: z.string().trim().min(1, "Update note is required").max(1000, "Update note is too long"),
   newSeverity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
   affectedArea: z.string().trim().max(500).optional().or(z.literal("")),
+  accessStatus: crisisAccessStatusSchema.optional(),
   casualtyCount: z.number().int().min(0).optional(),
   displacedCount: z.number().int().min(0).optional(),
-  damageNotes: z.string().trim().max(1000).optional().or(z.literal(""))
+  damageNotes: z.string().trim().max(1000).optional().or(z.literal("")),
+  resourceNeeds: z
+    .array(z.string().trim().min(1).max(60))
+    .max(8, "Too many resource needs")
+    .optional(),
+  closureChecklist: z
+    .object({
+      areaSafe: z.boolean(),
+      peopleAccounted: z.boolean(),
+      urgentNeedsStabilized: z.boolean()
+    })
+    .optional()
 });
 
 export function validateCrisisUpdateInput(payload: unknown) {

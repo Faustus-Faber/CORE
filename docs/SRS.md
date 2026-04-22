@@ -21,7 +21,7 @@
 
 | ID | Name | Primary Responsibilities |
 |:---|:---|:---|
-| 23301692 | Farhan Zarif | Emergency Reporting, Real-Time Dashboard, Live Crisis Updates, Targeted Push Notifications |
+| 23301692 | Farhan Zarif | Emergency Reporting, Real-Time Dashboard, Incident Command & Verified Field Intelligence, Targeted Push Notifications |
 | 23241090 | Al Irfan Alve | Resource Registration, Interactive Crisis Map, Resource Status Management, Resource Reservation |
 | 22301317 | Ishaq Ahnaf Khan | Secure Documentation, Visual Evidence Gallery, NGO Summary Reports, Disaster Damage OCR |
 | 23101531 | Mahia Mahzabin | Volunteer Reviews & Fraud Detection, Volunteer Directory Search, Volunteer Crisis Opt-In & Dispatch Email Alerts, Volunteer Timesheet & Gamification |
@@ -575,38 +575,59 @@
 
 ---
 
-#### 3.1 Live Crisis Updates â€" *Farhan Zarif*
+#### 3.1 Incident Command & Verified Field Intelligence â€" *Farhan Zarif*
 
 | Aspect | Detail |
 |:---|:---|
-| **Description** | Volunteers can update the details and operational status of an active crisis event. Status changes trigger the AI to regenerate a revised live situation summary, ensuring the community stays informed with a concise, up-to-date overview without being overwhelmed by raw data. The system enforces an append-only timeline, supports admin override, and flags conflicting updates for review to maintain data integrity. |
-| **Actors** | Volunteer, Admin. |
+| **Description** | The incident detail page shall act as a lightweight command board for active crises. Admins and crisis-scoped opted-in responders can publish structured field intelligence, operational status changes, and correction notes, while the public page shows the latest verified operational picture without exposing noisy or conflicting raw chatter. The system keeps an append-only command timeline, auto-logs responder mobilisation events from Module 3.3, regenerates the AI situation summary from verified updates, and requires stronger closure evidence before a crisis can be resolved or closed. |
+| **Actors** | Opted-in Volunteer Responder, Admin, Authenticated User. |
 | **External APIs** | Groq LLM API (Qwen 3-32B) (revised situation summary generation). |
 
 **Functional Details:**
 
-1. On the detailed incident view page, authorized users (Volunteers and Admin) shall see an **"Update Crisis"** panel with the following editable fields:
-   - **Status** (dropdown): `Reported` â†' `Verified` â†' `Under Investigation` â†' `Response in Progress` â†' `Contained` â†' `Resolved` â†' `Closed`.
-   - **Situation Update Note** (text area, required when changing status, max 1000 characters): a brief description of what has changed.
-   - **Updated Severity** (optional re-classification): Critical, High, Medium, Low.
-   - **Affected Area Update** (optional): revised radius or boundary description.
-   - **Casualty / Impact Estimates** (optional): fields for injured count, displaced count, structural damage notes.
-2. Upon submitting an update, the system shall:
-   - Log the update as a new entry in the crisis event's **update timeline/history** with the updater's User ID, timestamp, and all changed fields.
-   - Run a **conflict-resolution check**: if the proposed status transition skips one or more intermediate states (e.g., `Reported` â†' `Resolved` without passing through `Verified` or `Response in Progress`), the update shall be flagged with a `? Conflicting Update` badge visible to Admin.
-   - **Trusted volunteers** (trust rating â‰¥ 4.0, not flagged) shall bypass the conflict check, and their updates shall apply immediately without flagging.
-   - Send the complete crisis event data (original report + all updates) to the **Groq LLM API (Qwen 3-32B)** to generate a **revised live situation summary** (150â€"300 words).
-   - Replace the previous summary on the incident's detail page and the dashboard SitRep.
-3. **Admin override:** Admins can review the full update timeline for any crisis event, including flagged entries. Admins shall be able to:
-   - **Dismiss** a flagged update (mark as reviewed, no state change).
-   - **Revert** the crisis status to any previously logged state.
-   - Apply a **correction note** that is appended to the timeline with the Admin's User ID and timestamp.
-4. If the status is changed to **`Resolved`** or **`Closed`**:
-   - The incident marker shall be removed from the active crisis map layer (or moved to a "Resolved" layer).
-   - The incident card on the dashboard shall be visually muted and moved to the bottom of the feed.
-   - If the user is an Admin, the system shall prompt them to **trigger NGO Summary Report generation** (Module 3.4).
-5. All status changes shall be **immutable** once saved (append-only log); users cannot delete or retroactively edit past updates.
-6. Each update shall trigger relevant **push notifications** (Module 3.5) to users subscribed to that crisis's type or location.
+1. On the detailed incident view page, the system shall present an **Incident Command** panel visible only to `Admin` and `Volunteer` users who are actively opted in for that crisis through Module 3.3. The panel shall support structured update types:
+   - **Status Change**
+   - **Field Observation**
+   - **Access Update**
+   - **Impact Update**
+   - **Resource Need**
+   - **Closure Note**
+   - **Admin Correction**
+2. Each command update shall capture:
+   - Current or next crisis status from `Reported` â†' `Verified` â†' `Under Investigation` â†' `Response in Progress` â†' `Contained` â†' `Resolved` â†' `Closed`
+   - Required situation note (max 1000 characters)
+   - Optional severity reclassification
+   - Optional affected-area text
+   - Optional casualty and displaced estimates
+   - Optional structural damage notes
+   - Optional access state (`Open`, `Limited`, `Blocked`, `Unknown`)
+   - Optional urgent resource needs as short tags
+3. Every accepted command update shall be stored as an immutable entry in the crisis event's append-only **command timeline/history** with updater ID, timestamp, typed update category, and verification level:
+   - `Responder Confirmed` for updates submitted by an active opted-in responder
+   - `Admin Confirmed` for updates submitted by an Admin
+   - `System Logged` for responder mobilisation events generated automatically from Module 3.3
+4. The system shall automatically add **system timeline events** when a volunteer changes crisis response state in Module 3.3, so the incident timeline reflects mobilisation activity such as opting in, going en route, arriving on site, completing work, or becoming unavailable.
+5. The incident detail page shall display a public **Field Intelligence Snapshot** summarising the latest verified operational picture, including:
+   - Last verified update time and verifier name
+   - Access state
+   - Latest casualty and displaced estimates
+   - Latest damage note
+   - Latest urgent resource needs
+   - Live responder counts by response stage from Module 3.3
+6. Conflict and closure controls shall be enforced:
+   - A status transition that skips required intermediate states shall be flagged as a conflicting update for Admin review unless the updater is an Admin.
+   - `Admin Correction` entries shall be restricted to Admin only.
+   - A crisis cannot move to `Resolved` or `Closed` unless a closure checklist is submitted confirming the area is safe, people have been accounted for, and urgent needs are stabilised.
+   - `Closed` status shall be restricted to Admin only.
+7. After each accepted update, the system shall:
+   - Regenerate the AI situation summary from the original incident plus the verified command timeline using the **Groq LLM API (Qwen 3-32B)**
+   - Replace the previous summary on the incident detail page and dashboard SitRep
+   - Send relevant push notifications (Module 3.5) to users subscribed to that crisis type or location
+   - Prompt Admin to generate the NGO Summary Report (Module 3.4) when the crisis reaches `Resolved` or `Closed`
+8. Resolved and closed incidents shall remain auditable:
+   - The incident shall leave the active crisis layer and appear as visually muted in the dashboard feed
+   - Past command entries cannot be edited or deleted
+   - Admins may still append correction notes or revert the crisis to a prior status with an audit reason
 
 ---
 

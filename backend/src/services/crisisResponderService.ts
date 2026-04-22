@@ -1,6 +1,7 @@
-import type { CrisisResponderStatus } from "@prisma/client";
+import type { CrisisEventStatus, CrisisResponderStatus } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
+import { refreshSituationSummary } from "./crisisUpdateService.js";
 
 const ACTIVE_RESPONDER_STATUSES: CrisisResponderStatus[] = [
   "RESPONDING",
@@ -60,15 +61,19 @@ function toSummary(
   };
 }
 
-async function assertCrisisExists(crisisEventId: string): Promise<void> {
+async function assertCrisisExists(
+  crisisEventId: string
+): Promise<{ id: string; status: CrisisEventStatus }> {
   const crisis = await prisma.crisisEvent.findUnique({
     where: { id: crisisEventId },
-    select: { id: true }
+    select: { id: true, status: true }
   });
 
   if (!crisis) {
     throw new Error("Crisis event not found");
   }
+
+  return crisis;
 }
 
 async function assertVolunteer(volunteerId: string): Promise<void> {
@@ -98,45 +103,38 @@ function assertStatusTransition(
   }
 }
 
+function buildResponderTimelineNote(
+  volunteerName: string,
+  previousStatus: CrisisResponderStatus | null,
+  nextStatus: CrisisResponderStatus
+): string {
+  const nextLabel = nextStatus.replace(/_/g, " ").toLowerCase();
+
+  if (!previousStatus) {
+    return `${volunteerName} opted in and is now ${nextLabel}.`;
+  }
+
+  const previousLabel = previousStatus.replace(/_/g, " ").toLowerCase();
+  return `${volunteerName} moved from ${previousLabel} to ${nextLabel}.`;
+}
+
 export async function upsertCrisisResponderStatus(
   crisisEventId: string,
   volunteerId: string,
   status: CrisisResponderStatus
 ): Promise<CrisisResponderSummary> {
-  await Promise.all([
+  const [crisis] = await Promise.all([
     assertCrisisExists(crisisEventId),
     assertVolunteer(volunteerId)
   ]);
 
-  const existing = await prisma.crisisResponder.findUnique({
-    where: {
-      crisisEventId_volunteerId: {
-        crisisEventId,
-        volunteerId
-      }
-    },
-    include: {
-      volunteer: {
-        select: {
-          fullName: true,
-          avatarUrl: true,
-          skills: true,
-          location: true
+  const responder = await prisma.$transaction(async (tx) => {
+    const existing = await tx.crisisResponder.findUnique({
+      where: {
+        crisisEventId_volunteerId: {
+          crisisEventId,
+          volunteerId
         }
-      }
-    }
-  });
-
-  const now = new Date();
-
-  if (!existing) {
-    const created = await prisma.crisisResponder.create({
-      data: {
-        crisisEventId,
-        volunteerId,
-        status,
-        optedInAt: now,
-        lastStatusAt: now
       },
       include: {
         volunteer: {
@@ -150,34 +148,95 @@ export async function upsertCrisisResponderStatus(
       }
     });
 
-    return toSummary(created);
-  }
+    const now = new Date();
 
-  assertStatusTransition(existing.status, status);
+    if (!existing) {
+      const created = await tx.crisisResponder.create({
+        data: {
+          crisisEventId,
+          volunteerId,
+          status,
+          optedInAt: now,
+          lastStatusAt: now
+        },
+        include: {
+          volunteer: {
+            select: {
+              fullName: true,
+              avatarUrl: true,
+              skills: true,
+              location: true
+            }
+          }
+        }
+      });
 
-  const updated = await prisma.crisisResponder.update({
-    where: { id: existing.id },
-    data: {
-      status,
-      lastStatusAt: now,
-      // Re-capture opt-in time when coming back from unavailable.
-      ...(existing.status === "UNAVAILABLE" && status !== "UNAVAILABLE"
-        ? { optedInAt: now }
-        : {})
-    },
-    include: {
-      volunteer: {
-        select: {
-          fullName: true,
-          avatarUrl: true,
-          skills: true,
-          location: true
+      await tx.crisisEventUpdate.create({
+        data: {
+          crisisEventId,
+          updaterId: volunteerId,
+          previousStatus: crisis.status,
+          newStatus: crisis.status,
+          updateNote: buildResponderTimelineNote(created.volunteer.fullName, null, status),
+          updateType: "RESPONDER_STATUS",
+          verificationStatus: "SYSTEM_LOGGED",
+          isFlagged: false
+        }
+      });
+
+      return created;
+    }
+
+    assertStatusTransition(existing.status, status);
+
+    if (existing.status === status) {
+      return existing;
+    }
+
+    const updated = await tx.crisisResponder.update({
+      where: { id: existing.id },
+      data: {
+        status,
+        lastStatusAt: now,
+        ...(existing.status === "UNAVAILABLE" && status !== "UNAVAILABLE"
+          ? { optedInAt: now }
+          : {})
+      },
+      include: {
+        volunteer: {
+          select: {
+            fullName: true,
+            avatarUrl: true,
+            skills: true,
+            location: true
+          }
         }
       }
-    }
+    });
+
+    await tx.crisisEventUpdate.create({
+      data: {
+        crisisEventId,
+        updaterId: volunteerId,
+        previousStatus: crisis.status,
+        newStatus: crisis.status,
+        updateNote: buildResponderTimelineNote(
+          updated.volunteer.fullName,
+          existing.status,
+          status
+        ),
+        updateType: "RESPONDER_STATUS",
+        verificationStatus: "SYSTEM_LOGGED",
+        isFlagged: false
+      }
+    });
+
+    return updated;
   });
 
-  return toSummary(updated);
+  await refreshSituationSummary(crisisEventId);
+
+  return toSummary(responder);
 }
 
 export async function listCrisisResponders(

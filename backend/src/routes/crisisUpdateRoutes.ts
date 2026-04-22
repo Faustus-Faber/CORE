@@ -19,6 +19,7 @@ export const crisisUpdateRoutes = Router();
 crisisUpdateRoutes.post(
   "/:id/updates",
   requireAuth,
+  requireRole("VOLUNTEER", "ADMIN"),
   asyncHandler(createUpdate)
 );
 

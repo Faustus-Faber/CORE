@@ -8,8 +8,7 @@ import {
   getCrisisResponders,
   getCrisisUpdates,
   getIncidentDetail,
-  updateMyCrisisResponderStatus,
-  type CrisisUpdateEntry
+  updateMyCrisisResponderStatus
 } from "../services/api";
 import {
   getTypeIconPath,
@@ -20,8 +19,11 @@ import {
 } from "../utils/incident";
 import { stripThinkingTags } from "../utils/sanitize";
 import type {
+  CrisisAccessStatus,
   CrisisResponder,
   CrisisResponderStatus,
+  CrisisUpdateEntry,
+  CrisisUpdateType,
   IncidentDetailResponse,
   ContributingReport
 } from "../types";
@@ -48,6 +50,24 @@ const RESPONDER_STATUS_LABEL: Record<CrisisResponderStatus, string> = {
   ON_SITE: "On Site",
   COMPLETED: "Completed",
   UNAVAILABLE: "Unavailable"
+};
+
+const UPDATE_TYPE_LABEL: Record<CrisisUpdateType, string> = {
+  STATUS_CHANGE: "Status Change",
+  FIELD_OBSERVATION: "Field Observation",
+  ACCESS_UPDATE: "Access Update",
+  IMPACT_UPDATE: "Impact Update",
+  RESOURCE_NEED: "Resource Need",
+  CLOSURE_NOTE: "Closure Note",
+  ADMIN_CORRECTION: "Admin Correction",
+  RESPONDER_STATUS: "Responder Status"
+};
+
+const ACCESS_STATUS_LABEL: Record<CrisisAccessStatus, string> = {
+  OPEN: "Open",
+  LIMITED: "Limited",
+  BLOCKED: "Blocked",
+  UNKNOWN: "Unknown"
 };
 
 const NEXT_RESPONDER_STATUSES: Record<CrisisResponderStatus, CrisisResponderStatus[]> = {
@@ -146,9 +166,14 @@ export function IncidentDetailPage() {
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ""
   });
 
-  const canUpdate = user != null && CAN_UPDATE_ROLES.includes(user.role);
   const isAdmin = user?.role === "ADMIN";
   const canManageResponderStatus = user?.role === "VOLUNTEER";
+  const canOpenCommandPanel = user != null && CAN_UPDATE_ROLES.includes(user.role);
+  const canSubmitCommand =
+    user?.role === "ADMIN" ||
+    (user?.role === "VOLUNTEER" &&
+      myResponderStatus != null &&
+      myResponderStatus !== "UNAVAILABLE");
 
   const loadResponders = async () => {
     if (!id) return;
@@ -226,7 +251,7 @@ export function IncidentDetailPage() {
     );
   }
 
-  const { crisisEvent, contributingReports, nearbyResources } = detail;
+  const { crisisEvent, commandCenter, contributingReports, nearbyResources } = detail;
   const mapCenter = crisisEvent.latitude && crisisEvent.longitude
     ? { lat: crisisEvent.latitude, lng: crisisEvent.longitude }
     : { lat: 23.8103, lng: 90.4125 };
@@ -338,6 +363,151 @@ export function IncidentDetailPage() {
         </section>
       )}
 
+      <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+              Field Intelligence Snapshot
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Verified command intelligence compiled from responder and admin updates.
+            </p>
+          </div>
+          <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+            {commandCenter.lastVerifiedAt
+              ? `Last verified ${timeAgo(commandCenter.lastVerifiedAt)}`
+              : "No verified field update yet"}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+              Verification
+            </p>
+            <p className="mt-2 text-base font-semibold text-ink">
+              {commandCenter.lastVerifiedBy ?? "Awaiting field confirmation"}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {commandCenter.latestUpdateType
+                ? UPDATE_TYPE_LABEL[commandCenter.latestUpdateType]
+                : "No command update yet"}
+            </p>
+          </article>
+
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+              Access
+            </p>
+            <p className="mt-2 text-base font-semibold text-ink">
+              {commandCenter.accessStatus
+                ? ACCESS_STATUS_LABEL[commandCenter.accessStatus]
+                : "No access update"}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {commandCenter.affectedArea ?? "Affected area has not been refined yet."}
+            </p>
+          </article>
+
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+              Impact
+            </p>
+            <p className="mt-2 text-base font-semibold text-ink">
+              {commandCenter.casualtyCount != null
+                ? `${commandCenter.casualtyCount} casualties`
+                : "No casualty estimate"}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {commandCenter.displacedCount != null
+                ? `${commandCenter.displacedCount} displaced`
+                : "No displacement estimate"}
+            </p>
+          </article>
+
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+              Responders
+            </p>
+            <p className="mt-2 text-base font-semibold text-ink">
+              {commandCenter.activeResponderCount} active
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {commandCenter.responderCounts.ON_SITE} on site / {commandCenter.responderCounts.EN_ROUTE} en route
+            </p>
+          </article>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+          <article className="rounded-2xl border border-slate-200 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+              Current Command Note
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-700">
+              {commandCenter.latestNote ?? "No command note has been published yet."}
+            </p>
+            {commandCenter.damageNotes && (
+              <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <span className="font-semibold text-slate-800">Damage: </span>
+                {commandCenter.damageNotes}
+              </p>
+            )}
+          </article>
+
+          <article className="rounded-2xl border border-slate-200 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+              Urgent Needs
+            </p>
+            {commandCenter.resourceNeeds.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">
+                No urgent resource needs are currently recorded.
+              </p>
+            ) : (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {commandCenter.resourceNeeds.map((need) => (
+                  <span
+                    key={`${crisisEvent.id}-${need}`}
+                    className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700"
+                  >
+                    {need}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {commandCenter.closureChecklist && (
+              <div className="mt-4 grid gap-2">
+                {[
+                  {
+                    label: "Area safe",
+                    value: commandCenter.closureChecklist.areaSafe
+                  },
+                  {
+                    label: "People accounted",
+                    value: commandCenter.closureChecklist.peopleAccounted
+                  },
+                  {
+                    label: "Urgent needs stabilised",
+                    value: commandCenter.closureChecklist.urgentNeedsStabilized
+                  }
+                ].map((item) => (
+                  <div
+                    key={`${crisisEvent.id}-${item.label}`}
+                    className={`rounded-xl px-3 py-2 text-sm font-medium ${
+                      item.value
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {item.label}
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+        </div>
+      </section>
+
       <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
@@ -414,41 +584,67 @@ export function IncidentDetailPage() {
         )}
       </section>
 
-      {canUpdate && detail && (
-        <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Update Crisis Status</h2>
-            <button
-              onClick={() => setShowUpdateForm(!showUpdateForm)}
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-            >
-              {showUpdateForm ? "Cancel" : "New Update"}
-            </button>
+      <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+              Incident Command
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Structured field intelligence, verified updates, and audit-ready command history.
+            </p>
           </div>
-          {showUpdateForm && (
+          {canSubmitCommand && (
+            <button
+              type="button"
+              onClick={() => setShowUpdateForm((value) => !value)}
+              className="rounded-xl bg-tide px-3 py-2 text-xs font-semibold text-white transition hover:bg-cyan-700"
+            >
+              {showUpdateForm ? "Hide Composer" : "New Command Update"}
+            </button>
+          )}
+        </div>
+
+        {canSubmitCommand && showUpdateForm && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <CrisisUpdateForm
               crisisEventId={crisisEvent.id}
               currentStatus={crisisEvent.status}
+              isAdmin={isAdmin}
               onSubmit={() => {
                 setShowUpdateForm(false);
                 void fetchDetail();
               }}
             />
-          )}
-          {isAdmin && (
-            <AdminCrisisControls
-              crisisEventId={crisisEvent.id}
-              currentStatus={crisisEvent.status}
-              onReverted={() => void fetchDetail()}
-            />
-          )}
-          <UpdateTimeline
-            entries={updates}
-            isAdmin={isAdmin}
-            onRefresh={() => void fetchDetail()}
+          </div>
+        )}
+
+        {canOpenCommandPanel && !canSubmitCommand && user?.role === "VOLUNTEER" && (
+          <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
+            Opt in from the responder report card to publish crisis-scoped field intelligence.
+          </div>
+        )}
+
+        {!canOpenCommandPanel && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            Sign in as an active responder or admin to publish command updates. The verified timeline remains visible to all authenticated users.
+          </div>
+        )}
+
+        {isAdmin && (
+          <AdminCrisisControls
+            crisisEventId={crisisEvent.id}
+            currentStatus={crisisEvent.status}
+            onReverted={() => void fetchDetail()}
           />
-        </section>
-      )}
+        )}
+
+        <UpdateTimeline
+          entries={updates}
+          isAdmin={isAdmin}
+          onRefresh={() => void fetchDetail()}
+        />
+      </section>
 
       <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
         <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">

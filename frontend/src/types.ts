@@ -70,7 +70,14 @@ export type IncidentType =
 
 export type IncidentSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 export type IncidentStatus = "PUBLISHED" | "UNDER_REVIEW";
-export type CrisisEventStatus = "ACTIVE" | "CONTAINED" | "RESOLVED" | "CLOSED";
+export type CrisisEventStatus =
+  | "REPORTED"
+  | "VERIFIED"
+  | "UNDER_INVESTIGATION"
+  | "RESPONSE_IN_PROGRESS"
+  | "CONTAINED"
+  | "RESOLVED"
+  | "CLOSED";
 export type ReportSortBy = "createdAt" | "severity" | "credibility";
 export type SortOrder = "asc" | "desc";
 export type DashboardSortBy = "mostRecent" | "highestSeverity" | "mostReports";
@@ -421,6 +428,7 @@ export interface IncidentDetailResponse {
     createdAt: string;
     updatedAt: string;
   };
+  commandCenter: CrisisCommandCenter;
   contributingReports: ContributingReport[];
   nearbyResources: ResourceSummary[];
 }
@@ -455,14 +463,51 @@ export type ReportDetailResponse = {
   };
 };
 
-export type CrisisEventStatusExpanded =
-  | "REPORTED"
-  | "VERIFIED"
-  | "UNDER_INVESTIGATION"
-  | "RESPONSE_IN_PROGRESS"
-  | "CONTAINED"
-  | "RESOLVED"
-  | "CLOSED";
+export type CrisisEventStatusExpanded = CrisisEventStatus;
+
+export type CrisisUpdateType =
+  | "STATUS_CHANGE"
+  | "FIELD_OBSERVATION"
+  | "ACCESS_UPDATE"
+  | "IMPACT_UPDATE"
+  | "RESOURCE_NEED"
+  | "CLOSURE_NOTE"
+  | "ADMIN_CORRECTION"
+  | "RESPONDER_STATUS";
+
+export type CrisisUpdateVerificationStatus =
+  | "RESPONDER_CONFIRMED"
+  | "ADMIN_CONFIRMED"
+  | "SYSTEM_LOGGED";
+
+export type CrisisAccessStatus =
+  | "OPEN"
+  | "LIMITED"
+  | "BLOCKED"
+  | "UNKNOWN";
+
+export type ClosureChecklist = {
+  areaSafe: boolean;
+  peopleAccounted: boolean;
+  urgentNeedsStabilized: boolean;
+};
+
+export type CrisisCommandCenter = {
+  lastVerifiedAt: string | null;
+  lastVerifiedBy: string | null;
+  latestNote: string | null;
+  latestUpdateType: CrisisUpdateType | null;
+  verificationStatus: CrisisUpdateVerificationStatus | null;
+  accessStatus: CrisisAccessStatus | null;
+  affectedArea: string | null;
+  casualtyCount: number | null;
+  displacedCount: number | null;
+  damageNotes: string | null;
+  resourceNeeds: string[];
+  closureChecklist: ClosureChecklist | null;
+  activeResponderCount: number;
+  responderCounts: Record<Exclude<CrisisResponderStatus, "UNAVAILABLE">, number>;
+};
 
 export type CrisisUpdateEntry = {
   id: string;
@@ -471,29 +516,39 @@ export type CrisisUpdateEntry = {
   updaterName: string;
   previousStatus: string;
   newStatus: string;
+  updateType: CrisisUpdateType;
+  verificationStatus: CrisisUpdateVerificationStatus;
   updateNote: string;
   newSeverity: IncidentSeverity | null;
   affectedArea: string | null;
+  accessStatus: CrisisAccessStatus | null;
   casualtyCount: number | null;
   displacedCount: number | null;
   damageNotes: string | null;
+  resourceNeeds: string[];
+  closureChecklist: ClosureChecklist | null;
   isFlagged: boolean;
+  reviewState: "ACTIVE" | "PENDING_REVIEW" | "DISMISSED";
   createdAt: string;
 };
 
 export type CrisisUpdateResponse = {
   entry: CrisisUpdateEntry;
-  isTrusted: boolean;
+  applied: boolean;
 };
 
 export type CrisisUpdateInput = {
+  updateType: Exclude<CrisisUpdateType, "RESPONDER_STATUS">;
   status: CrisisEventStatusExpanded;
   updateNote: string;
   newSeverity?: IncidentSeverity;
   affectedArea?: string;
+  accessStatus?: CrisisAccessStatus;
   casualtyCount?: number;
   displacedCount?: number;
   damageNotes?: string;
+  resourceNeeds?: string[];
+  closureChecklist?: ClosureChecklist;
 };
 
 export type NotificationPreferences = {

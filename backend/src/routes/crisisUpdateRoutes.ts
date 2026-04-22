@@ -6,6 +6,10 @@ import {
   dismissUpdate,
   revertStatus
 } from "../controllers/crisisUpdateController.js";
+import {
+  listResponders,
+  updateMyResponderStatus
+} from "../controllers/crisisResponderController.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
@@ -22,6 +26,19 @@ crisisUpdateRoutes.get(
   "/:id/updates",
   requireAuth,
   asyncHandler(listUpdates)
+);
+
+crisisUpdateRoutes.get(
+  "/:id/responders",
+  requireAuth,
+  asyncHandler(listResponders)
+);
+
+crisisUpdateRoutes.patch(
+  "/:id/responders/me",
+  requireAuth,
+  requireRole("VOLUNTEER"),
+  asyncHandler(updateMyResponderStatus)
 );
 
 crisisUpdateRoutes.patch(

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const phoneRegex = /^\+?[0-9]{10,15}$/;
+const objectIdRegex = /^[a-fA-F0-9]{24}$/;
 const hasMixedPasswordTypes = /(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])/;
 
 const passwordSchema = z
@@ -321,7 +322,10 @@ export const createReviewSchema = z.object({
     return interactionDate <= today;
   }, "Interaction date cannot be in the future"),
   wouldWorkAgain: z.boolean(),
-  crisisEventId: z.string().optional().nullable()
+  crisisEventId: z
+    .string()
+    .min(1, "Crisis event is required")
+    .regex(objectIdRegex, "Invalid crisis event ID")
 });
 
 // ==================== FEATURE 4: SECURE DOCUMENTATION ====================
@@ -397,6 +401,14 @@ export const crisisStatusSchema = z.enum([
   "CLOSED"
 ]);
 
+export const crisisResponderStatusSchema = z.enum([
+  "RESPONDING",
+  "EN_ROUTE",
+  "ON_SITE",
+  "COMPLETED",
+  "UNAVAILABLE"
+]);
+
 export const crisisUpdateSchema = z.object({
   status: crisisStatusSchema,
   updateNote: z.string().trim().min(1, "Update note is required").max(1000, "Update note is too long"),
@@ -409,6 +421,14 @@ export const crisisUpdateSchema = z.object({
 
 export function validateCrisisUpdateInput(payload: unknown) {
   return crisisUpdateSchema.parse(payload);
+}
+
+export function validateCrisisResponderStatusInput(payload: unknown) {
+  return z
+    .object({
+      status: crisisResponderStatusSchema
+    })
+    .parse(payload);
 }
 
 // ==================== MODULE 3.5: NOTIFICATIONS ====================

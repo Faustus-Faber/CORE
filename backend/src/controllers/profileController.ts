@@ -49,11 +49,11 @@ export async function toggleDispatchOptIn(request: Request, response: Response) 
   return response.json({ dispatchOptIn: user.dispatchOptIn });
 }
 
-export async function getMySmsLogs(request: Request, response: Response) {
+export async function getMyDispatchLogs(request: Request, response: Response) {
   const userId = request.authUser?.userId;
   if (!userId) return response.status(401).json({ message: "Auth required" });
 
-  const logs = await prisma.smsLog.findMany({
+  const logs = await prisma.dispatchAlertLog.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
     include: { crisisEvent: { select: { title: true, severityLevel: true } } }

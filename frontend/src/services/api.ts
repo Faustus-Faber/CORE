@@ -1,5 +1,9 @@
 import type {
   AuthUser,
+  CrisisResponder,
+  CrisisResponderStatus,
+  DispatchAlertLog,
+  EligibleReviewCrisis,
   CrisisEventCard,
   DashboardFeedFilters,
   EmergencyReportSubmissionInput,
@@ -13,7 +17,6 @@ import type {
   VolunteerTask,
   Role,
   SitRepResponse,
-  SmsLog,
   Review
 } from "../types";
 import { buildEmergencyReportFormData } from "./reportPayload";
@@ -159,8 +162,8 @@ export async function toggleDispatchOptInApi(dispatchOptIn: boolean) {
   return httpClient<{ dispatchOptIn: boolean }>("/profile/dispatch-opt-in", "PATCH", { dispatchOptIn });
 }
 
-export async function getMySmsLogsApi() {
-  return httpClient<{ logs: SmsLog[] }>("/profile/sms-logs");
+export async function getMyDispatchLogsApi() {
+  return httpClient<{ logs: DispatchAlertLog[] }>("/profile/dispatch-logs");
 }
 
 export async function changePassword(payload: {
@@ -301,7 +304,7 @@ export async function submitReview(
   interactionContext: string,
   interactionDate: string,
   wouldWorkAgain: boolean,
-  crisisEventId?: string | null
+  crisisEventId: string
 ) {
   return httpClient<{ message: string; review: Review }>("/reviews", "POST", {
     volunteerId,
@@ -316,6 +319,12 @@ export async function submitReview(
 
 export async function getVolunteerReviews(volunteerId: string) {
   return httpClient<{ reviews: Review[]; averageRating: number | null }>(`/reviews/volunteer/${volunteerId}`);
+}
+
+export async function getEligibleReviewCrises(volunteerId: string) {
+  return httpClient<{ crises: EligibleReviewCrisis[] }>(
+    `/reviews/volunteer/${volunteerId}/eligible-crises`
+  );
 }
 
 export async function getFlaggedReviews() {
@@ -567,6 +576,23 @@ export async function revertCrisisStatus(crisisEventId: string, targetStatus: st
   });
 }
 
+export async function getCrisisResponders(crisisEventId: string) {
+  return httpClient<{ responders: CrisisResponder[]; myStatus: CrisisResponderStatus | null }>(
+    `/crises/${crisisEventId}/responders`
+  );
+}
+
+export async function updateMyCrisisResponderStatus(
+  crisisEventId: string,
+  status: CrisisResponderStatus
+) {
+  return httpClient<{ message: string; responder: CrisisResponder }>(
+    `/crises/${crisisEventId}/responders/me`,
+    "PATCH",
+    { status }
+  );
+}
+
 // ── Notifications (Module 3.5) ───────────────────────────────────────────────
 
 export type NotificationPreferencesInput = {
@@ -613,6 +639,37 @@ export async function markAllNotificationsRead() {
 
 export async function clearHandledNotifications() {
   return httpClient<MessageResponse>("/notifications/inbox/clear-handled", "DELETE");
+}
+
+export type NGOReportResource = {
+  name: string;
+  amount: string;
+};
+
+export type NGOReport = {
+  id: string;
+  crisisEventId: string;
+  generatedById: string;
+  title: string;
+  fileUrl: string;
+  createdAt: string;
+  crisisEvent?: { title: string };
+  generatedBy?: { fullName: string };
+};
+
+export async function listNGOReports(crisisId?: string) {
+  const query = crisisId ? `?crisisId=${encodeURIComponent(crisisId)}` : "";
+  return httpClient<NGOReport[]>(`/ngo-reports${query}`);
+}
+
+export async function generateNGOReport(
+  crisisId: string,
+  payload: {
+    assignedVolunteers?: string[];
+    resources?: NGOReportResource[];
+  } = {}
+) {
+  return httpClient<NGOReport>(`/ngo-reports/${crisisId}`, "POST", payload);
 }
 
 // ── Timesheet & Gamification (Feature 3.7) ─────────────────────────────────

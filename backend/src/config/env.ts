@@ -42,5 +42,8 @@ export const env = {
   groqBaseUrl: process.env.GROQ_BASE_URL ?? "https://api.groq.com/openai/v1",
   groqWhisperModel: process.env.GROQ_WHISPER_MODEL ?? "whisper-large-v3",
   groqQwenModel: process.env.GROQ_QWEN_MODEL ?? "qwen/qwen3-32b",
-  aiRequestTimeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 20000)
+  aiRequestTimeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 20000),
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
+  resendFromEmail:
+    process.env.RESEND_FROM_EMAIL ?? "CORE Dispatch <onboarding@resend.dev>"
 };

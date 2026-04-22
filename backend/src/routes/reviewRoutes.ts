@@ -5,6 +5,7 @@ import {
     approveVolunteerHandler,
     banVolunteerHandler,
     createReview,
+    getEligibleReviewCrisesHandler,
     deleteReviewHandler,
     getFlaggedReviewsHandler,
     getFlaggedVolunteersHandler,
@@ -17,6 +18,11 @@ import { requireRole } from "../middleware/requireRole.js";
 export const reviewRoutes = Router();
 
 reviewRoutes.post("/", requireAuth, asyncHandler(createReview));
+reviewRoutes.get(
+    "/volunteer/:volunteerId/eligible-crises",
+    requireAuth,
+    asyncHandler(getEligibleReviewCrisesHandler)
+);
 reviewRoutes.get(
     "/volunteer/:volunteerId",
     requireAuth,

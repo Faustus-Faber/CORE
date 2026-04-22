@@ -249,7 +249,7 @@ function DispatchBell({ initialOptIn }: { initialOptIn: boolean }) {
     <button
       onClick={() => void toggle()}
       disabled={isLoading}
-      title={optIn ? "Dispatch SMS: Enabled" : "Dispatch SMS: Disabled"}
+      title={optIn ? "Dispatch Alerts: Enabled" : "Dispatch Alerts: Disabled"}
       className={`relative rounded-lg p-2 transition disabled:opacity-50 ${
         optIn ? "text-amber-500 hover:bg-amber-50" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
       }`}

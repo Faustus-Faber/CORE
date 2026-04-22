@@ -20,6 +20,7 @@ enum NotificationType {
   RESERVATION_REQUEST
   RESERVATION_APPROVED
   RESERVATION_DECLINED
+  DISPATCH_ALERT
 }
 
 enum IncidentSeverity {
@@ -80,6 +81,20 @@ enum BadgeType {
   TEAM_PLAYER
 }
 
+enum CrisisResponderStatus {
+  RESPONDING
+  EN_ROUTE
+  ON_SITE
+  COMPLETED
+  UNAVAILABLE
+}
+
+enum DispatchAlertStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
 model User {
   id                   String    @id @default(auto()) @map("_id") @db.ObjectId
   fullName             String
@@ -119,7 +134,8 @@ model User {
   notifications   Notification[]
   volunteerTasks  VolunteerTask[]
   badges          Badge[]
-  smsLogs         SmsLog[]
+  dispatchAlertLogs DispatchAlertLog[]
+  crisisResponses   CrisisResponder[]
 
   @@index([role, isBanned])
   @@index([role, isFlagged])
@@ -163,16 +179,18 @@ model Review {
   interactionContext InteractionContext @default(OTHER)
   interactionDate    DateTime
   wouldWorkAgain     Boolean
-  crisisEventId      String?
+  crisisEventId      String             @db.ObjectId
   isFlagged          Boolean            @default(false)
   flagReasons        String[]
   createdAt          DateTime           @default(now())
 
-  reviewer  User @relation("ReviewsGiven", fields: [reviewerId], references: [id])
-  volunteer User @relation("ReviewsReceived", fields: [volunteerId], references: [id])
+  reviewer    User       @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  volunteer   User       @relation("ReviewsReceived", fields: [volunteerId], references: [id])
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
 
   @@index([volunteerId, createdAt(sort: Desc)])
   @@index([reviewerId, createdAt(sort: Desc)])
+  @@index([reviewerId, volunteerId, crisisEventId])
   @@index([isFlagged])
 }
 
@@ -293,7 +311,9 @@ model CrisisEvent {
 
   reports CrisisEventReport[]
   updates CrisisEventUpdate[]
-  smsLogs SmsLog[]
+  reviews Review[]
+  responders CrisisResponder[]
+  dispatchAlertLogs DispatchAlertLog[]
 
   @@index([status, severityLevel, createdAt(sort: Desc)])
   @@index([latitude, longitude])
@@ -311,6 +331,24 @@ model CrisisEventReport {
   @@unique([crisisEventId, incidentReportId])
   @@index([incidentReportId])
   @@index([crisisEventId])
+}
+
+model CrisisResponder {
+  id            String               @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId String               @db.ObjectId
+  volunteerId   String               @db.ObjectId
+  status        CrisisResponderStatus @default(RESPONDING)
+  optedInAt     DateTime             @default(now())
+  lastStatusAt  DateTime             @default(now())
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  volunteer  User        @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
+  @@unique([crisisEventId, volunteerId])
+  @@index([crisisEventId, status, updatedAt(sort: Desc)])
+  @@index([volunteerId, status, updatedAt(sort: Desc)])
 }
 
 model EvidencePost {
@@ -487,20 +525,20 @@ model Badge {
   @@index([userId])
 }
 
-// ── Feature 3.3: Automated Dispatch SMS ─────────────────────────────────────
+// ── Feature 3.3: Volunteer Crisis Opt-In & Dispatch Email Alerts ────────────
 
-model SmsLog {
-  id              String       @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String       @db.ObjectId
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  crisisEventId   String?      @db.ObjectId
-  crisisEvent     CrisisEvent? @relation(fields: [crisisEventId], references: [id])
-  phoneMasked     String
-  status          String       // "SENT" | "DELIVERED" | "FAILED" (gracefully mocked if invalid)
-  errorMessage    String?
-  twilioSid       String?
-  createdAt       DateTime     @default(now())
+model DispatchAlertLog {
+  id                String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String            @db.ObjectId
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  crisisEventId     String?           @db.ObjectId
+  crisisEvent       CrisisEvent?      @relation(fields: [crisisEventId], references: [id])
+  emailMasked       String
+  status            DispatchAlertStatus
+  providerMessageId String?
+  errorMessage      String?
+  createdAt         DateTime          @default(now())
 
   @@index([userId, createdAt(sort: Desc)])
-  @@index([crisisEventId])
+  @@index([crisisEventId, createdAt(sort: Desc)])
 }

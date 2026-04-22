@@ -6,6 +6,7 @@ import {
     banVolunteer,
     deleteReview,
     getVolunteerReviews,
+    listEligibleReviewCrises,
     listFlaggedReviews,
     listFlaggedVolunteers,
     submitReview
@@ -34,6 +35,21 @@ export async function getVolunteerReviewsHandler(
     const volunteerId = String(request.params.volunteerId);
     const result = await getVolunteerReviews(volunteerId);
     return response.status(200).json(result);
+}
+
+export async function getEligibleReviewCrisesHandler(
+    request: Request,
+    response: Response,
+    _next: NextFunction
+) {
+    const reviewerId = request.authUser?.userId;
+    if (!reviewerId) {
+        return response.status(401).json({ message: "Authentication required" });
+    }
+
+    const volunteerId = String(request.params.volunteerId);
+    const crises = await listEligibleReviewCrises(reviewerId, volunteerId);
+    return response.status(200).json({ crises });
 }
 
 export async function getFlaggedReviewsHandler(

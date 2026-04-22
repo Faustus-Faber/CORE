@@ -18,6 +18,12 @@ export type TaskCategory =
   | "OTHER";
 
 export type TaskStatus = "PENDING" | "VERIFIED" | "REJECTED";
+export type CrisisResponderStatus =
+  | "RESPONDING"
+  | "EN_ROUTE"
+  | "ON_SITE"
+  | "COMPLETED"
+  | "UNAVAILABLE";
 
 export type BadgeType =
   | "FIRST_RESPONDER"
@@ -132,7 +138,7 @@ export type Review = {
   interactionContext: InteractionContext;
   interactionDate: string;
   wouldWorkAgain: boolean;
-  crisisEventId?: string | null;
+  crisisEventId: string;
   isFlagged: boolean;
   flagReasons: string[];
   createdAt: string;
@@ -166,15 +172,40 @@ export type Badge = {
   awardedAt: string;
 };
 
-export type SmsLog = {
+export type DispatchAlertLog = {
   id: string;
   userId: string;
   crisisEventId?: string | null;
   crisisEvent?: { title: string; severityLevel: string };
-  phoneMasked: string;
-  status: "SENT" | "DELIVERED" | "FAILED";
+  emailMasked: string;
+  status: "QUEUED" | "SENT" | "FAILED";
+  providerMessageId?: string | null;
   errorMessage?: string | null;
   createdAt: string;
+};
+
+export type CrisisResponder = {
+  id: string;
+  volunteerId: string;
+  volunteerName: string;
+  avatarUrl: string | null;
+  skills: string[];
+  location: string;
+  status: CrisisResponderStatus;
+  optedInAt: string;
+  lastStatusAt: string;
+  updatedAt: string;
+};
+
+export type EligibleReviewCrisis = {
+  id: string;
+  title: string;
+  incidentType: string;
+  severityLevel: string;
+  status: string;
+  locationText: string;
+  responderStatus: CrisisResponderStatus;
+  lastStatusAt: string;
 };
 
 export type VolunteerTask = {

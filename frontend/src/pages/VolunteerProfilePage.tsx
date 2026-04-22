@@ -4,8 +4,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ReviewForm } from "../components/ReviewForm";
 import { ReviewList } from "../components/ReviewList";
 import { useAuth } from "../context/AuthContext";
-import { getVolunteerProfile } from "../services/api";
-import type { Role } from "../types";
+import { getEligibleReviewCrises, getVolunteerProfile } from "../services/api";
+import type { EligibleReviewCrisis, Role } from "../types";
 
 type VolunteerProfile = {
     id: string;
@@ -27,8 +27,10 @@ export function VolunteerProfilePage() {
     const navigate = useNavigate();
     const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
     const [volunteer, setVolunteer] = useState<VolunteerProfile | null>(null);
+    const [eligibleCrises, setEligibleCrises] = useState<EligibleReviewCrisis[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState("");
+    const canReview = user?.role === "USER";
 
     useEffect(() => {
         if (!volunteerId) {
@@ -40,8 +42,15 @@ export function VolunteerProfilePage() {
             setIsLoading(true);
             setError("");
             try {
-                const data = await getVolunteerProfile(volunteerId);
-                setVolunteer(data.volunteer);
+                const [profileResponse, eligibleCrisesResponse] = await Promise.all([
+                    getVolunteerProfile(volunteerId),
+                    canReview
+                        ? getEligibleReviewCrises(volunteerId)
+                        : Promise.resolve({ crises: [] })
+                ]);
+
+                setVolunteer(profileResponse.volunteer);
+                setEligibleCrises(eligibleCrisesResponse.crises);
             } catch (loadError) {
                 setError(loadError instanceof Error ? loadError.message : "Could not load volunteer profile");
             } finally {
@@ -50,7 +59,7 @@ export function VolunteerProfilePage() {
         };
 
         void loadVolunteer();
-    }, [volunteerId, navigate]);
+    }, [volunteerId, navigate, canReview, reviewRefreshKey]);
 
     useEffect(() => {
         if (!volunteerId) {
@@ -59,8 +68,6 @@ export function VolunteerProfilePage() {
     }, [volunteerId, navigate]);
 
     if (!volunteerId) return null;
-
-    const canReview = user?.role === "USER";
 
     if (isLoading) {
         return (
@@ -132,10 +139,14 @@ export function VolunteerProfilePage() {
                     <section className="rounded-xl bg-white p-6 shadow-panel ring-1 ring-slate-200">
                         <h2 className="mb-1 text-lg font-bold text-ink">Leave a Review</h2>
                         <p className="mb-4 text-sm text-slate-500">
-                            Share your experience working with this volunteer.
+                            Share your crisis-scoped experience working with this volunteer.
+                        </p>
+                        <p className="mb-4 text-xs text-slate-500">
+                            Eligible crisis cards: {eligibleCrises.length}
                         </p>
                         <ReviewForm
                             volunteerId={volunteerId}
+                            eligibleCrises={eligibleCrises}
                             onSuccess={() => setReviewRefreshKey((k) => k + 1)}
                         />
                     </section>

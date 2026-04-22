@@ -1,10 +1,11 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { submitReview } from "../services/api";
-import type { InteractionContext } from "../types";
+import type { EligibleReviewCrisis, InteractionContext } from "../types";
 
 type Props = {
     volunteerId: string;
+    eligibleCrises: EligibleReviewCrisis[];
     onSuccess?: () => void;
 };
 
@@ -52,20 +53,43 @@ const INTERACTION_CONTEXT_LABELS: { value: InteractionContext; label: string }[]
     { value: "OTHER", label: "Other" }
 ];
 
-export function ReviewForm({ volunteerId, onSuccess }: Props) {
+function crisisOptionLabel(crisis: EligibleReviewCrisis): string {
+    return `${crisis.title} - ${crisis.severityLevel} - ${crisis.locationText}`;
+}
+
+export function ReviewForm({ volunteerId, eligibleCrises, onSuccess }: Props) {
     const [rating, setRating] = useState(0);
     const [text, setText] = useState("");
     const [interactionContext, setInteractionContext] = useState<InteractionContext>("OTHER");
     const [interactionDate, setInteractionDate] = useState("");
     const [wouldWorkAgain, setWouldWorkAgain] = useState<boolean | null>(null);
+    const [crisisEventId, setCrisisEventId] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
     const [error, setError] = useState("");
+
+    useEffect(() => {
+        if (eligibleCrises.length === 0) {
+            setCrisisEventId("");
+            return;
+        }
+
+        setCrisisEventId((current) =>
+            current && eligibleCrises.some((crisis) => crisis.id === current)
+                ? current
+                : eligibleCrises[0].id
+        );
+    }, [eligibleCrises]);
 
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
         setError("");
         setSuccessMessage("");
+
+        if (!crisisEventId) {
+            setError("Please select a crisis report card before submitting your review.");
+            return;
+        }
 
         if (rating === 0) {
             setError("Please select a star rating.");
@@ -85,7 +109,8 @@ export function ReviewForm({ volunteerId, onSuccess }: Props) {
                 text,
                 interactionContext,
                 interactionDate,
-                wouldWorkAgain
+                wouldWorkAgain,
+                crisisEventId
             );
             setSuccessMessage("Your review has been submitted. Thank you!");
             setRating(0);
@@ -107,6 +132,34 @@ export function ReviewForm({ volunteerId, onSuccess }: Props) {
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+                <label className="mb-1 block text-sm font-medium text-ink">
+                    Crisis Report Card
+                </label>
+                <select
+                    value={crisisEventId}
+                    onChange={(e) => setCrisisEventId(e.target.value)}
+                    required
+                    disabled={eligibleCrises.length === 0}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-ink focus:border-tide focus:outline-none focus:ring-1 focus:ring-tide disabled:bg-slate-100 disabled:text-slate-500"
+                >
+                    {eligibleCrises.length === 0 ? (
+                        <option value="">No eligible crisis interactions found</option>
+                    ) : (
+                        eligibleCrises.map((crisis) => (
+                            <option key={crisis.id} value={crisis.id}>
+                                {crisisOptionLabel(crisis)}
+                            </option>
+                        ))
+                    )}
+                </select>
+                {eligibleCrises.length === 0 && (
+                    <p className="mt-1 text-xs text-slate-500">
+                        Reviews are allowed only for crises where you were nearby and had verified interaction.
+                    </p>
+                )}
+            </div>
+
             <div>
                 <p className="mb-1 text-sm font-medium text-ink">Your Rating</p>
                 <StarPicker value={rating} onChange={setRating} />
@@ -197,10 +250,10 @@ export function ReviewForm({ volunteerId, onSuccess }: Props) {
             <button
                 type="submit"
                 id="submit-review-btn"
-                disabled={isSubmitting}
+                disabled={isSubmitting || eligibleCrises.length === 0}
                 className="w-full rounded-md bg-tide px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
             >
-                {isSubmitting ? "Submitting…" : "Submit Review"}
+                {isSubmitting ? "Submitting..." : "Submit Review"}
             </button>
         </form>
     );

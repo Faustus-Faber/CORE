@@ -475,14 +475,18 @@ async function main() {
   async function createReview(
     reviewerId: string, volunteerId: string, rating: number, text: string,
     context: InteractionContext, daysBack: number, wouldWorkAgain: boolean,
-    flagged?: boolean, flagReasons?: string[]
+    flagged?: boolean, flagReasons?: string[], linkedCrisisEventId?: string
   ) {
+    const crisisEventId =
+      linkedCrisisEventId ?? pick(Object.values(crisisEvents).map((event) => event.id));
+
     await prisma.review.create({
       data: {
         reviewerId, volunteerId, rating, text,
         interactionContext: context,
         interactionDate: daysAgo(daysBack),
         wouldWorkAgain,
+        crisisEventId,
         isFlagged: flagged ?? false,
         flagReasons: flagReasons ?? [],
         createdAt: daysAgo(daysBack)

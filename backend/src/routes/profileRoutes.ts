@@ -4,7 +4,7 @@ import {
   updateCurrentPassword,
   updateCurrentProfile,
   toggleDispatchOptIn,
-  getMySmsLogs
+  getMyDispatchLogs
 } from "../controllers/profileController.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -19,4 +19,6 @@ profileRoutes.post(
 );
 
 profileRoutes.patch("/dispatch-opt-in", requireAuth, asyncHandler(toggleDispatchOptIn));
-profileRoutes.get("/sms-logs", requireAuth, asyncHandler(getMySmsLogs));
+profileRoutes.get("/dispatch-logs", requireAuth, asyncHandler(getMyDispatchLogs));
+// Backward compatibility for older frontend clients.
+profileRoutes.get("/sms-logs", requireAuth, asyncHandler(getMyDispatchLogs));

@@ -259,12 +259,12 @@ export async function getMapReports(
   return response.status(200).json(
     reports.map((r) => ({
       id: r.id,
-      title: r.classifiedIncidentTitle || r.incidentTitle,
-      type: r.classifiedIncidentType || r.incidentType,
+      title: r.title,
+      type: r.incidentType,
       severity: r.severityLevel,
       latitude: r.latitude,
       longitude: r.longitude,
-      description: r.description,
+      description: r.sitRepText || r.locationText,
       createdAt: r.createdAt
     }))
   );

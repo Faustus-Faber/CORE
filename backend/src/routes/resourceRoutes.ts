@@ -1,100 +1,90 @@
 import { Router } from "express";
-import { prisma } from "../lib/prisma.js";
 import multer from "multer";
-import path from "path";
+
+import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireResourceOwner } from "../middleware/requireResourceOwner.js";
 import {
+  approveReservation,
+  createReservation,
   createResource,
+  deactivateResource,
+  declineReservation,
+  deleteResource,
   getResourceById,
   getUserResources,
-  deactivateResource,
-  deleteResource,
+  listReservationsForOwner,
+  listResourceHistory,
   updateResource
 } from "../services/resourceService.js";
-import { validateUpdateResourceInput } from "../utils/validation.js";
 import {
-  createReservation,
-  approveReservation,
-  declineReservation
-} from "../services/resourceService.js";
+  validateCreateResourceInput,
+  validateReservationInput,
+  validateUpdateResourceInput
+} from "../utils/validation.js";
 
 const router = Router();
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
+  destination: (_request, _file, callback) => callback(null, "uploads/"),
+  filename: (_request, file, callback) => callback(null, `${Date.now()}-${file.originalname}`)
 });
+
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-router.post("/add", requireAuth, upload.array("photos", 3), async (req, res) => {
+router.post("/add", requireAuth, upload.array("photos", 3), async (request, response) => {
   try {
-    const {
-      name,
-      category,
-      quantity,
-      unit,
-      condition,
-      address,
-      latitude,
-      longitude,
-      availabilityStart,
-      availabilityEnd,
-      contactPreference,
-      notes
-    } = req.body;
-
-    const userId = req.authUser?.userId;
+    const userId = request.authUser?.userId;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return response.status(401).json({ message: "Authentication required" });
     }
 
-    if (
-      !name ||
-      !category ||
-      !quantity ||
-      !unit ||
-      !condition ||
-      !address ||
-      !latitude ||
-      !longitude ||
-      !contactPreference
-    ) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    const photos = req.files
-      ? (req.files as Express.Multer.File[]).map((f) => f.path)
-      : [];
+    const parsedPayload = validateCreateResourceInput({
+      name: String(request.body.name ?? ""),
+      category: String(request.body.category ?? ""),
+      quantity: Number(request.body.quantity),
+      unit: String(request.body.unit ?? ""),
+      condition: String(request.body.condition ?? ""),
+      address: String(request.body.address ?? ""),
+      latitude: Number(request.body.latitude),
+      longitude: Number(request.body.longitude),
+      availabilityStart: String(request.body.availabilityStart ?? ""),
+      availabilityEnd: String(request.body.availabilityEnd ?? ""),
+      contactPreference: String(request.body.contactPreference ?? ""),
+      notes: String(request.body.notes ?? "")
+    });
 
     const resource = await createResource({
-      name,
-      category,
-      quantity: Number(quantity),
-      unit,
-      condition,
-      address,
-      latitude: Number(latitude),
-      longitude: Number(longitude),
-      availabilityStart: availabilityStart ? new Date(availabilityStart) : undefined,
-      availabilityEnd: availabilityEnd ? new Date(availabilityEnd) : undefined,
-      contactPreference,
-      photos: photos.length > 0 ? photos : undefined,
-      notes: notes || undefined,
+      ...parsedPayload,
+      availabilityStart: parsedPayload.availabilityStart
+        ? new Date(parsedPayload.availabilityStart)
+        : undefined,
+      availabilityEnd: parsedPayload.availabilityEnd
+        ? new Date(parsedPayload.availabilityEnd)
+        : undefined,
+      notes: parsedPayload.notes || undefined,
+      photos: (request.files as Express.Multer.File[] | undefined)?.map((file) => file.path),
       userId
     });
 
-    res.status(201).json(resource);
-  } catch (err: any) {
-    console.error("Add resource error:", err);
-    res.status(500).json({ error: err.message ?? "Server error" });
+    return response.status(201).json(resource);
+  } catch (error: any) {
+    if (error.name === "ZodError") {
+      return response.status(400).json({
+        message: "Validation failed",
+        issues: error.issues
+      });
+    }
+
+    console.error("Add resource error:", error);
+    return response.status(500).json({ message: error.message ?? "Server error" });
   }
 });
 
-router.get("/all", async (req, res) => {
+router.get("/all", async (_request, response) => {
   try {
     const resources = await prisma.resource.findMany({
       select: {
@@ -111,184 +101,200 @@ router.get("/all", async (req, res) => {
         notes: true
       }
     });
-    res.json(resources);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+
+    return response.json(resources);
+  } catch (error: any) {
+    return response.status(500).json({ message: error.message });
   }
 });
 
-router.get("/my", requireAuth, async (req, res) => {
+router.get("/my", requireAuth, async (request, response) => {
   try {
-    const userId = req.authUser?.userId;
+    const userId = request.authUser?.userId;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return response.status(401).json({ message: "Authentication required" });
     }
 
     const resources = await getUserResources(userId);
-    res.json(resources);
-  } catch (err: any) {
-    console.error("Get user resources error:", err);
-    res.status(500).json({ error: err.message ?? "Server error" });
+    return response.json(resources);
+  } catch (error: any) {
+    console.error("Get user resources error:", error);
+    return response.status(500).json({ message: error.message ?? "Server error" });
   }
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", async (request, response) => {
   try {
-    const resourceId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const resourceId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
     const resource = await getResourceById(resourceId);
+
     if (!resource) {
-      return res.status(404).json({ error: "Resource not found" });
+      return response.status(404).json({ message: "Resource not found" });
     }
-    res.json(resource);
-  } catch (err: any) {
-    console.error("Get resource error:", err);
-    res.status(500).json({ error: err.message ?? "Server error" });
+
+    return response.json(resource);
+  } catch (error: any) {
+    console.error("Get resource error:", error);
+    return response.status(500).json({ message: error.message ?? "Server error" });
   }
 });
 
-router.patch("/update/:id", requireAuth, requireResourceOwner, async (req, res) => {
+router.patch("/update/:id", requireAuth, requireResourceOwner, async (request, response) => {
   try {
-    const validatedData = validateUpdateResourceInput(req.body);
-    const resourceId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-
+    const validatedData = validateUpdateResourceInput(request.body);
+    const resourceId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
     const updated = await updateResource(resourceId, validatedData);
 
     if (!updated) {
-      return res.status(404).json({ error: "Resource not found" });
+      return response.status(404).json({ message: "Resource not found" });
     }
 
-    res.json({
+    return response.json({
       message: "Resource updated successfully",
       resource: updated
     });
-  } catch (err: any) {
-    console.error("Update resource error:", err);
-    if (err.name === "ZodError") {
-      return res.status(400).json({ error: "Validation failed", details: err.errors });
+  } catch (error: any) {
+    console.error("Update resource error:", error);
+    if (error.name === "ZodError") {
+      return response.status(400).json({
+        message: "Validation failed",
+        issues: error.issues
+      });
     }
-    res.status(500).json({ error: err.message ?? "Server error" });
+
+    return response.status(400).json({ message: error.message ?? "Server error" });
   }
 });
 
-router.patch("/deactivate/:id", requireAuth, requireResourceOwner, async (req, res) => {
+router.patch("/deactivate/:id", requireAuth, requireResourceOwner, async (request, response) => {
   try {
-    const resourceId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const resourceId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
     const deactivated = await deactivateResource(resourceId);
 
     if (!deactivated) {
-      return res.status(404).json({ error: "Resource not found" });
+      return response.status(404).json({ message: "Resource not found" });
     }
 
-    res.json({
+    return response.json({
       message: "Resource deactivated",
       resource: deactivated
     });
-  } catch (err: any) {
-    console.error("Deactivate resource error:", err);
-    res.status(500).json({ error: err.message ?? "Server error" });
+  } catch (error: any) {
+    console.error("Deactivate resource error:", error);
+    return response.status(500).json({ message: error.message ?? "Server error" });
   }
 });
 
-router.delete("/delete/:id", requireAuth, requireResourceOwner, async (req, res) => {
+router.delete("/delete/:id", requireAuth, requireResourceOwner, async (request, response) => {
   try {
-    const resourceId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const resourceId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
     const deleted = await deleteResource(resourceId);
 
     if (!deleted) {
-      return res.status(404).json({ error: "Resource not found" });
+      return response.status(404).json({ message: "Resource not found" });
     }
 
-    res.json({ message: "Resource deleted successfully" });
-  } catch (err: any) {
-    console.error("Delete resource error:", err);
-    res.status(500).json({ error: err.message ?? "Server error" });
+    return response.json({ message: "Resource deleted successfully" });
+  } catch (error: any) {
+    console.error("Delete resource error:", error);
+    return response.status(500).json({ message: error.message ?? "Server error" });
   }
 });
 
-router.post("/reserve", requireAuth, async (req, res) => {
+router.post("/reserve", requireAuth, async (request, response) => {
   try {
-    const { resourceId, quantity, justification, pickupTime } = req.body;
+    const userId = request.authUser?.userId;
+    if (!userId) {
+      return response.status(401).json({ message: "Authentication required" });
+    }
 
-    const userId = req.authUser?.userId;
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const payload = validateReservationInput({
+      resourceId: String(request.body.resourceId ?? ""),
+      quantity: Number(request.body.quantity),
+      justification: String(request.body.justification ?? ""),
+      pickupTime: request.body.pickupTime ? String(request.body.pickupTime) : null
+    });
 
     const reservation = await createReservation(
       userId,
-      resourceId,
-      Number(quantity),
-      justification,
-      pickupTime ? new Date(pickupTime) : undefined
+      payload.resourceId,
+      payload.quantity,
+      payload.justification,
+      payload.pickupTime ? new Date(payload.pickupTime) : undefined
     );
 
-    res.status(201).json(reservation);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.get("/:id/reservations", requireAuth, async (req, res) => {
-  try {
-    const resourceId = Array.isArray(req.params.id)
-      ? req.params.id[0]
-      : req.params.id;
-
-    if (!resourceId) {
-      return res.status(400).json({ error: "Resource ID required" });
+    return response.status(201).json(reservation);
+  } catch (error: any) {
+    if (error.name === "ZodError") {
+      return response.status(400).json({
+        message: "Validation failed",
+        issues: error.issues
+      });
     }
 
-    const reservations = await prisma.reservation.findMany({
-      where: { resourceId },
-      orderBy: { createdAt: "desc" }
-    });
-
-    res.json(reservations);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return response.status(400).json({ message: error.message });
   }
 });
 
-router.patch("/reservation/:id/approve", requireAuth, async (req, res) => {
+router.get("/:id/reservations", requireAuth, requireResourceOwner, async (request, response) => {
   try {
-    const id = Array.isArray(req.params.id)
-  ? req.params.id[0]
-  : req.params.id;
+    const resourceId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
 
-    const result = await approveReservation(id);
+    if (!resourceId) {
+      return response.status(400).json({ message: "Resource ID required" });
+    }
 
-    res.json({ message: "Reservation approved", reservation: result });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    const reservations = await listReservationsForOwner(resourceId);
+    return response.json(reservations);
+  } catch (error: any) {
+    return response.status(500).json({ message: error.message });
   }
 });
 
-router.patch("/reservation/:id/decline", requireAuth, async (req, res) => {
+router.patch("/reservation/:id/approve", requireAuth, async (request, response) => {
   try {
-    const id = Array.isArray(req.params.id)
-  ? req.params.id[0]
-  : req.params.id;
+    const actorId = request.authUser?.userId;
+    const actorRole = request.authUser?.role;
+    if (!actorId || !actorRole) {
+      return response.status(401).json({ message: "Authentication required" });
+    }
 
-    const result = await declineReservation(id);
+    const reservationId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
+    const result = await approveReservation(actorId, actorRole, reservationId);
 
-    res.json({ message: "Reservation declined", reservation: result });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    return response.json({ message: "Reservation approved", reservation: result });
+  } catch (error: any) {
+    return response.status(400).json({ message: error.message });
   }
 });
 
-router.get("/:id/history", requireAuth, async (req, res) => {
+router.patch("/reservation/:id/decline", requireAuth, async (request, response) => {
   try {
-    const id = Array.isArray(req.params.id)
-      ? req.params.id[0]
-      : req.params.id;
+    const actorId = request.authUser?.userId;
+    const actorRole = request.authUser?.role;
+    if (!actorId || !actorRole) {
+      return response.status(401).json({ message: "Authentication required" });
+    }
 
-    const history = await prisma.resourceHistory.findMany({
-      where: { resourceId: id },
-      orderBy: { createdAt: "desc" }
-    });
+    const reservationId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
+    const decisionReason =
+      typeof request.body.reason === "string" ? request.body.reason.trim() : undefined;
+    const result = await declineReservation(actorId, actorRole, reservationId, decisionReason);
 
-    res.json(history);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return response.json({ message: "Reservation declined", reservation: result });
+  } catch (error: any) {
+    return response.status(400).json({ message: error.message });
+  }
+});
+
+router.get("/:id/history", requireAuth, requireResourceOwner, async (request, response) => {
+  try {
+    const resourceId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
+    const history = await listResourceHistory(resourceId);
+
+    return response.json(history);
+  } catch (error: any) {
+    return response.status(500).json({ message: error.message });
   }
 });
 

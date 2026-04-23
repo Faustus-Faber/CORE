@@ -132,6 +132,7 @@ model User {
   crisisUpdates   CrisisEventUpdate[]
   notificationSub NotificationSubscription?
   notifications   Notification[]
+  reservations    Reservation[]
   volunteerTasks  VolunteerTask[]
   badges          Badge[]
   dispatchAlertLogs DispatchAlertLog[]
@@ -199,6 +200,7 @@ model Resource {
   name              String
   category          String
   quantity          Int
+  originalQuantity  Int?
   unit              String
   condition         String
   address           String
@@ -417,8 +419,10 @@ model Reservation {
   status      String   // Pending | Approved | Declined | Expired
   justification String
   pickupTime  DateTime?
+  decisionReason String?
   createdAt   DateTime @default(now())
   
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 }
 

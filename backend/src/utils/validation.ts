@@ -3,6 +3,7 @@ import { z } from "zod";
 const phoneRegex = /^\+?[0-9]{10,15}$/;
 const objectIdRegex = /^[a-fA-F0-9]{24}$/;
 const hasMixedPasswordTypes = /(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])/;
+const dateTimeLikeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(?:\.\d{3})?)?(?:Z|[+-]\d{2}:\d{2})?$/;
 
 const passwordSchema = z
   .string()
@@ -269,8 +270,8 @@ export const createResourceSchema = z.object({
   address: z.string().min(1, "Address is required").max(500),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  availabilityStart: z.string().datetime().optional().or(z.literal("")),
-  availabilityEnd: z.string().datetime().optional().or(z.literal("")),
+  availabilityStart: z.string().regex(dateTimeLikeRegex, "Invalid start date").optional().or(z.literal("")),
+  availabilityEnd: z.string().regex(dateTimeLikeRegex, "Invalid end date").optional().or(z.literal("")),
   contactPreference: resourceContactPreferenceSchema,
   notes: z.string().max(500, "Notes cannot exceed 500 characters").optional().or(z.literal("")),
   photos: z.array(z.string()).optional()
@@ -286,8 +287,8 @@ export const updateResourceSchema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   contactPreference: resourceContactPreferenceSchema.optional(),
-  availabilityStart: z.string().datetime().optional().or(z.literal("")),
-  availabilityEnd: z.string().datetime().optional().or(z.literal("")),
+  availabilityStart: z.string().regex(dateTimeLikeRegex, "Invalid start date").optional().or(z.literal("")),
+  availabilityEnd: z.string().regex(dateTimeLikeRegex, "Invalid end date").optional().or(z.literal("")),
   notes: z.string().max(500).optional().or(z.literal("")),
   photos: z.array(z.string()).optional(),
   status: z.enum(["Available", "Low Stock", "Reserved", "Depleted", "Unavailable"]).optional()
@@ -299,6 +300,17 @@ export function validateCreateResourceInput(payload: unknown) {
 
 export function validateUpdateResourceInput(payload: unknown) {
   return updateResourceSchema.parse(payload);
+}
+
+export const reservationInputSchema = z.object({
+  resourceId: z.string().regex(objectIdRegex, "Invalid resource ID"),
+  quantity: z.number().int().min(1, "Quantity must be at least 1"),
+  justification: z.string().trim().min(10, "Justification must be at least 10 characters").max(300, "Justification must be at most 300 characters"),
+  pickupTime: z.string().regex(dateTimeLikeRegex, "Invalid pickup time").optional().nullable()
+});
+
+export function validateReservationInput(payload: unknown) {
+  return reservationInputSchema.parse(payload);
 }
 
 // ==================== FEATURE 3: VOLUNTEER REVIEWS ====================

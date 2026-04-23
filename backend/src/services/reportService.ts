@@ -448,21 +448,21 @@ export async function updateIncidentReportStatusByAdmin(
 }
 
 export async function getMapIncidentReports(_viewerId: string) {
-  return prisma.incidentReport.findMany({
+  return prisma.crisisEvent.findMany({
     where: {
-      status: "PUBLISHED",
-      spamFlagged: false,
+      status: {
+        notIn: ["RESOLVED", "CLOSED"]
+      },
       latitude: { not: null },
       longitude: { not: null }
     },
     select: {
       id: true,
-      incidentTitle: true,
-      classifiedIncidentTitle: true,
+      title: true,
       incidentType: true,
-      classifiedIncidentType: true,
       severityLevel: true,
-      description: true,
+      locationText: true,
+      sitRepText: true,
       latitude: true,
       longitude: true,
       createdAt: true

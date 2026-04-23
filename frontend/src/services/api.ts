@@ -432,6 +432,7 @@ export type ResourceDetail = ResourceSummary & {
   availabilityEnd?: string;
   photos?: string[];
   condition?: string;
+  originalQuantity?: number | null;
 };
 
 export type AddResourcePayload = {
@@ -455,6 +456,31 @@ export type UpdateResourcePayload = {
   quantity: number;
   notes: string;
   status: string;
+};
+
+export type ResourceReservation = {
+  id: string;
+  userId: string;
+  quantity: number;
+  status: string;
+  justification: string;
+  pickupTime?: string | null;
+  decisionReason?: string | null;
+  createdAt: string;
+  user?: {
+    id: string;
+    fullName: string;
+    location: string;
+  };
+};
+
+export type ResourceHistoryEntry = {
+  id: string;
+  oldStatus: string;
+  newStatus: string;
+  oldQuantity: number;
+  newQuantity: number;
+  createdAt: string;
 };
 
 export async function getAllResources() {
@@ -506,13 +532,19 @@ export async function deleteResource(resourceId: string) {
 }
 
 export const getReservationsForResource = (resourceId: string) =>
-  request<any[]>(`/resources/${resourceId}/reservations`);
+  request<ResourceReservation[]>(`/resources/${resourceId}/reservations`);
+
+export const getResourceHistory = (resourceId: string) =>
+  request<ResourceHistoryEntry[]>(`/resources/${resourceId}/history`);
 
 export const approveReservationApi = (id: string) =>
   request(`/resources/reservation/${id}/approve`, { method: "PATCH" });
 
-export const declineReservationApi = (id: string) =>
-  request(`/resources/reservation/${id}/decline`, { method: "PATCH" });
+export const declineReservationApi = (id: string, reason?: string) =>
+  request(`/resources/reservation/${id}/decline`, {
+    method: "PATCH",
+    body: reason ? { reason } : undefined
+  });
 
 
 export const createReservationApi = (payload: {

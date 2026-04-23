@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { validateRegistrationInput } from "../utils/validation.js";
+import {
+  validateRegistrationInput,
+  validateReservationInput
+} from "../utils/validation.js";
 
 describe("validateRegistrationInput", () => {
   it("accepts a valid user registration", () => {
@@ -48,5 +51,29 @@ describe("validateRegistrationInput", () => {
     expect(() => validateRegistrationInput(payload)).toThrow(
       "Password must be at least 8 characters"
     );
+  });
+});
+
+describe("validateReservationInput", () => {
+  it("accepts a valid reservation payload", () => {
+    const payload = {
+      resourceId: "507f1f77bcf86cd799439011",
+      quantity: 2,
+      justification: "Needed for a displaced family of four",
+      pickupTime: "2026-04-23T12:00:00.000Z"
+    };
+
+    const parsed = validateReservationInput(payload);
+    expect(parsed.quantity).toBe(2);
+  });
+
+  it("rejects very short justifications", () => {
+    expect(() =>
+      validateReservationInput({
+        resourceId: "507f1f77bcf86cd799439011",
+        quantity: 1,
+        justification: "Too short"
+      })
+    ).toThrow("Justification must be at least 10 characters");
   });
 });

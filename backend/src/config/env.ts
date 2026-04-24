@@ -45,5 +45,9 @@ export const env = {
   aiRequestTimeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 20000),
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   resendFromEmail:
-    process.env.RESEND_FROM_EMAIL ?? "CORE Dispatch <onboarding@resend.dev>"
+    process.env.RESEND_FROM_EMAIL ?? "CORE Dispatch <onboarding@resend.dev>",
+  ocrProvider: process.env.OCR_PROVIDER ?? "ocrspace",
+  ocrSpaceApiKey: process.env.OCR_SPACE_API_KEY ?? "",
+  ocrSpaceEndpoint: process.env.OCR_SPACE_ENDPOINT ?? "https://api.ocr.space/parse/image",
+  ocrRequestTimeoutMs: Number(process.env.OCR_REQUEST_TIMEOUT_MS ?? 30000)
 };

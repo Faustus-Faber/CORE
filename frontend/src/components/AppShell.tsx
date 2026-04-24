@@ -51,7 +51,8 @@ function buildUserMenuItems(role: Role): NavItem[] {
     { to: "/profile", label: "Profile" },
     { to: "/notifications", label: "Notifications" },
     { to: "/notifications/preferences", label: "Notification Settings" },
-    { to: "/docs", label: "My Documents" }
+    { to: "/docs", label: "My Documents" },
+    { to: "/ocr", label: "OCR Tool" }
   ];
   if (role === "VOLUNTEER") {
     items.push({ to: "/tasks", label: "My Timesheet" });

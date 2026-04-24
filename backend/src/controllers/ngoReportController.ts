@@ -6,16 +6,12 @@ export async function generateReport(request: Request, response: Response, _next
   const adminId = request.authUser!.userId;
   const { assignedVolunteers, resources } = request.body;
 
-  try {
-    const report = await ngoReportService.generateNGOReportPDF(
-      crisisId as string, 
-      adminId,
-      { assignedVolunteers, resources }
-    );
-    response.status(201).json(report);
-  } catch (error: any) {
-    response.status(500).json({ error: error.message });
-  }
+  const report = await ngoReportService.generateNGOReportPDF(
+    crisisId as string,
+    adminId,
+    { assignedVolunteers, resources }
+  );
+  response.status(201).json(report);
 }
 
 export async function listReports(request: Request, response: Response, _next: NextFunction) {
@@ -28,7 +24,12 @@ export async function getReport(request: Request, response: Response, _next: Nex
   const { id } = request.params;
   const report = await ngoReportService.getNGOReportById(id as string);
   if (!report) {
-    return response.status(404).json({ error: "Report not found" });
+    return response.status(404).json({ message: "Report not found" });
   }
   response.status(200).json(report);
+}
+
+export async function openReportFile(request: Request, response: Response, _next: NextFunction) {
+  const report = await ngoReportService.ensureNGOReportFile(request.params.id as string) as { fileUrl: string };
+  response.redirect(report.fileUrl);
 }

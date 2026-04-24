@@ -679,6 +679,81 @@ export async function generateNGOReport(
   return httpClient<NGOReport>(`/ngo-reports/${crisisId}`, "POST", payload);
 }
 
+export type OCRItem = {
+  id: string;
+  scanId: string;
+  text: string;
+  confidence: number | null;
+  category: string;
+  bboxLeft: number | null;
+  bboxTop: number | null;
+  bboxWidth: number | null;
+  bboxHeight: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OCRScan = {
+  id: string;
+  userId: string;
+  folderId: string | null;
+  fileId: string | null;
+  crisisEventId: string | null;
+  incidentReportId: string | null;
+  sourceImageUrl: string;
+  sourceFileName: string;
+  provider: string;
+  status: string;
+  rawText: string;
+  createdAt: string;
+  updatedAt: string;
+  items: OCRItem[];
+  folder?: { id: string; name: string } | null;
+  crisisEvent?: { id: string; title: string } | null;
+  incidentReport?: { id: string; incidentTitle: string } | null;
+};
+
+export async function uploadOCRImage(payload: {
+  image: File;
+  folderId?: string | null;
+  crisisEventId?: string | null;
+  incidentReportId?: string | null;
+}) {
+  const formData = new FormData();
+  formData.append("image", payload.image);
+  if (payload.folderId) formData.append("folderId", payload.folderId);
+  if (payload.crisisEventId) formData.append("crisisEventId", payload.crisisEventId);
+  if (payload.incidentReportId) formData.append("incidentReportId", payload.incidentReportId);
+
+  return httpClient<{ scan: OCRScan }>("/ocr/upload", "POST", formData);
+}
+
+export async function scanDocumentFile(folderId: string, fileId: string) {
+  return httpClient<{ scan: OCRScan }>(`/ocr/folders/${folderId}/files/${fileId}`, "POST", {});
+}
+
+export async function getOCRHistory(page = 1, limit = 20) {
+  return httpClient<{ scans: OCRScan[]; total: number; page: number; limit: number }>(
+    `/ocr/history?page=${page}&limit=${limit}`
+  );
+}
+
+export async function getOCRScan(scanId: string) {
+  return httpClient<{ scan: OCRScan }>(`/ocr/${scanId}`);
+}
+
+export async function updateOCRItem(scanId: string, itemId: string, payload: { text: string; category?: string }) {
+  return httpClient<{ item: OCRItem }>(`/ocr/${scanId}/items/${itemId}`, "PATCH", payload);
+}
+
+export async function attachOCRScan(scanId: string, payload: {
+  folderId?: string | null;
+  crisisEventId?: string | null;
+  incidentReportId?: string | null;
+}) {
+  return httpClient<{ scan: OCRScan }>(`/ocr/${scanId}/attach`, "PATCH", payload);
+}
+
 // ── Timesheet & Gamification (Feature 3.7) ─────────────────────────────────
 
 export async function logTaskApi(payload: {

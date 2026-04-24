@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { docService } from '../services/docService';
+import { scanDocumentFile } from '../services/api';
 import { getCurrentPosition } from '../utils/geo';
 import { SecureFolder, FolderFile } from '../types';
 import { FolderHeader } from '../components/folder/FolderHeader';
@@ -13,6 +14,7 @@ import { MediaModal } from '../components/folder/MediaModal';
 
 export function FolderDetailsPage() {
     const { folderId } = useParams<{ folderId: string }>();
+    const navigate = useNavigate();
     const [folder, setFolder] = useState<SecureFolder | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>('files');
 
@@ -21,9 +23,10 @@ export function FolderDetailsPage() {
 
     // File State
     const [uploading, setUploading] = useState(false);
+    const [scanningFileId, setScanningFileId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const API_BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:4000/api").replace("/api", "");
+    const API_BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:5000/api").replace("/api", "");
     
     // Media Popup State
     const [selectedMedia, setSelectedMedia] = useState<string | null>(null);
@@ -132,6 +135,19 @@ export function FolderDetailsPage() {
         }
     };
 
+    const handleScanFile = async (fileId: string) => {
+        if (!folderId) return;
+        setScanningFileId(fileId);
+        try {
+            const { scan } = await scanDocumentFile(folderId, fileId);
+            navigate('/ocr', { state: { scanId: scan.id } });
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "OCR scan failed");
+        } finally {
+            setScanningFileId(null);
+        }
+    };
+
     const handleRevoke = async () => {
         if (!folderId || !window.confirm("Revoke all active share links for this folder?")) return;
         try {
@@ -172,6 +188,8 @@ export function FolderDetailsPage() {
                     editDescription={editDescription}
                     setEditDescription={setEditDescription}
                     handleUpdateFileDescription={handleUpdateFileDescription}
+                    handleScanFile={handleScanFile}
+                    scanningFileId={scanningFileId}
                     setSelectedMedia={setSelectedMedia}
                     setSelectedMediaType={setSelectedMediaType}
                     API_BASE={API_BASE}

@@ -8,11 +8,17 @@ import {
 } from "../services/api";
 import { AuthUser } from "../types";
 
+const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "http://localhost:5000/api").replace("/api", "");
+
 type NGOReportSectionProps = {
   crisisEventId: string;
   status: string;
   isAdmin: boolean;
 };
+
+function resolveReportUrl(report: NGOReport) {
+  return `${API_ORIGIN}/api/ngo-reports/${report.id}/file`;
+}
 
 export function NGOReportSection({ crisisEventId, status, isAdmin }: NGOReportSectionProps) {
   const [reports, setReports] = useState<NGOReport[]>([]);
@@ -91,7 +97,7 @@ export function NGOReportSection({ crisisEventId, status, isAdmin }: NGOReportSe
       setSelectedVolunteers([]);
       setManualResources([{ name: "", amount: "" }]);
       // Open in new tab for preview
-      window.open(newReport.fileUrl, "_blank");
+      window.open(resolveReportUrl(newReport), "_blank");
     } catch (err) {
       alert("Failed to generate report");
     } finally {
@@ -220,7 +226,7 @@ export function NGOReportSection({ crisisEventId, status, isAdmin }: NGOReportSe
                   </div>
                   <div className="flex gap-2">
                     <a
-                      href={report.fileUrl}
+                      href={resolveReportUrl(report)}
                       target="_blank"
                       rel="noreferrer"
                       className="text-xs font-semibold text-tide hover:underline"
@@ -228,7 +234,7 @@ export function NGOReportSection({ crisisEventId, status, isAdmin }: NGOReportSe
                       Preview
                     </a>
                     <a
-                      href={report.fileUrl}
+                      href={resolveReportUrl(report)}
                       download
                       className="text-xs font-semibold text-tide hover:underline"
                     >

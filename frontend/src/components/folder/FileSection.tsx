@@ -14,6 +14,8 @@ interface FileSectionProps {
     editDescription: string;
     setEditDescription: (desc: string) => void;
     handleUpdateFileDescription: (fileId: string) => void;
+    handleScanFile?: (fileId: string) => void;
+    scanningFileId?: string | null;
     setSelectedMedia: (url: string | null) => void;
     setSelectedMediaType: (type: 'image' | 'video' | null) => void;
     API_BASE: string;
@@ -33,6 +35,8 @@ export const FileSection: React.FC<FileSectionProps> = ({
     editDescription,
     setEditDescription,
     handleUpdateFileDescription,
+    handleScanFile,
+    scanningFileId,
     setSelectedMedia,
     setSelectedMediaType,
     API_BASE,
@@ -156,12 +160,23 @@ export const FileSection: React.FC<FileSectionProps> = ({
                                             )}
                                         </div>
                                         {!isReadOnly && (
-                                            <button
-                                                onClick={() => handleDeleteFile(file.id)}
-                                                className="text-slate-300 hover:text-red-500 transition-colors p-1"
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                            </button>
+                                            <div className="flex items-center gap-1">
+                                                {file.fileType.startsWith('image/') && handleScanFile && (
+                                                    <button
+                                                        onClick={() => handleScanFile(file.id)}
+                                                        disabled={scanningFileId === file.id}
+                                                        className="rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-blue-600 transition-colors hover:bg-blue-50 disabled:opacity-50"
+                                                    >
+                                                        {scanningFileId === file.id ? 'Scanning' : 'OCR'}
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => handleDeleteFile(file.id)}
+                                                    className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -239,6 +254,15 @@ export const FileSection: React.FC<FileSectionProps> = ({
                                         <td className="px-4 py-3 text-slate-500 text-xs">{new Date(file.createdAt).toLocaleDateString()}</td>
                                         {!isReadOnly && (
                                             <td className="px-4 py-3 text-right">
+                                                {file.fileType.startsWith('image/') && handleScanFile && (
+                                                    <button
+                                                        onClick={() => handleScanFile(file.id)}
+                                                        disabled={scanningFileId === file.id}
+                                                        className="mr-2 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                                                    >
+                                                        {scanningFileId === file.id ? 'Scanning' : 'OCR'}
+                                                    </button>
+                                                )}
                                                 <button
                                                     onClick={() => handleDeleteFile(file.id)}
                                                     className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"

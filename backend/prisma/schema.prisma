@@ -137,6 +137,8 @@ model User {
   badges          Badge[]
   dispatchAlertLogs DispatchAlertLog[]
   crisisResponses   CrisisResponder[]
+  ngoReports      NGOReport[]
+  ocrScans        OCRScan[]
 
   @@index([role, isBanned])
   @@index([role, isFlagged])
@@ -166,6 +168,7 @@ model IncidentReport {
   updatedAt               DateTime         @updatedAt
 
   crisisEvents CrisisEventReport[]
+  ocrScans     OCRScan[]
 
   @@index([reporterId, createdAt(sort: Desc)])
   @@index([status, severityLevel])
@@ -231,6 +234,7 @@ model SecureFolder {
   files       FolderFile[]
   notes       FolderNote[]
   shareLinks  ShareLink[]
+  ocrScans    OCRScan[]
 
   isDeleted Boolean   @default(false)
   isPinned  Boolean   @default(false)
@@ -252,6 +256,7 @@ model FolderFile {
   sizeBytes   Int
   gpsLat      Float?
   gpsLng      Float?
+  ocrScans    OCRScan[]
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -340,6 +345,8 @@ model CrisisEvent {
   reviews Review[]
   responders CrisisResponder[]
   dispatchAlertLogs DispatchAlertLog[]
+  ngoReports NGOReport[]
+  ocrScans OCRScan[]
 
   @@index([status, severityLevel, createdAt(sort: Desc)])
   @@index([latitude, longitude])
@@ -576,4 +583,66 @@ model DispatchAlertLog {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([crisisEventId, createdAt(sort: Desc)])
+}
+
+model NGOReport {
+  id             String      @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId  String      @db.ObjectId
+  generatedById  String      @db.ObjectId
+  title          String
+  fileUrl        String
+  summary        String?
+  createdAt      DateTime    @default(now())
+
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  generatedBy User        @relation(fields: [generatedById], references: [id], onDelete: Cascade)
+
+  @@index([crisisEventId, createdAt(sort: Desc)])
+  @@index([generatedById, createdAt(sort: Desc)])
+}
+
+model OCRScan {
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String        @db.ObjectId
+  folderId         String?       @db.ObjectId
+  fileId           String?       @db.ObjectId
+  crisisEventId    String?       @db.ObjectId
+  incidentReportId String?       @db.ObjectId
+  sourceImageUrl   String
+  sourceFileName   String
+  provider         String
+  status           String        @default("COMPLETED")
+  rawText          String
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder         SecureFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  file           FolderFile?     @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  crisisEvent    CrisisEvent?    @relation(fields: [crisisEventId], references: [id], onDelete: SetNull)
+  incidentReport IncidentReport? @relation(fields: [incidentReportId], references: [id], onDelete: SetNull)
+  items          OCRItem[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([folderId, createdAt(sort: Desc)])
+  @@index([crisisEventId, createdAt(sort: Desc)])
+  @@index([incidentReportId, createdAt(sort: Desc)])
+}
+
+model OCRItem {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  scanId     String   @db.ObjectId
+  text       String
+  confidence Float?
+  category   String
+  bboxLeft   Float?
+  bboxTop    Float?
+  bboxWidth  Float?
+  bboxHeight Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  scan OCRScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
 }

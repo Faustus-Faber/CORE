@@ -13,9 +13,16 @@ import {
 export function IncidentCard({ event }: { event: CrisisEventCard }) {
   const mediaThumb = event.mediaFilenames.length > 0 ? event.mediaFilenames[0] : null;
   const thumbUrl = mediaThumb ? normalizeMediaUrl(mediaThumb) : null;
+  const isFinalStatus = event.status === "RESOLVED" || event.status === "CLOSED";
 
   return (
-    <article className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100 transition-all hover:shadow-md hover:ring-tide/30">
+    <article
+      className={`group rounded-xl border p-4 shadow-sm ring-1 transition-all ${
+        isFinalStatus
+          ? "border-slate-200 bg-slate-50 ring-slate-200 hover:ring-slate-300"
+          : "border-slate-200 bg-white ring-slate-100 hover:shadow-md hover:ring-tide/30"
+      }`}
+    >
 
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
@@ -31,6 +38,15 @@ export function IncidentCard({ event }: { event: CrisisEventCard }) {
             </h3>
             <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${severityBadgeClass(event.severityLevel)}`}>
               {event.severityLevel}
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                isFinalStatus
+                  ? "bg-slate-200 text-slate-700"
+                  : "bg-slate-100 text-slate-700"
+              }`}
+            >
+              {event.status.replace(/_/g, " ")}
             </span>
           </div>
 
@@ -76,7 +92,11 @@ export function IncidentCard({ event }: { event: CrisisEventCard }) {
         <Link
           to={`/dashboard/incidents/${event.id}`}
           onClick={(e) => e.stopPropagation()}
-          className="rounded-md bg-tide/10 px-3 py-1.5 text-xs font-semibold text-tide transition hover:bg-tide hover:text-white"
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+            isFinalStatus
+              ? "bg-slate-200 text-slate-700 hover:bg-slate-300"
+              : "bg-tide/10 text-tide hover:bg-tide hover:text-white"
+          }`}
         >
           View Details
         </Link>

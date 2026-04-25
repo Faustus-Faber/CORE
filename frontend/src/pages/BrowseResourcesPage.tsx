@@ -1,138 +1,238 @@
 import { useEffect, useState } from "react";
-import { getAllResources, type ResourceSummary } from "../services/api";
+import { useSearchParams } from "react-router-dom";
+
+import {
+  createReservationApi,
+  getAllResources,
+  type ResourceSummary
+} from "../services/api";
+
+function getReservationCap(resource: ResourceSummary) {
+  return Math.max(1, Math.floor(resource.quantity * 0.3));
+}
 
 export default function BrowseResourcesPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [resources, setResources] = useState<ResourceSummary[]>([]);
   const [selectedResource, setSelectedResource] = useState<ResourceSummary | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [justification, setJustification] = useState("");
   const [pickupTime, setPickupTime] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     getAllResources()
-      .then(setResources)
-      .catch((err) => console.error("Failed to load resources", err));
+      .then((data) => setResources(data))
+      .catch((error) => console.error("Failed to load resources", error));
   }, []);
 
-  const handleReserve = async () => {
-    if (!selectedResource) return;
+  useEffect(() => {
+    const resourceId = searchParams.get("resourceId");
+    if (!resourceId || resources.length === 0) {
+      return;
+    }
+
+    const matchedResource = resources.find((resource) => resource.id === resourceId) ?? null;
+    if (!matchedResource) {
+      return;
+    }
+
+    setSelectedResource(matchedResource);
+    setQuantity(1);
+  }, [resources, searchParams]);
+
+  const visibleResources = resources.filter((resource) => ["Available", "Low Stock"].includes(resource.status));
+
+  const selectedResourceCap = selectedResource ? getReservationCap(selectedResource) : 1;
+
+  async function handleReserve() {
+    if (!selectedResource || submitting) {
+      return;
+    }
+
+    setSubmitting(true);
 
     try {
-      const res = await fetch("http://localhost:5000/api/resources/reserve", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          resourceId: selectedResource.id,
-          quantity,
-          justification,
-          pickupTime: pickupTime || null
-        })
+      await createReservationApi({
+        resourceId: selectedResource.id,
+        quantity,
+        justification,
+        pickupTime: pickupTime || null
       });
 
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.error);
-
-      alert("Reservation submitted!");
-      setSelectedResource(null);
-      setQuantity(1);
-      setJustification("");
-      setPickupTime("");
-    } catch (err: any) {
-      alert(err.message || "Reservation failed");
+      alert("Reservation submitted successfully.");
+      closeModal();
+      const nextResources = await getAllResources();
+      setResources(nextResources);
+    } catch (error: any) {
+      alert(error.message || "Reservation failed");
+    } finally {
+      setSubmitting(false);
     }
-  };
+  }
+
+  function openResource(resource: ResourceSummary) {
+    setSelectedResource(resource);
+    setQuantity(1);
+    setJustification("");
+    setPickupTime("");
+    setSearchParams({ resourceId: resource.id });
+  }
+
+  function closeModal() {
+    setSelectedResource(null);
+    setQuantity(1);
+    setJustification("");
+    setPickupTime("");
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("resourceId");
+    setSearchParams(nextParams);
+  }
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Browse Resources</h1>
+    <div className="mx-auto max-w-6xl space-y-6 p-6">
+      <div className="rounded-3xl border border-slate-200 bg-white px-6 py-7 shadow-sm">
+        <h1 className="text-3xl font-bold text-slate-900">Browse Resources</h1>
+        <p className="mt-2 max-w-2xl text-sm text-slate-600">
+          Find nearby community supplies, review live availability, and submit a fair-use reservation request.
+        </p>
+      </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {resources.map((r) => (
-          <div key={r.id} className="border p-4 rounded shadow">
-            <h2 className="text-lg font-bold">{r.name}</h2>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {visibleResources.map((resource) => (
+          <article
+            key={resource.id}
+            className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">{resource.name}</h2>
+                <p className="text-sm text-slate-500">{resource.category}</p>
+              </div>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  resource.status === "Low Stock"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-emerald-100 text-emerald-700"
+                }`}
+              >
+                {resource.status}
+              </span>
+            </div>
 
-            <p><b>Category:</b> {r.category}</p>
-            <p><b>Quantity:</b> {r.quantity} {r.unit}</p>
-            <p><b>Status:</b> {r.status}</p>
-            <p><b>Address:</b> {r.address}</p>
+            <div className="mt-4 space-y-2 text-sm text-slate-700">
+              <p>
+                <span className="font-semibold">Available:</span> {resource.quantity} {resource.unit}
+              </p>
+              <p>
+                <span className="font-semibold">Pickup:</span> {resource.address}
+              </p>
+              <p>
+                <span className="font-semibold">Contact:</span> {resource.contactPreference}
+              </p>
+              {resource.notes ? (
+                <p>
+                  <span className="font-semibold">Notes:</span> {resource.notes}
+                </p>
+              ) : null}
+            </div>
 
             <button
-              className="mt-2 bg-blue-500 text-white px-3 py-1 rounded"
-              disabled={!["Available", "Low Stock"].includes(r.status)}
-              onClick={() => setSelectedResource(r)}
+              type="button"
+              className="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+              onClick={() => openResource(resource)}
             >
               Reserve
             </button>
-          </div>
+          </article>
         ))}
       </div>
 
-      {/* Modal */}
-      {selectedResource && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-          <div className="bg-white p-6 rounded w-full max-w-md max-h-[80vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">
-              Reserve: {selectedResource.name}
-            </h2>
+      {selectedResource ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-8">
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-6 py-5">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">Resource Reservation</p>
+              <h2 className="mt-1 text-2xl font-bold text-slate-900">{selectedResource.name}</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Reserve up to {selectedResourceCap} {selectedResource.unit} from this listing.
+              </p>
+            </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block font-semibold">Quantity</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={Math.max(1, Math.floor(selectedResource.quantity * 0.3))}
-                  value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
-                  className="border p-2 w-full rounded"
-                />
-                <p className="text-xs text-gray-500">
-                  Max allowed: {Math.max(1, Math.floor(selectedResource.quantity * 0.3))}
+            <div className="space-y-4 px-6 py-5">
+              <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
+                <p>
+                  <span className="font-semibold">Category:</span> {selectedResource.category}
+                </p>
+                <p>
+                  <span className="font-semibold">Current Stock:</span> {selectedResource.quantity} {selectedResource.unit}
+                </p>
+                <p>
+                  <span className="font-semibold">Pickup Address:</span> {selectedResource.address}
                 </p>
               </div>
 
               <div>
-                <label className="block font-semibold">Reason</label>
-                <textarea
-                  value={justification}
-                  onChange={(e) => setJustification(e.target.value)}
-                  className="border p-2 w-full rounded"
+                <label className="mb-1 block text-sm font-semibold text-slate-700">Requested Quantity</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={selectedResourceCap}
+                  value={quantity}
+                  onChange={(event) =>
+                    setQuantity(Math.max(1, Math.min(selectedResourceCap, Number(event.target.value) || 1)))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold">Pickup Time</label>
-                <input
-                  type="datetime-local"
-                  value={pickupTime}
-                  onChange={(e) => setPickupTime(e.target.value)}
-                  className="border p-2 w-full rounded"
+                <label className="mb-1 block text-sm font-semibold text-slate-700">Purpose / Justification</label>
+                <textarea
+                  value={justification}
+                  onChange={(event) => setJustification(event.target.value)}
+                  className="min-h-28 w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
+                  placeholder="Describe who needs this resource and why."
+                  maxLength={300}
                 />
               </div>
 
-              <div className="flex gap-2 pt-4">
-                <button
-                  onClick={handleReserve}
-                  className="bg-green-600 text-white px-4 py-2 rounded w-full"
-                >
-                  Submit
-                </button>
-
-                <button
-                  onClick={() => setSelectedResource(null)}
-                  className="bg-gray-400 text-white px-4 py-2 rounded w-full"
-                >
-                  Cancel
-                </button>
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">Preferred Pickup Time</label>
+                <input
+                  type="datetime-local"
+                  value={pickupTime}
+                  onChange={(event) => setPickupTime(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
+                />
               </div>
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-200 px-6 py-5">
+              <button
+                type="button"
+                onClick={handleReserve}
+                disabled={
+                  submitting ||
+                  justification.trim().length < 10 ||
+                  quantity < 1 ||
+                  quantity > selectedResourceCap
+                }
+                className="flex-1 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {submitting ? "Submitting..." : "Submit Reservation"}
+              </button>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="flex-1 rounded-2xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-300"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

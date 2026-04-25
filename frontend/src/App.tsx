@@ -17,8 +17,6 @@ import MapPage from "./pages/MapPage";
 import { MyDocumentsPage } from "./pages/MyDocumentsPage";
 import MyResourcesPage from "./pages/MyResourcesPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
-import { NGOReportsArchivePage } from "./pages/NGOReportsArchivePage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { NotificationPreferencesPage } from "./pages/NotificationPreferencesPage";
 import { NotificationInbox } from "./pages/NotificationInbox";
@@ -33,6 +31,8 @@ import { VolunteerProfilePage } from "./pages/VolunteerProfilePage";
 import BrowseResourcesPage from "./pages/BrowseResourcesPage";
 import { MyTimesheetPage } from "./pages/MyTimesheetPage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
+import { OCRToolPage } from "./pages/OCRToolPage";
+import { NGOReportsArchivePage } from "./pages/NGOReportsArchivePage";
 
 export default function App() {
   return (
@@ -64,6 +64,7 @@ export default function App() {
           {/* Feature 4: Secure Documentation Routes */}
           <Route path="/docs" element={<MyDocumentsPage />} />
           <Route path="/docs/:folderId" element={<FolderDetailsPage />} />
+          <Route path="/ocr" element={<OCRToolPage />} />
 
           <Route path="/notifications" element={<NotificationInbox />} />
           <Route path="/notifications/preferences" element={<NotificationPreferencesPage />} />
@@ -90,10 +91,8 @@ export default function App() {
               path="/reports"
               element={<Navigate to="/reports/review" replace />}
             />
-            <Route
-              path="/reports/generate"
-              element={<NGOReportsArchivePage />}
-            />
+            <Route path="/reports/generate" element={<NGOReportsArchivePage />} />
+            <Route path="/ngo-reports/archive" element={<NGOReportsArchivePage />} />
           </Route>
         </Route>
 

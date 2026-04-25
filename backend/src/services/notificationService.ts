@@ -57,26 +57,61 @@ async function findSubscribersWithinRadius(
   latitude: number,
   longitude: number
 ) {
-  const subscribers = await prisma.notificationSubscription.findMany({
+  const subscriptions = await prisma.notificationSubscription.findMany({
     where: {
       isActive: true,
       incidentTypes: { has: incidentType as IncidentType }
     },
-    include: {
-      user: { select: { id: true, latitude: true, longitude: true } }
+    select: {
+      id: true,
+      userId: true,
+      radiusKm: true
     }
   });
 
-  return subscribers.filter((sub) => {
-    if (sub.user.latitude == null || sub.user.longitude == null) return false;
+  if (subscriptions.length === 0) {
+    return [];
+  }
+
+  const userIds = [...new Set(subscriptions.map((sub) => sub.userId))];
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, latitude: true, longitude: true }
+  });
+
+  const userById = new Map(users.map((user) => [user.id, user]));
+  const orphanSubscriptionIds: string[] = [];
+  const matchedUserIds: string[] = [];
+
+  for (const sub of subscriptions) {
+    const user = userById.get(sub.userId);
+    if (!user) {
+      orphanSubscriptionIds.push(sub.id);
+      continue;
+    }
+
+    if (user.latitude == null || user.longitude == null) {
+      continue;
+    }
+
     const distance = haversineDistanceKm(
       latitude,
       longitude,
-      sub.user.latitude,
-      sub.user.longitude
+      user.latitude,
+      user.longitude
     );
-    return distance <= sub.radiusKm;
-  });
+    if (distance <= sub.radiusKm) {
+      matchedUserIds.push(sub.userId);
+    }
+  }
+
+  if (orphanSubscriptionIds.length > 0) {
+    await prisma.notificationSubscription.deleteMany({
+      where: { id: { in: orphanSubscriptionIds } }
+    });
+  }
+
+  return matchedUserIds;
 }
 
 async function createNotificationsInBulk(
@@ -144,7 +179,7 @@ export async function dispatchNotifications(
   );
 
   await createNotificationsInBulk(
-    matchedSubscribers.map((sub) => sub.userId),
+    matchedSubscribers,
     crisisEventId,
     `${severity} ${incidentType.replace(/_/g, " ")} Alert`,
     description,
@@ -174,7 +209,7 @@ export async function dispatchCrisisUpdateNotifications(
   if (matchedSubscribers.length === 0) return;
 
   await createNotificationsInBulk(
-    matchedSubscribers.map((sub) => sub.userId),
+    matchedSubscribers,
     crisisEventId,
     `${severity} ${incidentType.replace(/_/g, " ")} Update: ${newStatus.replace(/_/g, " ")}`,
     `${title} — ${updateNote}`,

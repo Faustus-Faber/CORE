@@ -66,7 +66,7 @@ export default function AddResourcePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!form.latitude || !form.longitude) {
+    if (form.latitude == null || form.longitude == null) {
       alert("Please select the pickup location on the map.");
       return;
     }
@@ -198,7 +198,7 @@ export default function AddResourcePage() {
             <LocationPicker onLocationSelect={handleLocationSelect} />
           </div>
 
-          {form.latitude && form.longitude && (
+          {form.latitude != null && form.longitude != null && (
             <p className="text-sm text-gray-600 mt-2">
               📍 Selected Coordinates: {form.latitude.toFixed(6)},{" "}
               {form.longitude.toFixed(6)}

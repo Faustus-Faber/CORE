@@ -1,5 +1,11 @@
 import type {
   AuthUser,
+  CrisisResponder,
+  CrisisResponderStatus,
+  CrisisUpdateEntry,
+  CrisisUpdateInput,
+  DispatchAlertLog,
+  EligibleReviewCrisis,
   CrisisEventCard,
   DashboardFeedFilters,
   EmergencyReportSubmissionInput,
@@ -13,7 +19,6 @@ import type {
   VolunteerTask,
   Role,
   SitRepResponse,
-  SmsLog,
   Review
 } from "../types";
 import { buildEmergencyReportFormData } from "./reportPayload";
@@ -159,8 +164,8 @@ export async function toggleDispatchOptInApi(dispatchOptIn: boolean) {
   return httpClient<{ dispatchOptIn: boolean }>("/profile/dispatch-opt-in", "PATCH", { dispatchOptIn });
 }
 
-export async function getMySmsLogsApi() {
-  return httpClient<{ logs: SmsLog[] }>("/profile/sms-logs");
+export async function getMyDispatchLogsApi() {
+  return httpClient<{ logs: DispatchAlertLog[] }>("/profile/dispatch-logs");
 }
 
 export async function changePassword(payload: {
@@ -301,7 +306,7 @@ export async function submitReview(
   interactionContext: string,
   interactionDate: string,
   wouldWorkAgain: boolean,
-  crisisEventId?: string | null
+  crisisEventId: string
 ) {
   return httpClient<{ message: string; review: Review }>("/reviews", "POST", {
     volunteerId,
@@ -316,6 +321,12 @@ export async function submitReview(
 
 export async function getVolunteerReviews(volunteerId: string) {
   return httpClient<{ reviews: Review[]; averageRating: number | null }>(`/reviews/volunteer/${volunteerId}`);
+}
+
+export async function getEligibleReviewCrises(volunteerId: string) {
+  return httpClient<{ crises: EligibleReviewCrisis[] }>(
+    `/reviews/volunteer/${volunteerId}/eligible-crises`
+  );
 }
 
 export async function getFlaggedReviews() {
@@ -421,6 +432,7 @@ export type ResourceDetail = ResourceSummary & {
   availabilityEnd?: string;
   photos?: string[];
   condition?: string;
+  originalQuantity?: number | null;
 };
 
 export type AddResourcePayload = {
@@ -444,6 +456,31 @@ export type UpdateResourcePayload = {
   quantity: number;
   notes: string;
   status: string;
+};
+
+export type ResourceReservation = {
+  id: string;
+  userId: string;
+  quantity: number;
+  status: string;
+  justification: string;
+  pickupTime?: string | null;
+  decisionReason?: string | null;
+  createdAt: string;
+  user?: {
+    id: string;
+    fullName: string;
+    location: string;
+  };
+};
+
+export type ResourceHistoryEntry = {
+  id: string;
+  oldStatus: string;
+  newStatus: string;
+  oldQuantity: number;
+  newQuantity: number;
+  createdAt: string;
 };
 
 export async function getAllResources() {
@@ -495,13 +532,19 @@ export async function deleteResource(resourceId: string) {
 }
 
 export const getReservationsForResource = (resourceId: string) =>
-  request<any[]>(`/resources/${resourceId}/reservations`);
+  request<ResourceReservation[]>(`/resources/${resourceId}/reservations`);
+
+export const getResourceHistory = (resourceId: string) =>
+  request<ResourceHistoryEntry[]>(`/resources/${resourceId}/history`);
 
 export const approveReservationApi = (id: string) =>
   request(`/resources/reservation/${id}/approve`, { method: "PATCH" });
 
-export const declineReservationApi = (id: string) =>
-  request(`/resources/reservation/${id}/decline`, { method: "PATCH" });
+export const declineReservationApi = (id: string, reason?: string) =>
+  request(`/resources/reservation/${id}/decline`, {
+    method: "PATCH",
+    body: reason ? { reason } : undefined
+  });
 
 
 export const createReservationApi = (payload: {
@@ -517,35 +560,8 @@ export const createReservationApi = (payload: {
 
 // ── Crisis Updates (Module 3.1) ──────────────────────────────────────────────
 
-export type CrisisUpdateInput = {
-  status: string;
-  updateNote: string;
-  newSeverity?: string;
-  affectedArea?: string;
-  casualtyCount?: number;
-  displacedCount?: number;
-  damageNotes?: string;
-};
-
-export type CrisisUpdateEntry = {
-  id: string;
-  crisisEventId: string;
-  updaterId: string;
-  updaterName: string;
-  previousStatus: string;
-  newStatus: string;
-  updateNote: string;
-  newSeverity: string | null;
-  affectedArea: string | null;
-  casualtyCount: number | null;
-  displacedCount: number | null;
-  damageNotes: string | null;
-  isFlagged: boolean;
-  createdAt: string;
-};
-
 export async function submitCrisisUpdate(crisisEventId: string, payload: CrisisUpdateInput) {
-  return httpClient<{ entry: CrisisUpdateEntry; isTrusted: boolean }>(
+  return httpClient<{ entry: CrisisUpdateEntry; applied: boolean }>(
     `/crises/${crisisEventId}/updates`,
     "POST",
     payload
@@ -565,6 +581,23 @@ export async function revertCrisisStatus(crisisEventId: string, targetStatus: st
     targetStatus,
     note
   });
+}
+
+export async function getCrisisResponders(crisisEventId: string) {
+  return httpClient<{ responders: CrisisResponder[]; myStatus: CrisisResponderStatus | null }>(
+    `/crises/${crisisEventId}/responders`
+  );
+}
+
+export async function updateMyCrisisResponderStatus(
+  crisisEventId: string,
+  status: CrisisResponderStatus
+) {
+  return httpClient<{ message: string; responder: CrisisResponder }>(
+    `/crises/${crisisEventId}/responders/me`,
+    "PATCH",
+    { status }
+  );
 }
 
 // ── Notifications (Module 3.5) ───────────────────────────────────────────────
@@ -613,6 +646,112 @@ export async function markAllNotificationsRead() {
 
 export async function clearHandledNotifications() {
   return httpClient<MessageResponse>("/notifications/inbox/clear-handled", "DELETE");
+}
+
+export type NGOReportResource = {
+  name: string;
+  amount: string;
+};
+
+export type NGOReport = {
+  id: string;
+  crisisEventId: string;
+  generatedById: string;
+  title: string;
+  fileUrl: string;
+  createdAt: string;
+  crisisEvent?: { title: string };
+  generatedBy?: { fullName: string };
+};
+
+export async function listNGOReports(crisisId?: string) {
+  const query = crisisId ? `?crisisId=${encodeURIComponent(crisisId)}` : "";
+  return httpClient<NGOReport[]>(`/ngo-reports${query}`);
+}
+
+export async function generateNGOReport(
+  crisisId: string,
+  payload: {
+    assignedVolunteers?: string[];
+    resources?: NGOReportResource[];
+  } = {}
+) {
+  return httpClient<NGOReport>(`/ngo-reports/${crisisId}`, "POST", payload);
+}
+
+export type OCRItem = {
+  id: string;
+  scanId: string;
+  text: string;
+  confidence: number | null;
+  category: string;
+  bboxLeft: number | null;
+  bboxTop: number | null;
+  bboxWidth: number | null;
+  bboxHeight: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OCRScan = {
+  id: string;
+  userId: string;
+  folderId: string | null;
+  fileId: string | null;
+  crisisEventId: string | null;
+  incidentReportId: string | null;
+  sourceImageUrl: string;
+  sourceFileName: string;
+  provider: string;
+  status: string;
+  rawText: string;
+  createdAt: string;
+  updatedAt: string;
+  items: OCRItem[];
+  folder?: { id: string; name: string } | null;
+  crisisEvent?: { id: string; title: string } | null;
+  incidentReport?: { id: string; incidentTitle: string } | null;
+};
+
+export async function uploadOCRImage(payload: {
+  image: File;
+  folderId?: string | null;
+  crisisEventId?: string | null;
+  incidentReportId?: string | null;
+}) {
+  const formData = new FormData();
+  formData.append("image", payload.image);
+  if (payload.folderId) formData.append("folderId", payload.folderId);
+  if (payload.crisisEventId) formData.append("crisisEventId", payload.crisisEventId);
+  if (payload.incidentReportId) formData.append("incidentReportId", payload.incidentReportId);
+
+  return httpClient<{ scan: OCRScan }>("/ocr/upload", "POST", formData);
+}
+
+export async function scanDocumentFile(folderId: string, fileId: string) {
+  return httpClient<{ scan: OCRScan }>(`/ocr/folders/${folderId}/files/${fileId}`, "POST", {});
+}
+
+export async function getOCRHistory(page = 1, limit = 20) {
+  return httpClient<{ scans: OCRScan[]; total: number; page: number; limit: number }>(
+    `/ocr/history?page=${page}&limit=${limit}`
+  );
+}
+
+export async function getOCRScan(scanId: string) {
+  return httpClient<{ scan: OCRScan }>(`/ocr/${scanId}`);
+}
+
+export async function updateOCRItem(scanId: string, itemId: string, payload: { text: string; category?: string }) {
+  return httpClient<{ item: OCRItem }>(`/ocr/${scanId}/items/${itemId}`, "PATCH", payload);
+}
+
+export async function attachOCRScan(scanId: string, payload: {
+  folderId?: string | null;
+  crisisEventId?: string | null;
+  incidentReportId?: string | null;
+}) {
+  return httpClient<{ scan: OCRScan }>(`/ocr/${scanId}/attach`, "PATCH", payload);
 }
 
 // ── Timesheet & Gamification (Feature 3.7) ─────────────────────────────────
@@ -670,31 +809,4 @@ export async function verifyTaskApi(taskId: string, decision: "VERIFIED" | "REJE
 
 export async function getCrisesForDropdownApi() {
   return httpClient<{ crises: { id: string; title: string; status: string; incidentType: string }[] }>("/timesheet/crises");
-}
-
-// ── NGO Reports (Module 3.6) ─────────────────────────────────────────────────
-
-export type NGOReportResource = {
-  name: string;
-  amount: string;
-};
-
-export type NGOReport = {
-  id: string;
-  title: string;
-  crisisEventId: string;
-  fileUrl: string;
-  createdAt: string;
-};
-
-export async function generateNGOReport(
-  crisisEventId: string,
-  payload: { assignedVolunteers: string[]; resources: NGOReportResource[] }
-) {
-  return httpClient<NGOReport>(`/ngo-reports/${crisisEventId}`, "POST", payload);
-}
-
-export async function listNGOReports(crisisId?: string) {
-  const query = crisisId ? `?crisisId=${crisisId}` : "";
-  return httpClient<NGOReport[]>(`/ngo-reports${query}`);
 }

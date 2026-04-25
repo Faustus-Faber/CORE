@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 const phoneRegex = /^\+?[0-9]{10,15}$/;
+const objectIdRegex = /^[a-fA-F0-9]{24}$/;
 const hasMixedPasswordTypes = /(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])/;
+const dateTimeLikeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(?:\.\d{3})?)?(?:Z|[+-]\d{2}:\d{2})?$/;
 
 const passwordSchema = z
   .string()
@@ -268,8 +270,8 @@ export const createResourceSchema = z.object({
   address: z.string().min(1, "Address is required").max(500),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  availabilityStart: z.string().datetime().optional().or(z.literal("")),
-  availabilityEnd: z.string().datetime().optional().or(z.literal("")),
+  availabilityStart: z.string().regex(dateTimeLikeRegex, "Invalid start date").optional().or(z.literal("")),
+  availabilityEnd: z.string().regex(dateTimeLikeRegex, "Invalid end date").optional().or(z.literal("")),
   contactPreference: resourceContactPreferenceSchema,
   notes: z.string().max(500, "Notes cannot exceed 500 characters").optional().or(z.literal("")),
   photos: z.array(z.string()).optional()
@@ -285,8 +287,8 @@ export const updateResourceSchema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   contactPreference: resourceContactPreferenceSchema.optional(),
-  availabilityStart: z.string().datetime().optional().or(z.literal("")),
-  availabilityEnd: z.string().datetime().optional().or(z.literal("")),
+  availabilityStart: z.string().regex(dateTimeLikeRegex, "Invalid start date").optional().or(z.literal("")),
+  availabilityEnd: z.string().regex(dateTimeLikeRegex, "Invalid end date").optional().or(z.literal("")),
   notes: z.string().max(500).optional().or(z.literal("")),
   photos: z.array(z.string()).optional(),
   status: z.enum(["Available", "Low Stock", "Reserved", "Depleted", "Unavailable"]).optional()
@@ -298,6 +300,17 @@ export function validateCreateResourceInput(payload: unknown) {
 
 export function validateUpdateResourceInput(payload: unknown) {
   return updateResourceSchema.parse(payload);
+}
+
+export const reservationInputSchema = z.object({
+  resourceId: z.string().regex(objectIdRegex, "Invalid resource ID"),
+  quantity: z.number().int().min(1, "Quantity must be at least 1"),
+  justification: z.string().trim().min(10, "Justification must be at least 10 characters").max(300, "Justification must be at most 300 characters"),
+  pickupTime: z.string().regex(dateTimeLikeRegex, "Invalid pickup time").optional().nullable()
+});
+
+export function validateReservationInput(payload: unknown) {
+  return reservationInputSchema.parse(payload);
 }
 
 // ==================== FEATURE 3: VOLUNTEER REVIEWS ====================
@@ -321,7 +334,10 @@ export const createReviewSchema = z.object({
     return interactionDate <= today;
   }, "Interaction date cannot be in the future"),
   wouldWorkAgain: z.boolean(),
-  crisisEventId: z.string().optional().nullable()
+  crisisEventId: z
+    .string()
+    .min(1, "Crisis event is required")
+    .regex(objectIdRegex, "Invalid crisis event ID")
 });
 
 // ==================== FEATURE 4: SECURE DOCUMENTATION ====================
@@ -397,18 +413,65 @@ export const crisisStatusSchema = z.enum([
   "CLOSED"
 ]);
 
+export const crisisResponderStatusSchema = z.enum([
+  "RESPONDING",
+  "EN_ROUTE",
+  "ON_SITE",
+  "COMPLETED",
+  "UNAVAILABLE"
+]);
+
+export const crisisUpdateTypeSchema = z.enum([
+  "STATUS_CHANGE",
+  "FIELD_OBSERVATION",
+  "ACCESS_UPDATE",
+  "IMPACT_UPDATE",
+  "RESOURCE_NEED",
+  "CLOSURE_NOTE",
+  "ADMIN_CORRECTION",
+  "RESPONDER_STATUS"
+]);
+
+export const crisisAccessStatusSchema = z.enum([
+  "OPEN",
+  "LIMITED",
+  "BLOCKED",
+  "UNKNOWN"
+]);
+
 export const crisisUpdateSchema = z.object({
+  updateType: crisisUpdateTypeSchema,
   status: crisisStatusSchema,
   updateNote: z.string().trim().min(1, "Update note is required").max(1000, "Update note is too long"),
   newSeverity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
   affectedArea: z.string().trim().max(500).optional().or(z.literal("")),
+  accessStatus: crisisAccessStatusSchema.optional(),
   casualtyCount: z.number().int().min(0).optional(),
   displacedCount: z.number().int().min(0).optional(),
-  damageNotes: z.string().trim().max(1000).optional().or(z.literal(""))
+  damageNotes: z.string().trim().max(1000).optional().or(z.literal("")),
+  resourceNeeds: z
+    .array(z.string().trim().min(1).max(60))
+    .max(8, "Too many resource needs")
+    .optional(),
+  closureChecklist: z
+    .object({
+      areaSafe: z.boolean(),
+      peopleAccounted: z.boolean(),
+      urgentNeedsStabilized: z.boolean()
+    })
+    .optional()
 });
 
 export function validateCrisisUpdateInput(payload: unknown) {
   return crisisUpdateSchema.parse(payload);
+}
+
+export function validateCrisisResponderStatusInput(payload: unknown) {
+  return z
+    .object({
+      status: crisisResponderStatusSchema
+    })
+    .parse(payload);
 }
 
 // ==================== MODULE 3.5: NOTIFICATIONS ====================

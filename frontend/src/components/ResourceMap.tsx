@@ -1,99 +1,124 @@
 import { useEffect, useState } from "react";
-import { GoogleMap, Marker, InfoWindow, useLoadScript } from "@react-google-maps/api";
-import { MarkerClusterer } from "@react-google-maps/api";
-import { Autocomplete } from "@react-google-maps/api";
-import { getAllResources, getMapReports, type ResourceSummary } from "../services/api";
+import { Autocomplete, GoogleMap, InfoWindow, Marker, MarkerClusterer, useLoadScript } from "@react-google-maps/api";
+import { useNavigate } from "react-router-dom";
 
-interface Incident {
-  id: string;
-  title: string;
-  type: string;
-  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
-  latitude: number;
-  longitude: number;
-  description?: string;
-  createdAt?: string;
-}
+import { getAllResources, getMapReports, type MapIncident, type ResourceSummary } from "../services/api";
 
 const MAP_LIBRARIES = ["places"] as never[];
+const INCIDENT_TYPE_OPTIONS = [
+  "FLOOD",
+  "FIRE",
+  "EARTHQUAKE",
+  "BUILDING_COLLAPSE",
+  "ROAD_ACCIDENT",
+  "VIOLENCE",
+  "MEDICAL_EMERGENCY",
+  "OTHER"
+] as const;
 
 export default function ResourceMap() {
+  const navigate = useNavigate();
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
     libraries: MAP_LIBRARIES
   });
 
   const [resources, setResources] = useState<ResourceSummary[]>([]);
-  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [incidents, setIncidents] = useState<MapIncident[]>([]);
   const [selectedResource, setSelectedResource] = useState<ResourceSummary | null>(null);
-  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+  const [selectedIncident, setSelectedIncident] = useState<MapIncident | null>(null);
   const [showIncidents, setShowIncidents] = useState(true);
   const [showResources, setShowResources] = useState(true);
-  const [autocomplete, setAutocomplete] =
-    useState<google.maps.places.Autocomplete | null>(null);
+  const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null);
   const [severityFilter, setSeverityFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [resourceCategoryFilter, setResourceCategoryFilter] = useState("all");
   const [center, setCenter] = useState({
     lat: 23.685,
     lng: 90.356
   });
 
-  useEffect(() => {
-    getAllResources()
-      .then((data) => setResources(data))
-      .catch((err) => console.error("Failed to fetch resources:", err));
-  }, []);
+  const resourceCategories = Array.from(new Set(resources.map((resource) => resource.category))).sort();
 
   useEffect(() => {
-    const fetchIncidents = () => {
-      getMapReports()
-        .then((data) => {
-          const reports = (data ?? []).map((r) => ({
-            ...r,
-            severity: r.severity.toUpperCase() as Incident["severity"]
-          }));
-          setIncidents(reports);
-        })
-        .catch((err) => console.error("Failed to fetch incidents:", err));
+    const refreshMapData = async () => {
+      try {
+        const [nextResources, nextIncidents] = await Promise.all([getAllResources(), getMapReports()]);
+        setResources(nextResources);
+        setIncidents(
+          nextIncidents.map((incident) => ({
+            ...incident,
+            severity: incident.severity.toUpperCase()
+          }))
+        );
+      } catch (error) {
+        console.error("Failed to refresh map data:", error);
+      }
     };
 
-    fetchIncidents();
-    const interval = setInterval(fetchIncidents, 60000);
-    return () => clearInterval(interval);
+    void refreshMapData();
+    const intervalId = window.setInterval(() => {
+      void refreshMapData();
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      return;
+    }
+
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      (position) => {
         setCenter({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
         });
       },
-      (err) => {
-        console.error("Location error:", err);
+      (error) => {
+        console.error("Location error:", error);
       }
     );
   }, []);
 
-  const validResources = resources.filter(
-    (r) => !isNaN(Number(r.latitude)) && !isNaN(Number(r.longitude))
-  );
+  if (!isLoaded) {
+    return <div>Loading Map...</div>;
+  }
 
-  const avgCenter =
-    validResources.length > 0
-      ? {
-          lat:
-            validResources.reduce((sum, r) => sum + Number(r.latitude), 0) /
-            validResources.length,
-          lng:
-            validResources.reduce((sum, r) => sum + Number(r.longitude), 0) /
-            validResources.length
-        }
-      : { lat: 23.685, lng: 90.356 };
+  const visibleResources = resources.filter((resource) => {
+    const latitude = Number(resource.latitude);
+    const longitude = Number(resource.longitude);
 
-  if (!isLoaded) return <div>Loading Map...</div>;
+    if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+      return false;
+    }
+
+    if (resourceCategoryFilter !== "all" && resource.category !== resourceCategoryFilter) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const visibleIncidents = incidents.filter((incident) => {
+    const latitude = Number(incident.latitude);
+    const longitude = Number(incident.longitude);
+
+    if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+      return false;
+    }
+
+    if (severityFilter !== "all" && incident.severity !== severityFilter) {
+      return false;
+    }
+
+    if (typeFilter !== "all" && incident.type !== typeFilter) {
+      return false;
+    }
+
+    return true;
+  });
 
   const getIncidentIcon = (severity: string) => {
     switch (severity) {
@@ -108,39 +133,61 @@ export default function ResourceMap() {
     }
   };
 
-  return (
-    <div className="relative w-full h-full">
-      <div className="absolute top-3 left-3 z-[50] bg-white p-4 rounded-xl shadow-lg w-64 space-y-3">
-        <h2 className="font-bold text-lg">Map Controls</h2>
+  const getResourceIcon = (resource: ResourceSummary) => {
+    if (resource.status === "Depleted" || resource.status === "Unavailable") {
+      return "http://maps.google.com/mapfiles/ms/icons/grey-dot.png";
+    }
 
-        <div>
-          <label className="block">
+    if (resource.category === "Medical Supplies") {
+      return "http://maps.google.com/mapfiles/ms/icons/blue-dot.png";
+    }
+
+    if (resource.category === "Food & Water") {
+      return "http://maps.google.com/mapfiles/ms/icons/green-dot.png";
+    }
+
+    if (resource.category === "Shelter") {
+      return "http://maps.google.com/mapfiles/ms/icons/purple-dot.png";
+    }
+
+    return "http://maps.google.com/mapfiles/ms/icons/ltblue-dot.png";
+  };
+
+  return (
+    <div className="relative h-full w-full">
+      <div className="absolute left-3 top-3 z-[50] w-72 space-y-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
+        <div className="space-y-1">
+          <h2 className="text-lg font-bold text-slate-900">Map Controls</h2>
+          <p className="text-sm text-slate-600">Track live incidents and reserve nearby relief resources.</p>
+        </div>
+
+        <div className="grid gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+          <label className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={showResources}
-              onChange={() => setShowResources(!showResources)}
-            />{" "}
+              onChange={() => setShowResources((current) => !current)}
+            />
             Resources
           </label>
-
-          <label className="block">
+          <label className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={showIncidents}
-              onChange={() => setShowIncidents(!showIncidents)}
-            />{" "}
+              onChange={() => setShowIncidents((current) => !current)}
+            />
             Incidents
           </label>
         </div>
 
         <div>
-          <p className="text-sm font-semibold">Severity</p>
+          <p className="mb-1 text-sm font-semibold text-slate-700">Incident Severity</p>
           <select
             value={severityFilter}
-            onChange={(e) => setSeverityFilter(e.target.value)}
-            className="w-full border rounded p-1"
+            onChange={(event) => setSeverityFilter(event.target.value)}
+            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
           >
-            <option value="all">All</option>
+            <option value="all">All severities</option>
             <option value="CRITICAL">Critical</option>
             <option value="HIGH">High</option>
             <option value="MEDIUM">Medium</option>
@@ -149,38 +196,63 @@ export default function ResourceMap() {
         </div>
 
         <div>
-          <p className="text-sm font-semibold">Type</p>
+          <p className="mb-1 text-sm font-semibold text-slate-700">Incident Type</p>
           <select
             value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="w-full border rounded p-1"
+            onChange={(event) => setTypeFilter(event.target.value)}
+            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
           >
-            <option value="all">All</option>
-            <option value="FIRE">Fire</option>
-            <option value="FLOOD">Flood</option>
-            <option value="MEDICAL">Medical</option>
+            <option value="all">All incident types</option>
+            {INCIDENT_TYPE_OPTIONS.map((type) => (
+              <option key={type} value={type}>
+                {type.replaceAll("_", " ")}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <p className="mb-1 text-sm font-semibold text-slate-700">Resource Category</p>
+          <select
+            value={resourceCategoryFilter}
+            onChange={(event) => setResourceCategoryFilter(event.target.value)}
+            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+          >
+            <option value="all">All resource categories</option>
+            {resourceCategories.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
-      <div className="absolute top-3 left-72 z-[50] bg-white p-2 rounded shadow">
+      <div className="absolute left-[19rem] top-3 z-[50] rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur">
         <Autocomplete
-          onLoad={(auto) => setAutocomplete(auto)}
+          onLoad={(instance) => setAutocomplete(instance)}
           onPlaceChanged={() => {
-            if (!autocomplete) return;
+            if (!autocomplete) {
+              return;
+            }
+
             const place = autocomplete.getPlace();
-            const loc = place.geometry?.location;
-            if (!loc) return;
+            const location = place.geometry?.location;
+
+            if (!location) {
+              return;
+            }
+
             setCenter({
-              lat: loc.lat(),
-              lng: loc.lng()
+              lat: location.lat(),
+              lng: location.lng()
             });
           }}
         >
           <input
             type="text"
             placeholder="Search location..."
-            className="w-64 p-2 border rounded"
+            className="w-72 rounded-xl border border-slate-200 px-3 py-2 text-sm"
           />
         </Autocomplete>
       </div>
@@ -189,64 +261,40 @@ export default function ResourceMap() {
         mapContainerStyle={{ width: "100%", height: "100%" }}
         center={center}
         zoom={7}
-        options={{
-          disableDefaultUI: false
-        }}
+        options={{ disableDefaultUI: false }}
       >
         <MarkerClusterer options={{ gridSize: 60 }}>
           {(clusterer) => (
             <>
               {showResources &&
-                resources.map((r) => {
-                  const lat = Number(r.latitude);
-                  const lng = Number(r.longitude);
-                  if (isNaN(lat) || isNaN(lng)) return null;
-                  if (r.status === "Depleted" || r.status === "Unavailable") {
-      return (
-        <Marker
-          key={r.id}
-          position={{ lat, lng }}
-          icon="http://maps.google.com/mapfiles/ms/icons/grey-dot.png"
-          onClick={() => setSelectedResource(r)}
-        />
-      );
-    }
-                  return (
-                    <Marker
-                      key={r.id}
-                      position={{ lat, lng }}
-                      title={r.name}
-                      clusterer={clusterer}
-                      onClick={() => setSelectedResource(r)}
-                    />
-                  );
-                })}
+                visibleResources.map((resource) => (
+                  <Marker
+                    key={resource.id}
+                    position={{
+                      lat: Number(resource.latitude),
+                      lng: Number(resource.longitude)
+                    }}
+                    title={resource.name}
+                    icon={getResourceIcon(resource)}
+                    clusterer={clusterer}
+                    onClick={() => setSelectedResource(resource)}
+                  />
+                ))}
 
               {showIncidents &&
-                Array.isArray(incidents) &&
-                incidents
-                  .filter((i) => {
-                    if (severityFilter !== "all" && i.severity !== severityFilter)
-                      return false;
-                    if (typeFilter !== "all" && i.type !== typeFilter) return false;
-                    return true;
-                  })
-                  .map((i) => {
-                    const lat = Number(i.latitude);
-                    const lng = Number(i.longitude);
-                    if (isNaN(lat) || isNaN(lng)) return null;
-
-                    return (
-                      <Marker
-                        key={i.id}
-                        position={{ lat, lng }}
-                        title={i.title}
-                        icon={getIncidentIcon(i.severity)}
-                        clusterer={clusterer}
-                        onClick={() => setSelectedIncident(i)}
-                      />
-                    );
-                  })}
+                visibleIncidents.map((incident) => (
+                  <Marker
+                    key={incident.id}
+                    position={{
+                      lat: Number(incident.latitude),
+                      lng: Number(incident.longitude)
+                    }}
+                    title={incident.title}
+                    icon={getIncidentIcon(incident.severity)}
+                    clusterer={clusterer}
+                    onClick={() => setSelectedIncident(incident)}
+                  />
+                ))}
             </>
           )}
         </MarkerClusterer>
@@ -254,39 +302,41 @@ export default function ResourceMap() {
         {selectedResource && (
           <InfoWindow
             position={{
-              lat: selectedResource.latitude,
-              lng: selectedResource.longitude
+              lat: Number(selectedResource.latitude),
+              lng: Number(selectedResource.longitude)
             }}
             onCloseClick={() => setSelectedResource(null)}
           >
-            <div className="p-2 max-w-xs">
-              <h3 className="font-bold text-lg mb-2">{selectedResource.name}</h3>
-              <p className="text-sm text-gray-700 mb-1">
-                <span className="font-semibold">Category:</span>{" "}
-                {selectedResource.category}
+            <div className="max-w-xs space-y-2 p-2">
+              <h3 className="text-lg font-bold text-slate-900">{selectedResource.name}</h3>
+              <p className="text-sm text-slate-700">
+                <span className="font-semibold">Category:</span> {selectedResource.category}
               </p>
-              <p className="text-sm text-gray-700 mb-1">
-                <span className="font-semibold">Quantity:</span>{" "}
-                {selectedResource.quantity} {selectedResource.unit}
+              <p className="text-sm text-slate-700">
+                <span className="font-semibold">Quantity:</span> {selectedResource.quantity} {selectedResource.unit}
               </p>
-              <p className="text-sm text-gray-700 mb-1">
-                <span className="font-semibold">Address:</span>{" "}
-                {selectedResource.address}
+              <p className="text-sm text-slate-700">
+                <span className="font-semibold">Address:</span> {selectedResource.address}
               </p>
-              <p className="text-sm text-gray-700 mb-2">
-                <span className="font-semibold">Contact:</span>{" "}
-                {selectedResource.contactPreference}
+              <p className="text-sm text-slate-700">
+                <span className="font-semibold">Contact:</span> {selectedResource.contactPreference}
               </p>
-              <p><b>Status:</b> {selectedResource.status}</p>
-              {selectedResource.notes && (
-                <p><b>Notes:</b> {selectedResource.notes}</p>
-              )}
-              <a
-                href={`/resources/reserve/${selectedResource.id}`}
-                className="block text-center bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-semibold"
+              <p className="text-sm text-slate-700">
+                <span className="font-semibold">Status:</span> {selectedResource.status}
+              </p>
+              {selectedResource.notes ? (
+                <p className="text-sm text-slate-700">
+                  <span className="font-semibold">Notes:</span> {selectedResource.notes}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => navigate(`/browse-resources?resourceId=${selectedResource.id}`)}
+                className="w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                disabled={!["Available", "Low Stock"].includes(selectedResource.status)}
               >
                 Reserve
-              </a>
+              </button>
             </div>
           </InfoWindow>
         )}
@@ -299,29 +349,24 @@ export default function ResourceMap() {
             }}
             onCloseClick={() => setSelectedIncident(null)}
           >
-            <div className="p-2 max-w-xs">
-              <h3 className="font-bold text-lg">{selectedIncident.title}</h3>
-
-              <p className="text-sm">
-                <b>Type:</b> {selectedIncident.type}
+            <div className="max-w-xs space-y-2 p-2">
+              <h3 className="text-lg font-bold text-slate-900">{selectedIncident.title}</h3>
+              <p className="text-sm text-slate-700">
+                <span className="font-semibold">Type:</span> {selectedIncident.type.replaceAll("_", " ")}
               </p>
-
-              <p className="text-sm">
-                <b>Severity:</b> {selectedIncident.severity}
+              <p className="text-sm text-slate-700">
+                <span className="font-semibold">Severity:</span> {selectedIncident.severity}
               </p>
-
-              {selectedIncident.description && (
-                <p className="text-sm text-gray-600 mt-1">
-                  {selectedIncident.description}
-                </p>
-              )}
-
-              <a
-                href={`/incidents/${selectedIncident.id}`}
-                className="block mt-2 text-center bg-red-600 text-white px-3 py-1 rounded"
+              {selectedIncident.description ? (
+                <p className="text-sm text-slate-600">{selectedIncident.description}</p>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => navigate(`/dashboard/incidents/${selectedIncident.id}`)}
+                className="w-full rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
               >
                 View Details
-              </a>
+              </button>
             </div>
           </InfoWindow>
         )}

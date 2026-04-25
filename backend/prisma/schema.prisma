@@ -20,6 +20,7 @@ enum NotificationType {
   RESERVATION_REQUEST
   RESERVATION_APPROVED
   RESERVATION_DECLINED
+  DISPATCH_ALERT
 }
 
 enum IncidentSeverity {
@@ -80,6 +81,20 @@ enum BadgeType {
   TEAM_PLAYER
 }
 
+enum CrisisResponderStatus {
+  RESPONDING
+  EN_ROUTE
+  ON_SITE
+  COMPLETED
+  UNAVAILABLE
+}
+
+enum DispatchAlertStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
 model User {
   id                   String    @id @default(auto()) @map("_id") @db.ObjectId
   fullName             String
@@ -117,9 +132,13 @@ model User {
   crisisUpdates   CrisisEventUpdate[]
   notificationSub NotificationSubscription?
   notifications   Notification[]
+  reservations    Reservation[]
   volunteerTasks  VolunteerTask[]
   badges          Badge[]
-  smsLogs         SmsLog[]
+  dispatchAlertLogs DispatchAlertLog[]
+  crisisResponses   CrisisResponder[]
+  ngoReports      NGOReport[]
+  ocrScans        OCRScan[]
 
   @@index([role, isBanned])
   @@index([role, isFlagged])
@@ -149,6 +168,7 @@ model IncidentReport {
   updatedAt               DateTime         @updatedAt
 
   crisisEvents CrisisEventReport[]
+  ocrScans     OCRScan[]
 
   @@index([reporterId, createdAt(sort: Desc)])
   @@index([status, severityLevel])
@@ -163,16 +183,18 @@ model Review {
   interactionContext InteractionContext @default(OTHER)
   interactionDate    DateTime
   wouldWorkAgain     Boolean
-  crisisEventId      String?
+  crisisEventId      String             @db.ObjectId
   isFlagged          Boolean            @default(false)
   flagReasons        String[]
   createdAt          DateTime           @default(now())
 
-  reviewer  User @relation("ReviewsGiven", fields: [reviewerId], references: [id])
-  volunteer User @relation("ReviewsReceived", fields: [volunteerId], references: [id])
+  reviewer    User       @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  volunteer   User       @relation("ReviewsReceived", fields: [volunteerId], references: [id])
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
 
   @@index([volunteerId, createdAt(sort: Desc)])
   @@index([reviewerId, createdAt(sort: Desc)])
+  @@index([reviewerId, volunteerId, crisisEventId])
   @@index([isFlagged])
 }
 
@@ -181,6 +203,7 @@ model Resource {
   name              String
   category          String
   quantity          Int
+  originalQuantity  Int?
   unit              String
   condition         String
   address           String
@@ -211,6 +234,7 @@ model SecureFolder {
   files       FolderFile[]
   notes       FolderNote[]
   shareLinks  ShareLink[]
+  ocrScans    OCRScan[]
 
   isDeleted Boolean   @default(false)
   isPinned  Boolean   @default(false)
@@ -232,6 +256,7 @@ model FolderFile {
   sizeBytes   Int
   gpsLat      Float?
   gpsLng      Float?
+  ocrScans    OCRScan[]
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -276,6 +301,30 @@ enum CrisisEventStatus {
   CLOSED
 }
 
+enum CrisisUpdateType {
+  STATUS_CHANGE
+  FIELD_OBSERVATION
+  ACCESS_UPDATE
+  IMPACT_UPDATE
+  RESOURCE_NEED
+  CLOSURE_NOTE
+  ADMIN_CORRECTION
+  RESPONDER_STATUS
+}
+
+enum CrisisUpdateVerificationStatus {
+  RESPONDER_CONFIRMED
+  ADMIN_CONFIRMED
+  SYSTEM_LOGGED
+}
+
+enum CrisisAccessStatus {
+  OPEN
+  LIMITED
+  BLOCKED
+  UNKNOWN
+}
+
 model CrisisEvent {
   id            String            @id @default(auto()) @map("_id") @db.ObjectId
   title         String
@@ -293,7 +342,11 @@ model CrisisEvent {
 
   reports CrisisEventReport[]
   updates CrisisEventUpdate[]
-  smsLogs SmsLog[]
+  reviews Review[]
+  responders CrisisResponder[]
+  dispatchAlertLogs DispatchAlertLog[]
+  ngoReports NGOReport[]
+  ocrScans OCRScan[]
 
   @@index([status, severityLevel, createdAt(sort: Desc)])
   @@index([latitude, longitude])
@@ -311,6 +364,24 @@ model CrisisEventReport {
   @@unique([crisisEventId, incidentReportId])
   @@index([incidentReportId])
   @@index([crisisEventId])
+}
+
+model CrisisResponder {
+  id            String               @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId String               @db.ObjectId
+  volunteerId   String               @db.ObjectId
+  status        CrisisResponderStatus @default(RESPONDING)
+  optedInAt     DateTime             @default(now())
+  lastStatusAt  DateTime             @default(now())
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  volunteer  User        @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
+  @@unique([crisisEventId, volunteerId])
+  @@index([crisisEventId, status, updatedAt(sort: Desc)])
+  @@index([volunteerId, status, updatedAt(sort: Desc)])
 }
 
 model EvidencePost {
@@ -355,8 +426,10 @@ model Reservation {
   status      String   // Pending | Approved | Declined | Expired
   justification String
   pickupTime  DateTime?
+  decisionReason String?
   createdAt   DateTime @default(now())
   
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 }
 
@@ -397,23 +470,30 @@ model Like {
 }
 
 model CrisisEventUpdate {
-  id              String            @id @default(auto()) @map("_id") @db.ObjectId
-  crisisEventId   String            @db.ObjectId
-  crisisEvent     CrisisEvent       @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
-  updaterId       String            @db.ObjectId
-  updater         User              @relation(fields: [updaterId], references: [id])
-  previousStatus  CrisisEventStatus
-  newStatus       CrisisEventStatus
-  updateNote      String
-  newSeverity     IncidentSeverity?
-  affectedArea    String?
-  casualtyCount   Int?
-  displacedCount  Int?
-  damageNotes     String?
-  isFlagged       Boolean           @default(false)
-  dismissedById   String?           @db.ObjectId
-  dismissedAt     DateTime?
-  createdAt       DateTime          @default(now())
+  id                     String                          @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId          String                          @db.ObjectId
+  crisisEvent            CrisisEvent                     @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  updaterId              String                          @db.ObjectId
+  updater                User                            @relation(fields: [updaterId], references: [id])
+  previousStatus         CrisisEventStatus
+  newStatus              CrisisEventStatus
+  updateNote             String
+  updateType             CrisisUpdateType?
+  verificationStatus     CrisisUpdateVerificationStatus?
+  newSeverity            IncidentSeverity?
+  affectedArea           String?
+  accessStatus           CrisisAccessStatus?
+  casualtyCount          Int?
+  displacedCount         Int?
+  damageNotes            String?
+  resourceNeedsText      String?
+  closureAreaSafe        Boolean?
+  closurePeopleAccounted Boolean?
+  closureNeedsStabilized Boolean?
+  isFlagged              Boolean                         @default(false)
+  dismissedById          String?                         @db.ObjectId
+  dismissedAt            DateTime?
+  createdAt              DateTime                        @default(now())
 
   @@index([crisisEventId, createdAt(sort: Desc)])
 }
@@ -487,20 +567,82 @@ model Badge {
   @@index([userId])
 }
 
-// ── Feature 3.3: Automated Dispatch SMS ─────────────────────────────────────
+// ── Feature 3.3: Volunteer Crisis Opt-In & Dispatch Email Alerts ────────────
 
-model SmsLog {
-  id              String       @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String       @db.ObjectId
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  crisisEventId   String?      @db.ObjectId
-  crisisEvent     CrisisEvent? @relation(fields: [crisisEventId], references: [id])
-  phoneMasked     String
-  status          String       // "SENT" | "DELIVERED" | "FAILED" (gracefully mocked if invalid)
-  errorMessage    String?
-  twilioSid       String?
-  createdAt       DateTime     @default(now())
+model DispatchAlertLog {
+  id                String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String            @db.ObjectId
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  crisisEventId     String?           @db.ObjectId
+  crisisEvent       CrisisEvent?      @relation(fields: [crisisEventId], references: [id])
+  emailMasked       String
+  status            DispatchAlertStatus
+  providerMessageId String?
+  errorMessage      String?
+  createdAt         DateTime          @default(now())
 
   @@index([userId, createdAt(sort: Desc)])
-  @@index([crisisEventId])
+  @@index([crisisEventId, createdAt(sort: Desc)])
+}
+
+model NGOReport {
+  id             String      @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId  String      @db.ObjectId
+  generatedById  String      @db.ObjectId
+  title          String
+  fileUrl        String
+  summary        String?
+  createdAt      DateTime    @default(now())
+
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  generatedBy User        @relation(fields: [generatedById], references: [id], onDelete: Cascade)
+
+  @@index([crisisEventId, createdAt(sort: Desc)])
+  @@index([generatedById, createdAt(sort: Desc)])
+}
+
+model OCRScan {
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String        @db.ObjectId
+  folderId         String?       @db.ObjectId
+  fileId           String?       @db.ObjectId
+  crisisEventId    String?       @db.ObjectId
+  incidentReportId String?       @db.ObjectId
+  sourceImageUrl   String
+  sourceFileName   String
+  provider         String
+  status           String        @default("COMPLETED")
+  rawText          String
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder         SecureFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  file           FolderFile?     @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  crisisEvent    CrisisEvent?    @relation(fields: [crisisEventId], references: [id], onDelete: SetNull)
+  incidentReport IncidentReport? @relation(fields: [incidentReportId], references: [id], onDelete: SetNull)
+  items          OCRItem[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([folderId, createdAt(sort: Desc)])
+  @@index([crisisEventId, createdAt(sort: Desc)])
+  @@index([incidentReportId, createdAt(sort: Desc)])
+}
+
+model OCRItem {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  scanId     String   @db.ObjectId
+  text       String
+  confidence Float?
+  category   String
+  bboxLeft   Float?
+  bboxTop    Float?
+  bboxWidth  Float?
+  bboxHeight Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  scan OCRScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
 }

@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listNGOReports, NGOReport } from "../services/api";
 
+const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "http://localhost:5000/api").replace("/api", "");
+
+function resolveReportUrl(report: NGOReport) {
+  return `${API_ORIGIN}/api/ngo-reports/${report.id}/file`;
+}
+
 export function NGOReportsArchivePage() {
   const [reports, setReports] = useState<NGOReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,7 +87,7 @@ export function NGOReportsArchivePage() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-3">
                         <a
-                          href={report.fileUrl}
+                          href={resolveReportUrl(report)}
                           target="_blank"
                           rel="noreferrer"
                           className="font-semibold text-tide hover:underline"
@@ -89,7 +95,7 @@ export function NGOReportsArchivePage() {
                           Preview
                         </a>
                         <a
-                          href={report.fileUrl}
+                          href={resolveReportUrl(report)}
                           download
                           className="font-semibold text-tide hover:underline"
                         >

@@ -24,10 +24,11 @@ export function verifyAuthToken(token: string) {
 }
 
 export function buildAuthCookieOptions(rememberMe = false) {
+  const isProduction = process.env.NODE_ENV === "production";
   return {
     httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    sameSite: isProduction ? ("none" as const) : ("lax" as const),
+    secure: isProduction,
     maxAge: rememberMe ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000
   };
 }

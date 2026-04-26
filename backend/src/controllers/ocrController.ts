@@ -1,5 +1,4 @@
 import type { Request, Response } from "express";
-
 import * as ocrService from "../services/ocrService.js";
 
 function requireUserId(request: Request, response: Response) {
@@ -38,13 +37,13 @@ export async function scanExistingFolderFile(request: Request, response: Respons
   if (!userId) return;
 
   const scan = await ocrService.scanFolderFile(
-    userId,
-    request.params.folderId as string,
-    request.params.fileId as string,
-    {
-      crisisEventId: optionalString(request.body.crisisEventId),
-      incidentReportId: optionalString(request.body.incidentReportId)
-    }
+      userId,
+      request.params.folderId as string,
+      request.params.fileId as string,
+      {
+        crisisEventId: optionalString(request.body.crisisEventId),
+        incidentReportId: optionalString(request.body.incidentReportId)
+      }
   );
 
   return response.status(201).json({ scan });
@@ -79,11 +78,11 @@ export async function updateItem(request: Request, response: Response) {
   }
 
   const item = await ocrService.updateScanItem(
-    userId,
-    request.params.scanId as string,
-    request.params.itemId as string,
-    text,
-    optionalString(request.body.category) ?? undefined
+      userId,
+      request.params.scanId as string,
+      request.params.itemId as string,
+      text,
+      optionalString(request.body.category) ?? undefined
   );
 
   return response.status(200).json({ item });

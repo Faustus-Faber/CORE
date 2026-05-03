@@ -151,9 +151,9 @@ export default function MyResourcesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="rounded-3xl border border-slate-200 bg-white px-6 py-7 shadow-sm">
-        <h1 className="text-3xl font-bold text-slate-900">My Resources</h1>
+    <div className="mx-auto max-w-6xl space-y-6 p-3 sm:p-6">
+      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6 sm:py-7">
+        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">My Resources</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-600">
           Manage stock, review incoming reservation requests, and keep your resource feed accurate for nearby users.
         </p>
@@ -309,8 +309,8 @@ export default function MyResourcesPage() {
       </div>
 
       {showEditModal && editingResource ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-6 sm:px-4">
+          <div className="max-h-[calc(100dvh-3rem)] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6">
             <h2 className="text-2xl font-bold text-slate-900">Edit Resource</h2>
 
             <div className="mt-5 space-y-4">
@@ -364,7 +364,7 @@ export default function MyResourcesPage() {
               </div>
             </div>
 
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
                 onClick={handleSaveEdit}
@@ -385,12 +385,12 @@ export default function MyResourcesPage() {
       ) : null}
 
       {showHistoryModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-6 sm:px-4">
           <div className="flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
-            <div className="border-b border-slate-200 px-6 py-5">
+            <div className="border-b border-slate-200 px-4 py-5 sm:px-6">
               <h2 className="text-2xl font-bold text-slate-900">Update History</h2>
             </div>
-            <div className="flex-1 space-y-3 overflow-y-auto px-6 py-5">
+            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-6">
               {historyEntries.length === 0 ? <p className="text-sm text-slate-500">No history found.</p> : null}
               {historyEntries.map((entry) => (
                 <div key={entry.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -404,7 +404,7 @@ export default function MyResourcesPage() {
                 </div>
               ))}
             </div>
-            <div className="border-t border-slate-200 px-6 py-5">
+            <div className="border-t border-slate-200 px-4 py-5 sm:px-6">
               <button
                 type="button"
                 onClick={() => setShowHistoryModal(false)}

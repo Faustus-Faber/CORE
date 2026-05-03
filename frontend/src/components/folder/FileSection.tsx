@@ -44,9 +44,9 @@ export const FileSection: React.FC<FileSectionProps> = ({
 }) => {
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <h3 className="text-sm font-semibold text-slate-900">Uploaded Files ({files.length})</h3>
-                <div className="flex bg-slate-100 p-1 rounded-lg">
+                <div className="flex w-fit bg-slate-100 p-1 rounded-lg">
                     <button
                         onClick={() => setViewMode('grid')}
                         className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
@@ -65,7 +65,7 @@ export const FileSection: React.FC<FileSectionProps> = ({
             {!isReadOnly && (
                 <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-slate-300 rounded-2xl p-10 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all flex flex-col items-center justify-center group"
+                    className="border-2 border-dashed border-slate-300 rounded-2xl p-5 text-center cursor-pointer hover:bg-slate-50 hover:border-blue-400 transition-all flex flex-col items-center justify-center group sm:p-10"
                 >
                     <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/jpeg, image/png, image/webp, video/mp4, video/webm" />
                     <div className="w-12 h-12 bg-white rounded-full shadow-sm border border-slate-100 flex items-center justify-center text-blue-600 mb-4 group-hover:scale-110 transition-transform">
@@ -73,7 +73,7 @@ export const FileSection: React.FC<FileSectionProps> = ({
                     </div>
                     <p className="text-slate-900 font-medium mb-1">{uploading ? 'Uploading securely...' : 'Drag & drop files here'}</p>
                     {!uploading && <p className="text-blue-600 text-sm mb-3">or click to browse</p>}
-                    <p className="text-xs text-slate-400 flex items-center justify-center gap-3">
+                    <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-400">
                         <span>🖼️ JPG, PNG, WEBP</span>
                         <span>🎥 MP4, WEBM</span>
                         <span>⚖️ ≤ 20 MB</span>
@@ -83,7 +83,7 @@ export const FileSection: React.FC<FileSectionProps> = ({
 
             <div>
                 {viewMode === 'grid' ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
                         {files.map(file => (
                             <div key={file.id} className="border border-slate-200 rounded-xl overflow-hidden bg-white hover:shadow-md transition-shadow flex flex-col">
                                 <div
@@ -150,8 +150,8 @@ export const FileSection: React.FC<FileSectionProps> = ({
                                         </p>
                                     )}
 
-                                    <div className="mt-auto flex justify-between items-end pt-2 border-t border-slate-50">
-                                        <div className="flex flex-col gap-0.5">
+                                    <div className="mt-auto flex flex-col gap-2 border-t border-slate-50 pt-2 sm:flex-row sm:items-end sm:justify-between">
+                                        <div className="min-w-0 flex flex-col gap-0.5">
                                             <p className="text-[9px] text-slate-400">{(file.sizeBytes / 1024 / 1024).toFixed(1)} MB</p>
                                             <p className="text-[9px] text-slate-400">UID: {file.uploaderId}</p>
                                             <p className="text-[9px] text-slate-400" title="UTC">🕒 {new Date(file.createdAt).toISOString().replace('T', ' ').substring(0, 16)} UTC</p>
@@ -184,8 +184,8 @@ export const FileSection: React.FC<FileSectionProps> = ({
                         ))}
                     </div>
                 ) : (
-                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                        <table className="w-full text-left text-sm">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                        <table className="min-w-[640px] text-left text-sm">
                             <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr>
                                     <th className="px-4 py-3 font-semibold text-slate-700">Name</th>
@@ -230,7 +230,7 @@ export const FileSection: React.FC<FileSectionProps> = ({
                                             {editingFileId === file.id && !isReadOnly ? (
                                                 <div className="flex gap-2">
                                                     <input
-                                                        className="text-xs p-1 border border-blue-300 rounded"
+                                                        className="min-w-0 text-xs p-1 border border-blue-300 rounded"
                                                         value={editDescription}
                                                         onChange={(e) => setEditDescription(e.target.value)}
                                                     />

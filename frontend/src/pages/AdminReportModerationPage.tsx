@@ -186,7 +186,7 @@ export function AdminReportModerationPage() {
             </select>
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-sm font-medium">
               Sort By
               <select

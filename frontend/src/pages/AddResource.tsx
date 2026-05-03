@@ -95,7 +95,7 @@ export default function AddResourcePage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-6 bg-white shadow-xl rounded-xl">
+    <div className="mx-auto max-w-3xl rounded-xl bg-white p-4 shadow-xl sm:p-6">
       <h1 className="text-2xl font-bold mb-6">Register a Resource</h1>
 
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -131,7 +131,7 @@ export default function AddResourcePage() {
           </select>
         </div>
 
-        <div className="flex gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex-1">
             <label className="block font-semibold">Quantity *</label>
             <input
@@ -206,7 +206,7 @@ export default function AddResourcePage() {
           )}
         </div>
 
-        <div className="flex gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex-1">
             <label className="block font-semibold">Start Date/Time</label>
             <input
@@ -255,7 +255,7 @@ export default function AddResourcePage() {
           />
 
           {preview.length > 0 && (
-            <div className="flex gap-3 mt-3">
+            <div className="mt-3 flex flex-wrap gap-3">
               {preview.map((src, i) => (
                 <img
                   key={i}

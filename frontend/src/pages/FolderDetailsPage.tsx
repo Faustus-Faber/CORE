@@ -162,7 +162,7 @@ export function FolderDetailsPage() {
     if (!folder) return <div className="p-10 text-slate-500">Loading folder data...</div>;
 
     return (
-        <div className="max-w-4xl mx-auto p-6 md:p-10 font-sans">
+        <div className="mx-auto max-w-4xl p-4 font-sans sm:p-6 md:p-10">
             <FolderHeader folder={folder} />
 
             <FolderTabs

@@ -16,11 +16,11 @@ const apiBaseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.r
 export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFlag }: PostModalProps) {
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 p-2 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div 
-        className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+        className="relative max-h-[calc(100dvh-1rem)] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -33,11 +33,11 @@ export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFl
         </button>
 
         <div className="flex flex-col md:flex-row">
-          <div className="bg-black md:w-2/3 flex flex-col items-center justify-center min-h-[400px]">
+          <div className="flex min-h-[220px] flex-col items-center justify-center bg-black sm:min-h-[320px] md:w-2/3">
             {post.mediaUrls.length > 1 && (
               <div className="flex w-full overflow-x-auto snap-x snap-mandatory scrollbar-hide bg-slate-900">
                 {post.mediaUrls.map((url, idx) => (
-                  <div key={idx} className="relative min-w-full h-[500px] flex-shrink-0 snap-center flex items-center justify-center">
+                  <div key={idx} className="relative flex h-[260px] min-w-full flex-shrink-0 snap-center items-center justify-center sm:h-[420px] md:h-[500px]">
                     {post.mediaType === "IMAGE" ? (
                       <img
                         src={`${apiBaseUrl}${url}`}
@@ -59,7 +59,7 @@ export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFl
               </div>
             )}
             {post.mediaUrls.length === 1 && (
-              <div className="relative w-full h-[500px] flex items-center justify-center">
+              <div className="relative flex h-[260px] w-full items-center justify-center sm:h-[420px] md:h-[500px]">
                 {post.mediaType === "IMAGE" ? (
                   <img
                     src={`${apiBaseUrl}${post.mediaUrls[0]}`}
@@ -77,7 +77,7 @@ export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFl
             )}
           </div>
 
-          <div className="flex flex-col p-6 md:w-1/3">
+          <div className="flex flex-col p-4 sm:p-6 md:w-1/3">
             <div className="flex items-center gap-3 border-b pb-4">
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-600">
                 {post.user.avatarUrl ? (
@@ -90,9 +90,9 @@ export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFl
                   post.user.fullName.charAt(0)
                 )}
               </div>
-              <div className="flex-grow">
+              <div className="min-w-0 flex-grow">
                 <div className="flex items-center gap-1.5">
-                  <p className="font-bold text-slate-900">{post.user.fullName}</p>
+                  <p className="truncate font-bold text-slate-900">{post.user.fullName}</p>
                   {post.isVerified && (
                     <span className="inline-flex items-center rounded-full bg-blue-100 p-0.5 text-blue-600" title="Verified Evidence">
                       <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
@@ -101,7 +101,7 @@ export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFl
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-500">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
                   <span>{post.location}</span>
                   <span>•</span>
                   <time>{new Date(post.createdAt).toLocaleString()}</time>
@@ -110,8 +110,8 @@ export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFl
             </div>
 
             <div className="mt-4 flex-grow overflow-y-auto pr-2">
-              <div className="flex items-start justify-between gap-4">
-                <h2 className="text-xl font-bold text-slate-900">{post.title}</h2>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <h2 className="break-words text-xl font-bold text-slate-900">{post.title}</h2>
                 {user?.role === "ADMIN" && !post.isVerified && (
                   <button
                     onClick={() => onVerify(post.id)}

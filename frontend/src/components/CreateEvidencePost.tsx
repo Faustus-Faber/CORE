@@ -73,7 +73,7 @@ export function CreateEvidencePost({ onPostCreated }: CreateEvidencePostProps) {
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
       <h2 className="text-xl font-bold text-slate-900">Share Evidence</h2>
       <p className="mt-1 text-sm text-slate-500">
         Post images or videos of natural crises to inform the community.
@@ -111,7 +111,7 @@ export function CreateEvidencePost({ onPostCreated }: CreateEvidencePostProps) {
         </div>
 
         <div>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="block text-sm font-medium text-slate-700">Location</label>
             <button
               type="button"
@@ -142,7 +142,7 @@ export function CreateEvidencePost({ onPostCreated }: CreateEvidencePostProps) {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="block text-sm font-medium text-slate-700">Media Type</label>
             <select

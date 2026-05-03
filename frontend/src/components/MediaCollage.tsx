@@ -48,7 +48,7 @@ export function MediaCollage({ post, onClick }: MediaCollageProps) {
 
   if (count === 2) {
     return (
-      <div className="grid h-[300px] cursor-pointer grid-cols-2 gap-1 overflow-hidden bg-slate-100" onClick={onClick}>
+      <div className="grid h-56 cursor-pointer grid-cols-2 gap-1 overflow-hidden bg-slate-100 sm:h-[300px]" onClick={onClick}>
         {urls.map((url, i) => renderMedia(url, i))}
       </div>
     );
@@ -56,7 +56,7 @@ export function MediaCollage({ post, onClick }: MediaCollageProps) {
 
   if (count === 3) {
     return (
-      <div className="grid h-[400px] cursor-pointer grid-cols-2 gap-1 overflow-hidden bg-slate-100" onClick={onClick}>
+      <div className="grid h-64 cursor-pointer grid-cols-2 gap-1 overflow-hidden bg-slate-100 sm:h-[400px]" onClick={onClick}>
         <div className="h-full w-full">
           {renderMedia(urls[0], 0)}
         </div>
@@ -69,7 +69,7 @@ export function MediaCollage({ post, onClick }: MediaCollageProps) {
 
   if (count === 4) {
     return (
-      <div className="grid h-[400px] cursor-pointer grid-cols-2 grid-rows-2 gap-1 overflow-hidden bg-slate-100" onClick={onClick}>
+      <div className="grid h-64 cursor-pointer grid-cols-2 grid-rows-2 gap-1 overflow-hidden bg-slate-100 sm:h-[400px]" onClick={onClick}>
         {urls.slice(0, 4).map((url, i) => renderMedia(url, i))}
       </div>
     );
@@ -77,7 +77,7 @@ export function MediaCollage({ post, onClick }: MediaCollageProps) {
 
   // 5 or more
   return (
-    <div className="grid h-[400px] cursor-pointer grid-cols-6 grid-rows-2 gap-1 overflow-hidden bg-slate-100" onClick={onClick}>
+    <div className="grid h-64 cursor-pointer grid-cols-6 grid-rows-2 gap-1 overflow-hidden bg-slate-100 sm:h-[400px]" onClick={onClick}>
       <div className="col-span-3 row-span-2">
         {renderMedia(urls[0], 0)}
       </div>

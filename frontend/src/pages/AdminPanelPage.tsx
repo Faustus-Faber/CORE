@@ -273,7 +273,7 @@ export function AdminPanelPage() {
       {/* ── Users tab ── */}
       {activeTab === "users" && (
         <div className="overflow-x-auto rounded-xl bg-white shadow-panel ring-1 ring-slate-200">
-          <table className="min-w-full text-left text-sm">
+          <table className="min-w-[760px] text-left text-sm">
             <thead className="bg-slate-50 text-slate-700">
               <tr>
                 <th className="px-4 py-3">Name</th>
@@ -348,7 +348,7 @@ export function AdminPanelPage() {
               No flagged reviews at this time. 🎉
             </p>
           ) : (
-            <table className="min-w-full text-left text-sm">
+            <table className="min-w-[880px] text-left text-sm">
               <thead className="bg-slate-50 text-slate-700">
                 <tr>
                   <th className="px-4 py-3">Reviewer</th>
@@ -438,7 +438,7 @@ export function AdminPanelPage() {
               No flagged volunteers at this time. 🎉
             </p>
           ) : (
-            <table className="min-w-full text-left text-sm">
+            <table className="min-w-[820px] text-left text-sm">
               <thead className="bg-slate-50 text-slate-700">
                 <tr>
                   <th className="px-4 py-3">Volunteer</th>

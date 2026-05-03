@@ -2,14 +2,14 @@ import ResourceMap from "../components/ResourceMap";
 
 export default function MapPage() {
   return (
-    <section className="fixed inset-0 top-[64px] flex flex-col overflow-hidden">
-      <div className="shrink-0 p-5 bg-white border-b">
-        <h1 className="text-2xl font-bold text-ink">🗺️ Emergency Resources Map</h1>
-        <p className="mt-2 text-slate-700">
+    <section className="fixed inset-0 top-[57px] flex flex-col overflow-hidden sm:top-[64px]">
+      <div className="shrink-0 border-b bg-white p-3 sm:p-5">
+        <h1 className="text-xl font-bold text-ink sm:text-2xl">Emergency Resources Map</h1>
+        <p className="mt-1 text-sm text-slate-700 sm:mt-2 sm:text-base">
           View all available emergency resources on the map. Click on a marker to see details and reserve resources.
         </p>
       </div>
-      <div className="flex-1 w-full overflow-hidden">
+      <div className="min-h-0 flex-1 w-full overflow-hidden">
         <ResourceMap />
       </div>
     </section>

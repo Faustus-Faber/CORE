@@ -90,9 +90,9 @@ export default function BrowseResourcesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="rounded-3xl border border-slate-200 bg-white px-6 py-7 shadow-sm">
-        <h1 className="text-3xl font-bold text-slate-900">Browse Resources</h1>
+    <div className="mx-auto max-w-6xl space-y-6 p-3 sm:p-6">
+      <div className="rounded-3xl border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6 sm:py-7">
+        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Browse Resources</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-600">
           Find nearby community supplies, review live availability, and submit a fair-use reservation request.
         </p>
@@ -149,9 +149,9 @@ export default function BrowseResourcesPage() {
       </div>
 
       {selectedResource ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-8">
-          <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
-            <div className="border-b border-slate-200 px-6 py-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-6 sm:px-4 sm:py-8">
+          <div className="max-h-[calc(100dvh-3rem)] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-4 py-5 sm:px-6">
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">Resource Reservation</p>
               <h2 className="mt-1 text-2xl font-bold text-slate-900">{selectedResource.name}</h2>
               <p className="mt-2 text-sm text-slate-600">
@@ -159,7 +159,7 @@ export default function BrowseResourcesPage() {
               </p>
             </div>
 
-            <div className="space-y-4 px-6 py-5">
+            <div className="space-y-4 px-4 py-5 sm:px-6">
               <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
                 <p>
                   <span className="font-semibold">Category:</span> {selectedResource.category}
@@ -208,7 +208,7 @@ export default function BrowseResourcesPage() {
               </div>
             </div>
 
-            <div className="flex gap-3 border-t border-slate-200 px-6 py-5">
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-5 sm:flex-row sm:px-6">
               <button
                 type="button"
                 onClick={handleReserve}

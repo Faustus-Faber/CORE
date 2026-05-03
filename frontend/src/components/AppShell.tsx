@@ -279,16 +279,18 @@ function MobileSection({
       <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
         {title}
       </p>
-      {items.map(item => (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          onClick={onNavigate}
-          className={navLinkClass}
-        >
-          <span className="block">{item.label}</span>
-        </NavLink>
-      ))}
+      <div className="space-y-0.5">
+        {items.map(item => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            onClick={onNavigate}
+            className={navLinkClass}
+          >
+            {item.label}
+          </NavLink>
+        ))}
+      </div>
     </div>
   );
 }
@@ -335,7 +337,14 @@ export function AppShell() {
   };
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-    `rounded-lg px-3 py-2 text-sm font-medium transition ${
+    `inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium transition ${
+      isActive
+        ? "bg-tide/10 text-tide"
+        : "text-slate-600 hover:bg-slate-100 hover:text-ink"
+    }`;
+
+  const mobileNavLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex w-full items-center rounded-lg px-3 py-2.5 text-sm font-medium transition ${
       isActive
         ? "bg-tide/10 text-tide"
         : "text-slate-600 hover:bg-slate-100 hover:text-ink"
@@ -347,22 +356,41 @@ export function AppShell() {
   return (
     <div className="min-h-screen bg-canvas">
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-lg">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-2.5">
-          <Link to="/" className="text-xl font-black tracking-tight text-ink">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-3 py-2.5 sm:gap-6 sm:px-4">
+          <Link to="/" className="shrink-0 text-xl font-black tracking-tight text-ink">
             CORE
           </Link>
 
           {!user ? (
-            <nav className="ml-auto flex items-center gap-1">
-              <NavLink to="/" end className={navLinkClass}>Home</NavLink>
-              <NavLink to="/login" className={navLinkClass}>Login</NavLink>
-              <NavLink
-                to="/signup"
-                className="rounded-lg bg-tide px-4 py-2 text-sm font-semibold text-white transition hover:bg-tide/90"
+            <>
+              <nav className="ml-auto hidden items-center gap-1 sm:flex">
+                <NavLink to="/" end className={navLinkClass}>Home</NavLink>
+                <NavLink to="/login" className={navLinkClass}>Login</NavLink>
+                <NavLink
+                  to="/signup"
+                  className="inline-flex items-center rounded-lg bg-tide px-4 py-2 text-sm font-semibold text-white transition hover:bg-tide/90"
+                >
+                  Sign Up
+                </NavLink>
+              </nav>
+
+              <button
+                type="button"
+                onClick={() => setMobileOpen(v => !v)}
+                className="ml-auto rounded-lg p-2 text-slate-600 hover:bg-slate-100 sm:hidden"
+                aria-label="Toggle menu"
               >
-                Sign Up
-              </NavLink>
-            </nav>
+                {mobileOpen ? (
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  </svg>
+                ) : (
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 5A.75.75 0 012.75 9h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 9.75zm0 5a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            </>
           ) : (
             <>
               <nav className="ml-auto hidden items-center gap-1 lg:flex">
@@ -408,16 +436,39 @@ export function AppShell() {
           )}
         </div>
 
+        {mobileOpen && !user && (
+          <nav className="max-h-[calc(100dvh-56px)] animate-[fadeIn_150ms_ease-out] overflow-y-auto border-t border-slate-200/80 bg-white px-3 pb-4 pt-3 sm:hidden">
+            <div className="space-y-0.5">
+              <NavLink to="/" end onClick={closeMobile} className={mobileNavLinkClass}>Home</NavLink>
+              <NavLink to="/login" onClick={closeMobile} className={mobileNavLinkClass}>Login</NavLink>
+              <NavLink
+                to="/signup"
+                onClick={closeMobile}
+                className="mt-2 flex w-full items-center justify-center rounded-lg bg-tide px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-tide/90"
+              >
+                Sign Up
+              </NavLink>
+            </div>
+          </nav>
+        )}
+
         {mobileOpen && user && (
-          <nav className="animate-[fadeIn_150ms_ease-out] border-t border-slate-200/80 bg-white px-4 pb-4 pt-3 lg:hidden">
+          <nav className="max-h-[calc(100dvh-56px)] animate-[fadeIn_150ms_ease-out] overflow-y-auto border-t border-slate-200/80 bg-white px-3 pb-4 pt-3 sm:px-4 lg:hidden">
             <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-tide text-sm font-bold text-white">
                 {user.fullName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
               </span>
-              <div>
-                <p className="text-sm font-semibold text-ink">{user.fullName}</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">{user.fullName}</p>
                 <p className="text-xs text-slate-500">{roleBadge}</p>
               </div>
+            </div>
+
+            <div className="mt-3 flex items-center gap-2 rounded-xl bg-slate-50 p-2">
+              {role === "VOLUNTEER" && (
+                <DispatchBell initialOptIn={user.dispatchOptIn ?? false} />
+              )}
+              <NotificationBell unreadCount={unreadCount} />
             </div>
 
             <div className="mt-3 space-y-0.5">
@@ -426,17 +477,17 @@ export function AppShell() {
                   key={item.to}
                   to={item.to}
                   onClick={closeMobile}
-                  className={navLinkClass}
+                  className={mobileNavLinkClass}
                 >
-                  <span className="block">{item.label}</span>
+                  {item.label}
                 </NavLink>
               ))}
             </div>
 
-            <MobileSection title="Reports" items={reportMenuItems} onNavigate={closeMobile} navLinkClass={navLinkClass} />
-            <MobileSection title="Resources" items={resourceMenuItems} onNavigate={closeMobile} navLinkClass={navLinkClass} />
-            <MobileSection title="Community" items={communityMenuItems} onNavigate={closeMobile} navLinkClass={navLinkClass} />
-            <MobileSection title="Account" items={userMenuItems} onNavigate={closeMobile} navLinkClass={navLinkClass} />
+            <MobileSection title="Reports" items={reportMenuItems} onNavigate={closeMobile} navLinkClass={mobileNavLinkClass} />
+            <MobileSection title="Resources" items={resourceMenuItems} onNavigate={closeMobile} navLinkClass={mobileNavLinkClass} />
+            <MobileSection title="Community" items={communityMenuItems} onNavigate={closeMobile} navLinkClass={mobileNavLinkClass} />
+            <MobileSection title="Account" items={userMenuItems} onNavigate={closeMobile} navLinkClass={mobileNavLinkClass} />
 
             <div className="mt-3 border-t border-slate-100 pt-3">
               <button
@@ -452,7 +503,7 @@ export function AppShell() {
         )}
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6">
         <Outlet />
       </main>
     </div>

@@ -20,12 +20,12 @@ export const FolderTabs: React.FC<FolderTabsProps> = ({ activeTab, setActiveTab,
     ];
 
     return (
-        <div className="flex border-b border-slate-200 mb-8 gap-6">
+        <div className="mb-8 flex gap-2 overflow-x-auto border-b border-slate-200 pb-px sm:gap-6">
             {tabs.map(tab => (
                 <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as Tab)}
-                    className={`pb-3 flex items-center gap-2 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`flex shrink-0 items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} /></svg>
                     {tab.label}

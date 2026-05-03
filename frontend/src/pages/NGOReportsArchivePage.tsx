@@ -67,7 +67,7 @@ export function NGOReportsArchivePage() {
           <div className="p-8 text-center text-slate-500">No reports have been generated yet.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="min-w-[760px] text-left text-sm">
               <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-6 py-3">Report Title</th>

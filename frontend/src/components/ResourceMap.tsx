@@ -33,6 +33,7 @@ export default function ResourceMap() {
   const [severityFilter, setSeverityFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [resourceCategoryFilter, setResourceCategoryFilter] = useState("all");
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [center, setCenter] = useState({
     lat: 23.685,
     lng: 90.356
@@ -155,106 +156,123 @@ export default function ResourceMap() {
 
   return (
     <div className="relative h-full w-full">
-      <div className="absolute left-3 top-3 z-[50] w-72 space-y-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
-        <div className="space-y-1">
-          <h2 className="text-lg font-bold text-slate-900">Map Controls</h2>
-          <p className="text-sm text-slate-600">Track live incidents and reserve nearby relief resources.</p>
-        </div>
+      <div className="pointer-events-none absolute inset-x-3 top-3 z-[50] space-y-2 sm:inset-x-auto sm:left-3 sm:flex sm:w-auto sm:items-start sm:gap-3 sm:space-y-0">
+        <div className="pointer-events-auto flex w-full gap-2 sm:order-2 sm:w-80 lg:w-72">
+          <div className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur">
+            <Autocomplete
+              onLoad={(instance) => setAutocomplete(instance)}
+              onPlaceChanged={() => {
+                if (!autocomplete) {
+                  return;
+                }
 
-        <div className="grid gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={showResources}
-              onChange={() => setShowResources((current) => !current)}
-            />
-            Resources
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={showIncidents}
-              onChange={() => setShowIncidents((current) => !current)}
-            />
-            Incidents
-          </label>
-        </div>
+                const place = autocomplete.getPlace();
+                const location = place.geometry?.location;
 
-        <div>
-          <p className="mb-1 text-sm font-semibold text-slate-700">Incident Severity</p>
-          <select
-            value={severityFilter}
-            onChange={(event) => setSeverityFilter(event.target.value)}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                if (!location) {
+                  return;
+                }
+
+                setCenter({
+                  lat: location.lat(),
+                  lng: location.lng()
+                });
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Search location..."
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              />
+            </Autocomplete>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setControlsOpen((open) => !open)}
+            className="rounded-2xl border border-slate-200 bg-white/95 px-3 text-sm font-semibold text-slate-700 shadow-lg backdrop-blur transition hover:bg-slate-50 sm:hidden"
+            aria-expanded={controlsOpen}
           >
-            <option value="all">All severities</option>
-            <option value="CRITICAL">Critical</option>
-            <option value="HIGH">High</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="LOW">Low</option>
-          </select>
+            Filters
+          </button>
         </div>
 
-        <div>
-          <p className="mb-1 text-sm font-semibold text-slate-700">Incident Type</p>
-          <select
-            value={typeFilter}
-            onChange={(event) => setTypeFilter(event.target.value)}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-          >
-            <option value="all">All incident types</option>
-            {INCIDENT_TYPE_OPTIONS.map((type) => (
-              <option key={type} value={type}>
-                {type.replaceAll("_", " ")}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <p className="mb-1 text-sm font-semibold text-slate-700">Resource Category</p>
-          <select
-            value={resourceCategoryFilter}
-            onChange={(event) => setResourceCategoryFilter(event.target.value)}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-          >
-            <option value="all">All resource categories</option>
-            {resourceCategories.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="absolute left-[19rem] top-3 z-[50] rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur">
-        <Autocomplete
-          onLoad={(instance) => setAutocomplete(instance)}
-          onPlaceChanged={() => {
-            if (!autocomplete) {
-              return;
-            }
-
-            const place = autocomplete.getPlace();
-            const location = place.geometry?.location;
-
-            if (!location) {
-              return;
-            }
-
-            setCenter({
-              lat: location.lat(),
-              lng: location.lng()
-            });
-          }}
+        <div
+          className={`pointer-events-auto max-h-[58dvh] w-full space-y-3 overflow-y-auto rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur sm:order-1 sm:block sm:max-h-[calc(100dvh-10rem)] sm:w-72 sm:p-4 ${
+            controlsOpen ? "block" : "hidden"
+          }`}
         >
-          <input
-            type="text"
-            placeholder="Search location..."
-            className="w-72 rounded-xl border border-slate-200 px-3 py-2 text-sm"
-          />
-        </Autocomplete>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-slate-900 sm:text-lg">Map Controls</h2>
+            <p className="text-xs text-slate-600 sm:text-sm">Track live incidents and reserve nearby relief resources.</p>
+          </div>
+
+          <div className="grid gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={showResources}
+                onChange={() => setShowResources((current) => !current)}
+              />
+              Resources
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={showIncidents}
+                onChange={() => setShowIncidents((current) => !current)}
+              />
+              Incidents
+            </label>
+          </div>
+
+          <div>
+            <p className="mb-1 text-sm font-semibold text-slate-700">Incident Severity</p>
+            <select
+              value={severityFilter}
+              onChange={(event) => setSeverityFilter(event.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            >
+              <option value="all">All severities</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+          </div>
+
+          <div>
+            <p className="mb-1 text-sm font-semibold text-slate-700">Incident Type</p>
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            >
+              <option value="all">All incident types</option>
+              {INCIDENT_TYPE_OPTIONS.map((type) => (
+                <option key={type} value={type}>
+                  {type.replaceAll("_", " ")}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <p className="mb-1 text-sm font-semibold text-slate-700">Resource Category</p>
+            <select
+              value={resourceCategoryFilter}
+              onChange={(event) => setResourceCategoryFilter(event.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            >
+              <option value="all">All resource categories</option>
+              {resourceCategories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <GoogleMap

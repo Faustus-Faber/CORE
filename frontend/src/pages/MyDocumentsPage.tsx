@@ -104,11 +104,11 @@ export function MyDocumentsPage() {
     if (loading) return <div className="p-8 text-slate-500 text-center">Loading your secure workspace...</div>;
 
     return (
-        <div className="max-w-6xl mx-auto p-6 md:p-10 font-sans">
+        <div className="mx-auto max-w-6xl p-4 font-sans sm:p-6 md:p-10">
             {/* HEADER */}
-            <div className="flex justify-between items-start mb-6">
-                <div>
-                    <h1 className="text-3xl font-bold text-slate-900 mb-2">
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                    <h1 className="mb-2 text-2xl font-bold text-slate-900 sm:text-3xl">
                         {showTrash ? 'Trash Bin' : 'My Documents'}
                     </h1>
                     <p className="text-slate-500 text-sm">
@@ -118,10 +118,10 @@ export function MyDocumentsPage() {
                         }
                     </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
                     <button
                         onClick={() => setShowTrash(!showTrash)}
-                        className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 border shadow-sm ${
+                        className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold shadow-sm transition-colors sm:px-5 ${
                             showTrash 
                             ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' 
                             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -133,7 +133,7 @@ export function MyDocumentsPage() {
                     {!showTrash && (
                         <button
                             onClick={() => setIsModalOpen(true)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm"
+                            className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 sm:px-5"
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
                             Create Secure Folder
@@ -269,13 +269,13 @@ export function MyDocumentsPage() {
 
             {/* MODAL (Unchanged logic) */}
             {isModalOpen && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+                    <div className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-xl bg-white shadow-xl">
                         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
                             <h2 className="text-lg font-bold text-slate-900">Create Secure Folder</h2>
                             <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
                         </div>
-                        <form onSubmit={handleCreate} className="p-6">
+                        <form onSubmit={handleCreate} className="p-4 sm:p-6">
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Folder Name * (Max 80 chars)</label>
@@ -299,9 +299,9 @@ export function MyDocumentsPage() {
                                     <textarea maxLength={500} rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none" placeholder="Operational notes..." />
                                 </div>
                             </div>
-                            <div className="mt-6 flex justify-end gap-3">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg transition-colors">Cancel</button>
-                                <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors">Create Folder</button>
+                            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                                <button type="button" onClick={() => setIsModalOpen(false)} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">Cancel</button>
+                                <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700">Create Folder</button>
                             </div>
                         </form>
                     </div>

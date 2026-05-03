@@ -22,9 +22,9 @@ const features = [
 export function LandingPage() {
   return (
     <div className="space-y-10">
-      <section className="rounded-2xl bg-white/80 p-8 shadow-panel ring-1 ring-slate-200">
+      <section className="rounded-2xl bg-white/80 p-5 shadow-panel ring-1 ring-slate-200 sm:p-8">
         <p className="mb-2 text-sm font-bold uppercase tracking-wider text-moss">CORE Platform</p>
-        <h1 className="max-w-2xl text-4xl font-bold leading-tight text-ink md:text-5xl">
+        <h1 className="max-w-2xl text-3xl font-bold leading-tight text-ink sm:text-4xl md:text-5xl">
           Real-time crisis response that starts at the community level
         </h1>
         <p className="mt-4 max-w-2xl text-lg text-slate-700">
@@ -83,7 +83,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-300 py-5 text-sm text-slate-600">
+      <footer className="flex flex-col gap-3 border-t border-slate-300 py-5 text-sm text-slate-600 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <span>Contact: support@core.local</span>
         <div className="flex gap-4">
           <a href="https://x.com" target="_blank" rel="noreferrer">

@@ -87,7 +87,7 @@ export function OCRToolPage() {
   };
 
   return (
-      <div className="mx-auto max-w-6xl space-y-6 p-6 md:p-10">
+      <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 md:p-10">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Secure Documentation</p>
@@ -99,7 +99,7 @@ export function OCRToolPage() {
           <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+              className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 sm:w-auto"
           >
             Select Image
           </button>
@@ -121,7 +121,7 @@ export function OCRToolPage() {
                   className="hidden"
                   onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
               />
-              <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+              <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-4 text-center sm:p-6">
                 <p className="text-sm font-semibold text-slate-900">
                   {selectedFile ? selectedFile.name : "No image selected"}
                 </p>
@@ -189,7 +189,7 @@ export function OCRToolPage() {
             {activeScan ? (
                 <OCRScanDetails scan={activeScan} onItemUpdated={handleItemUpdated} />
             ) : (
-                <div className="flex min-h-[420px] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 text-sm text-slate-500">
+              <div className="flex min-h-[260px] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 p-4 text-center text-sm text-slate-500 sm:min-h-[420px]">
                   Select or create a scan to view AI analysis and extracted text.
                 </div>
             )}

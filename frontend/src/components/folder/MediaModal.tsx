@@ -13,13 +13,13 @@ export const MediaModal: React.FC<MediaModalProps> = ({
 }) => {
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-2 backdrop-blur-sm sm:p-4"
             onClick={onClose} // Clicking outside closes it
         >
-            <div className="relative max-w-5xl w-full max-h-full flex items-center justify-center group">
+            <div className="group relative flex max-h-full w-full max-w-5xl items-center justify-center">
                 {/* Close button that shows up top right */}
                 <button
-                    className="absolute -top-12 right-0 text-white hover:text-slate-200 bg-black/40 hover:bg-black/60 rounded-full p-2 transition-colors z-10"
+                    className="absolute right-2 top-2 z-10 rounded-full bg-black/40 p-2 text-white transition-colors hover:bg-black/60 hover:text-slate-200 sm:-top-12 sm:right-0"
                     onClick={(e) => {
                         e.stopPropagation();
                         onClose();
@@ -32,13 +32,13 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                     <img
                         src={selectedMedia}
                         alt="Expanded view"
-                        className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+                        className="max-h-[calc(100dvh-1rem)] max-w-full rounded-lg object-contain shadow-2xl sm:max-h-[90vh]"
                         onClick={(e) => e.stopPropagation()} // Prevents closing when clicking the image itself
                     />
                 ) : (
                     <video
                         src={selectedMedia}
-                        className="max-w-full max-h-[90vh] rounded-lg shadow-2xl"
+                        className="max-h-[calc(100dvh-1rem)] max-w-full rounded-lg shadow-2xl sm:max-h-[90vh]"
                         controls
                         autoPlay
                         onClick={(e) => e.stopPropagation()}

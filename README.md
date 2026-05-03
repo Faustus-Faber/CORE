@@ -1,746 +1,458 @@
-# CORE - Community Organization for Response & Emergency
+# CORE
 
-> A crisis-response web platform for community-led emergency coordination and resource management.
+CORE is a full-stack crisis coordination platform for community reporting, volunteer mobilization, resource sharing, secure field documentation, and NGO-grade incident reporting.
 
-[![Status](https://img.shields.io/badge/status-active-success)]()
-[![Node](https://img.shields.io/badge/node-%3E%3D22-green)]()
-[![React](https://img.shields.io/badge/react-19-blue)]()
-[![MongoDB](https://img.shields.io/badge/mongodb-atlas-green)]()
+**Live application:** [https://core-frontend-jx9h.onrender.com/](https://core-frontend-jx9h.onrender.com/)
 
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Running the Application](#running-the-application)
-- [Demo Accounts](#demo-accounts)
-- [Testing Features](#testing-features)
-- [API Endpoints](#api-endpoints)
-- [Troubleshooting](#troubleshooting)
-- [Roadmap](#roadmap)
-
----
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)
+![Express](https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-06B6D4?logo=tailwindcss&logoColor=white)
 
 ## Overview
 
-CORE enables communities to coordinate emergency response efforts through real-time incident reporting, resource management, volunteer coordination, and secure evidence documentation. The platform integrates AI-powered credibility assessment and fraud detection to ensure reliable information during crisis situations.
+CORE, the Community Operations and Relief Engine, is built for disaster response workflows where citizens, volunteers, administrators, and NGO coordinators need a shared operational picture. The platform combines authenticated incident reporting, AI-assisted report analysis, map-based crisis awareness, volunteer reputation tracking, resource reservations, secure documentation, OCR extraction, dispatch notifications, and downloadable NGO reports.
 
-**Full Specification:** [Software Requirements Specification](./docs/SRS.md)
+The repository is a TypeScript monorepo with a React/Vite frontend and an Express/Prisma backend backed by MongoDB. The backend exposes a role-aware REST API under `/api`, while the frontend provides public, authenticated, volunteer-only, and admin-only workflows.
 
----
+## Table of Contents
 
-## Features
+- [Product Capabilities](#product-capabilities)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Repository Structure](#repository-structure)
+- [Application Routes](#application-routes)
+- [Backend API Map](#backend-api-map)
+- [Data Model](#data-model)
+- [Local Development](#local-development)
+- [Environment Variables](#environment-variables)
+- [Database and Seed Data](#database-and-seed-data)
+- [Scripts](#scripts)
+- [Testing and Quality Gates](#testing-and-quality-gates)
+- [Deployment Notes](#deployment-notes)
+- [Security and Operational Notes](#security-and-operational-notes)
+- [Troubleshooting](#troubleshooting)
 
-### ✅ Module 0: Foundation (Complete)
-- Public landing page with responsive design
-- Complete authentication system (signup, login, logout, password reset)
-- User profile management
-- Role-Based Access Control (RBAC)
-- Admin user management dashboard
+## Product Capabilities
 
-### ✅ Module 1, Feature 1: Emergency Reporting (Complete)
-- Multi-format incident submission (text, images, video, voice notes)
-- Map-based location picker with Google Maps integration (pin, drag, search, GPS auto-detect)
-- AI-powered analysis via Groq (Whisper + Qwen models)
-  - Voice transcription and translation
-  - Credibility scoring with GPS coordinate verification
-  - Severity classification, spam detection, location-mismatch fraud detection
-- Reports Explorer with advanced filtering and sorting
-- Admin moderation workflow for unpublished reports
+| Area | What CORE provides |
+| --- | --- |
+| Incident reporting | Citizens can submit emergency reports with location, severity, incident type, media, and optional voice notes. Reports are analyzed for classification, credibility, translation, and spam risk. |
+| Crisis dashboard | Authenticated users can view clustered crisis events, critical incident streams, map context, severity filters, timeline data, and AI-generated situation reports. |
+| Map awareness | Google Maps powers incident, resource, and situational map views with location picking and nearby context. |
+| Resource coordination | Users can add supplies, browse available resources, reserve quantities, approve or decline reservation requests, and track resource history. |
+| Volunteer network | Volunteer profiles include skills, availability, certifications, reviews, proximity search, rating summaries, and automated fraud/quality flags. |
+| Secure documentation | Users can create crisis-linked folders, upload field files, write geotagged notes, archive/restore content, and create temporary share links. |
+| Evidence gallery | Volunteers and admins can publish field evidence posts with media, comments, likes, verification actions, and flagging workflows. |
+| OCR workflow | Users can OCR uploaded images or existing folder files, review extracted items, edit categorized text, and attach scans to folders, crises, or reports. |
+| Crisis updates | Volunteers and admins can add crisis updates, change responder status, and support admin review/correction of crisis state changes. |
+| Notifications and dispatch | Users can configure notification preferences, receive inbox alerts, and opt into dispatch messages. Dispatch email delivery is handled through Resend when configured. |
+| NGO reports | Admins can generate and archive PDF reports for resolved or closed crisis events. Reports aggregate crisis data, resources, responders, evidence, documentation, OCR scans, and verified volunteer work. |
+| Timesheet and gamification | Volunteers can log verified response work, upload evidence, earn badge points, and appear on leaderboard views. |
+| Administration | Admins can manage users, roles, bans, unpublished reports, flagged reviews, flagged volunteers, crisis reports, and NGO reporting workflows. |
 
-### ✅ Module 1, Feature 2: Resource Registration (Complete)
-- Emergency resource cataloging with GPS coordinates
-- Interactive crisis map (Google Maps integration)
-- Resource status tracking (Available, Reserved, Depleted, etc.)
-- Owner-managed resource editing and deactivation
+## Architecture
 
-### ✅ Module 1, Feature 3: Volunteer Reviews & Fraud Detection (Complete)
-- Volunteer directory with public profiles
-- Review system with fraud detection algorithms
-  - Account age verification
-  - Review velocity monitoring
-  - Keyword-based fraud flagging
-  - Rating anomaly detection
-- Admin moderation for flagged content
+```text
++--------------------+        credentials/cookies        +----------------------+
+| React 19 + Vite    | <-------------------------------> | Express REST API     |
+| Tailwind frontend  |                                   | TypeScript backend   |
++---------+----------+                                   +----------+-----------+
+          |                                                         |
+          | Google Maps JavaScript API                              | Prisma Client
+          |                                                         |
+          v                                                         v
++--------------------+                                   +----------------------+
+| Browser geolocation|                                   | MongoDB Atlas        |
+| media uploads      |                                   | application data     |
++--------------------+                                   +----------+-----------+
+                                                                 |
+                                                                 |
+                    +--------------------------------------------+-----------------------------------+
+                    |                 External services                                             |
+                    | Groq chat + Whisper, OCR.space, Gemini image summaries, Resend dispatch email |
+                    +--------------------------------------------------------------------------------+
+```
 
-### ✅ Module 1, Feature 4: Secure Documentation (Complete)
-- Private digital evidence folders
-- Secure file upload with GPS/timestamp metadata
-- Shareable links with configurable expiration
-- Soft-delete with 30-day recovery window
-- Operational notes with audit trail
-
-### ✅ Module 2, Feature 1: Real-Time Dashboard (Complete)
-- AI-powered duplicate report clustering into Master Incident cards
-  - Groq LLM semantic similarity analysis (≥0.80 threshold)
-  - Real-time clustering triggered on each new report submission
-- Intelligence Briefing dashboard with structured JSON blueprint
-  - Dynamic threat level indicator (GREEN → AMBER → RED → CRITICAL)
-  - Animated metric counters (Active Incidents, Reports Merged, Critical count)
-  - Google Maps-based pulse map with severity-colored markers
-  - Incident timeline with severity-coded dots
-  - Warning cards for high/critical areas
-  - Resource tiles showing available nearby supplies
-  - AI-generated safety advisories contextual to active crises
-- Dashboard feed with location-based filtering (default 10km radius)
-- Advanced filtering by incident type, severity, and time range (1h, 6h, 24h, 7d)
-- Sorting by most recent, highest severity, or most reports merged
-- Detailed incident view with embedded map, contributing reports, and nearby resources
-- Collapsible SitRep panel with auto-refresh every 10 minutes
-
-### ✅ Module 2, Feature 3: Volunteer Directory Search (Complete)
-- Searchable, paginated volunteer directory with skill tags
-- Filters: text search, proximity radius, availability, minimum rating
-- Sorting: nearest first, highest rated, alphabetical
-- Detailed volunteer profile with reviews, trust rating, and flag warnings
-
-### ✅ Module 2, Feature 4: Visual Evidence Gallery (Complete)
-- Social-media-style evidence feed with images and videos from crisis zones
-- Media post creation with title, description, location, and GPS coordinates
-- Like, comment, and share functionality with optimistic UI updates
-- Admin verification badge for trusted evidence posts
-- Flag system for community moderation with reason prompts
-- Filter by all/verified posts, sort by newest/oldest
-- Responsive modal viewer for full media detail view
-- Owner-only post editing and deletion
-
-### ✅ Module 3, Feature 1: Live Crisis Updates (Complete)
-- Append-only crisis update timeline with status, severity, affected area, casualty, displacement, and damage fields
-- Status progression enforcement (`Reported → Verified → Under Investigation → Response in Progress → Contained → Resolved → Closed`)
-- Conflict-resolution check that flags skipped-state transitions for admin review
-- Trusted-volunteer bypass (trust rating ≥ 4.0, not flagged) for immediate updates
-- AI-regenerated Situation Update via Groq Qwen 3-32B after each change, rendered as structured Markdown on the incident detail page
-- Admin override controls: dismiss flagged updates, revert status to any prior state with correction note
-- Auto-prompt to admins for NGO Summary Report on `Resolved`/`Closed`
-
-### ✅ Module 3, Feature 2: Resource Status Management (Complete)
-- Owner-managed "Update Resource" form with status (`Available → Low Stock → Reserved → Depleted → Unavailable`), remaining quantity, availability window, and notes
-- Quantity validation capped at the originally registered amount
-- Automatic transition to `Depleted` when remaining quantity reaches 0
-- Resource history log capturing every status and quantity change with timestamps
-- Live propagation to the Interactive Crisis Map resource markers (greyed-out/removed when `Depleted` or `Unavailable`)
-
-### ✅ Module 3, Feature 5: Targeted Push Notifications (Complete)
-- Notification preferences page with multi-select crisis categories, 5–50 km radius slider, and master enable/disable toggle
-- Category + radius matching on every new verified incident (Haversine geo-filter)
-- AI-generated survival instructions via Groq Qwen 3-32B (`reasoning_effort: "none"` for reliable token budgeting)
-- Structured Markdown output rendered with `react-markdown` + `remark-gfm` in the notification inbox
-- Paginated notification inbox (20/page) with unread count, mark-as-read, mark-all-read, and clear-handled actions
-- Crisis update notifications for subscribers when an incident's status changes
-- NGO report prompt notifications to admins when a crisis resolves
-- Reservation lifecycle notifications (request / approved / declined) between requester and resource owner
-
-### ✅ Module 3, Feature 6: Resource Reservation (Complete)
-- "Reserve" action on the Crisis Map info window and resource detail page (visible only when status is `Available` or `Low Stock`)
-- Reservation form with requested quantity (bounded by remaining availability), justification, and preferred pickup time
-- Pending-state reservation record with temporary quantity hold
-- Owner-managed "Reservations" tab under My Resources with approve/decline workflow
-- In-app notifications to owners on new requests, and to requesters on approval/decline
-
----
+The frontend calls the backend through `VITE_API_URL` and always sends cookies with `credentials: "include"`. The backend enables CORS credentials for configured origins, serves uploaded files from `/uploads`, and mounts all application routes under `/api`.
 
 ## Tech Stack
 
 | Layer | Technologies |
-|-------|--------------|
-| **Frontend** | React 19, TypeScript, Tailwind CSS, Vite, React Router |
-| **Backend** | Express, TypeScript, Multer |
-| **Database** | MongoDB (Atlas), Prisma ORM |
-| **Authentication** | JWT (httpOnly cookies), bcryptjs |
-| **Maps** | Google Maps API (@react-google-maps/api) |
-| **AI Services** | Groq API (Whisper, Qwen) |
-| **Testing** | Vitest, Supertest |
+| --- | --- |
+| Frontend | React 19, React Router 7, Vite 6, TypeScript, Tailwind CSS, Lucide React, React Markdown, `@react-google-maps/api` |
+| Backend | Node.js, Express 4, TypeScript, Prisma Client, Zod, Multer, Cookie Parser |
+| Database | MongoDB via Prisma |
+| Authentication | JWT stored in HTTP-only cookies, bcrypt password hashing, role-based middleware |
+| AI and OCR | Groq chat completions, Groq Whisper transcription, OCR.space, optional Google Gemini image summaries |
+| Reporting | PDFKit for NGO report generation |
+| Notifications | In-app notification records, Resend-backed dispatch emails when configured |
+| Testing | Vitest backend test suite |
 
-### Key Dependencies
+## Repository Structure
 
-**Backend**
-```json
-{
-  "@prisma/client": "^6.5.0",
-  "express": "^4.21.2",
-  "multer": "^2.1.1",
-  "jsonwebtoken": "^9.0.2",
-  "bcryptjs": "^2.4.3",
-  "zod": "^3.24.2"
-}
-```
-
-**Frontend**
-```json
-{
-  "react": "^19.0.0",
-  "react-router-dom": "^7.2.0",
-  "axios": "^1.7.9",
-  "@react-google-maps/api": "^2.20.8",
-  "tailwindcss": "^3.4.17"
-}
-```
-
----
-
-## Project Structure
-
-```
+```text
 CORE/
-├── backend/
-│   ├── src/
-│   │   ├── controllers/     # Request handlers
-│   │   │   ├── dashboardController.ts    # Dashboard feed, SitRep, incident detail
-│   │   │   └── ...
-│   │   ├── services/        # Business logic
-│   │   │   ├── dashboardService.ts       # AI clustering, SitRep generation
-│   │   │   └── ...
-│   │   ├── middleware/      # Auth, upload, error handling
-│   │   ├── routes/          # API route definitions
-│   │   │   ├── dashboardRoutes.ts        # Dashboard API routes
-│   │   │   └── ...
-│   │   ├── utils/           # Validation, helpers
-│   │   └── server.ts        # Entry point
-│   ├── prisma/
-│   │   ├── schema.prisma    # Database schema (includes CrisisEvent, CrisisEventReport)
-│   │   ├── seed.ts          # Test data seeder
-│   │   └── seed-additional-clusters.ts   # Additional crisis events for demo
-│   ├── uploads/             # Static file storage
-│   └── package.json
-├── frontend/
-│   ├── src/
-│   │   ├── pages/           # Route components
-│   │   │   ├── DashboardPage.tsx         # Real-time dashboard with filters
-│   │   │   ├── IncidentDetailPage.tsx    # Detailed incident view
-│   │   │   └── ...
-│   │   ├── components/      # Reusable UI components
-│   │   │   ├── SitRepPanel.tsx           # Intelligence Briefing panel
-│   │   │   ├── IncidentCard.tsx          # Clustered incident card
-│   │   │   ├── IncidentFeed.tsx          # Scrollable incident list
-│   │   │   ├── DashboardFilters.tsx      # Filter controls
-│   │   │   └── ...
-│   │   ├── services/        # API client
-│   │   ├── context/         # React context (Auth)
-│   │   ├── types.ts         # TypeScript types
-│   │   └── App.tsx          # Root component
-│   └── package.json
-├── docs/
-│   └── SRS.md               # Software Requirements Specification
-└── README.md
+  backend/
+    prisma/
+      schema.prisma         # MongoDB schema, enums, relations, indexes
+      seed.ts               # Bangladesh-focused demo data seed
+    src/
+      config/               # Environment loading and runtime config
+      controllers/          # Request handlers
+      middleware/           # Auth, role checks, validation, error handling
+      routes/               # API route composition
+      services/             # Domain logic, AI clients, OCR, dispatch, reports
+      tests/                # Vitest backend coverage
+      utils/                # JWT, async wrappers, helpers
+    uploads/                # Runtime file storage for local development
+  frontend/
+    src/
+      components/           # Shared UI and domain components
+      contexts/             # Auth/session context
+      pages/                # Route-level screens
+      services/             # API client and payload helpers
+      types/                # Frontend domain types
+      utils/                # Presentation and data helpers
+  docs/                     # Supporting project documentation
+  README.md
 ```
 
----
+## Application Routes
 
-## Prerequisites
+### Public routes
 
-| Software | Version | Download |
-|----------|---------|----------|
-| Node.js | 22+ | [nodejs.org](https://nodejs.org) |
-| npm | 10+ | Included with Node.js |
-| MongoDB | Atlas or Local | [mongodb.com/cloud/atlas](https://mongodb.com/cloud/atlas) |
+- `/` - landing page
+- `/signup`, `/login`, `/forgot-password`, `/reset-password` - authentication flows
+- `/shared/:token` - public secure-folder share view
 
----
+### Authenticated routes
 
-## Installation
+- `/dashboard` - crisis command dashboard
+- `/dashboard/incidents/:id` - crisis detail and response context
+- `/report-incident` - emergency report submission
+- `/reports/explore`, `/reports/:id` - community report exploration and detail
+- `/profile` - profile, password, and dispatch opt-in settings
+- `/map` - incident map
+- `/gallery` - evidence gallery
+- `/resources/add`, `/resources/my`, `/browse-resources` - resource contribution and browsing
+- `/volunteers`, `/volunteers/:volunteerId` - volunteer directory and profiles
+- `/docs`, `/docs/:folderId` - secure documentation
+- `/ocr` - OCR upload and scan workflow
+- `/notifications`, `/notifications/preferences` - notification inbox and preferences
+- `/leaderboard` - volunteer leaderboard
 
-### Quick Start
+### Volunteer-only routes
+
+- `/tasks` - volunteer timesheet, task logging, and evidence upload
+
+### Admin-only routes
+
+- `/admin` - user and moderation administration
+- `/reports/review` - unpublished report review
+- `/reports/generate`, `/ngo-reports/archive` - NGO report generation and archive
+
+## Backend API Map
+
+All backend routes are mounted under `/api`.
+
+| Route group | Purpose |
+| --- | --- |
+| `GET /health` | API health check |
+| `/auth` | Register, login, logout, current user, forgot password, reset password |
+| `/profile` | Profile updates, password changes, dispatch opt-in, dispatch logs |
+| `/admin` | User management, roles, bans, unpublished reports, flagged moderation |
+| `/reports` | Incident submission, personal/community reports, map reports, report detail |
+| `/dashboard` | Crisis feed, situation report, critical SSE stream, crisis incident detail |
+| `/crises` | Crisis updates, responder status, admin update dismissal, status correction |
+| `/resources` | Resource listing, creation, updates, reservations, reservation decisions, history |
+| `/volunteers` | Volunteer search and volunteer profile reads |
+| `/reviews` | Volunteer reviews, eligible crisis review targets, flagged review moderation |
+| `/docs` | Secure folders, notes, files, restoration, pinning, share links, public share reads |
+| `/evidence` | Evidence posts, media, likes, comments, verification, flagging |
+| `/ocr` | OCR uploads, OCR of folder files, scan history, scan detail, item edits, attachments |
+| `/notifications` | Notification preferences, inbox, read state, dispatch, cleanup |
+| `/timesheet` | Volunteer task logging, admin verification, leaderboard, crisis dropdown |
+| `/ngo-reports` | NGO PDF report generation, archive listing, file access |
+
+## Data Model
+
+The Prisma schema models the platform around these major domains:
+
+| Domain | Models and enums |
+| --- | --- |
+| Identity and access | `User`, `Role` |
+| Incident intake | `IncidentReport`, `IncidentType`, `IncidentSeverity`, `IncidentStatus` |
+| Crisis operations | `CrisisEvent`, `CrisisEventReport`, `CrisisEventUpdate`, `CrisisResponder`, crisis status and verification enums |
+| Resource management | `Resource`, `Reservation`, `ResourceHistory` |
+| Volunteer reputation | `Review`, `InteractionContext`, volunteer flag fields on `User` |
+| Evidence and social review | `EvidencePost`, `EvidenceFlag`, `Comment`, `Like` |
+| Secure documentation | `SecureFolder`, `FolderFile`, `FolderNote`, `ShareLink` |
+| OCR | `OCRScan`, `OCRItem` |
+| Notifications and dispatch | `NotificationSubscription`, `Notification`, `DispatchAlertLog`, `NotificationType`, `DispatchAlertStatus` |
+| Timesheets and badges | `VolunteerTask`, `Badge`, task and badge enums |
+| NGO reporting | `NGOReport` |
+
+## Local Development
+
+### Prerequisites
+
+- Node.js 20 LTS or newer recommended
+- npm
+- MongoDB Atlas or another MongoDB connection string supported by Prisma
+- Google Maps JavaScript API key for map features
+- Groq API key for AI report analysis and voice transcription
+- Optional OCR.space, Gemini, and Resend credentials for full feature coverage
+
+### 1. Install dependencies
+
+```bash
+cd CORE/backend
+npm install
+
+cd ../frontend
+npm install
+```
+
+### 2. Configure backend environment
+
+Create `backend/.env` from `backend/.env.example`, then replace the placeholder values.
 
 ```powershell
-# Navigate to project directory
-cd "D:\CSE471 Project\CORE\Test\CORE"
-
-# Install all dependencies
-cd backend && npm install
-cd ../frontend && npm install
-cd ..
-
-# Initialize database
 cd backend
-npm run prisma:generate
-npm run prisma:push
-npm run seed
-npm run seed:clusters
-cd ..
+Copy-Item .env.example .env
 ```
 
-### Detailed Steps
+On macOS or Linux, use:
 
-1. **Clone or download** the repository
-2. **Install backend dependencies:**
-   ```powershell
-   cd backend
-   npm install
-   ```
-3. **Install tsx (runtime for TypeScript on Node.js):**
-   ```powershell
-   cd backend
-   npm install -D tsx
-   ```
-   > **Important:** The `tsx` package is required to run the backend. Without it, `npm run dev` will fail with `'tsx' is not recognized as an internal or external command`.
-4. **Install frontend dependencies:**
-   ```powershell
-   cd ../frontend
-   npm install
-   cd ..
-   ```
-5. **Generate Prisma client:**
-   ```powershell
-   cd backend
-   npm run prisma:generate
-   ```
-6. **Sync database schema:**
-   ```powershell
-   npm run prisma:push
-   ```
-7. **Seed test data:**
-   ```powershell
-   npm run seed
-   ```
-8. **Seed additional dashboard demo data:**
-   ```powershell
-   npm run seed:clusters
-   ```
+```bash
+cp .env.example .env
+```
 
----
-
-## Configuration
-
-### Backend Environment Variables
-
-Create `backend/.env`:
+At minimum, local development requires:
 
 ```env
-# Database
-DATABASE_URL="mongodb+srv://<user>:<pass>@<cluster>/core?retryWrites=true&w=majority"
-
-# Server
+DATABASE_URL="mongodb+srv://username:password@cluster.mongodb.net/core?retryWrites=true&w=majority"
 PORT=5000
 CORS_ORIGIN="http://localhost:5173"
-
-# Authentication
-JWT_SECRET="generate-a-strong-random-secret-here"
-
-# Admin Account (seeded)
-ADMIN_EMAIL="admin@core.local"
-ADMIN_PHONE="+8801700000000"
-ADMIN_PASSWORD="Admin@12345"
-ADMIN_NAME="CORE Admin"
-ADMIN_LOCATION="Dhaka"
-
-# Groq AI API
-GROQ_API_KEY="your-groq-api-key"
-GROQ_BASE_URL="https://api.groq.com/openai/v1"
-GROQ_WHISPER_MODEL="whisper-large-v3"
-GROQ_QWEN_MODEL="qwen/qwen3-32b"
-AI_REQUEST_TIMEOUT_MS=15000
+JWT_SECRET="replace-with-a-long-random-secret"
+GROQ_API_KEY="replace-with-your-groq-api-key"
 ```
 
-### Frontend Environment Variables
+### 3. Configure frontend environment
 
 Create `frontend/.env`:
 
 ```env
-VITE_API_URL=http://localhost:4000/api
-VITE_GOOGLE_MAPS_API_KEY=your-google-maps-api-key
+VITE_API_URL=http://localhost:5000/api
+VITE_GOOGLE_MAPS_API_KEY=replace-with-your-google-maps-api-key
 ```
 
-> **Obtain Google Maps API Key:** [Google Cloud Console](https://console.cloud.google.com/)
+`VITE_API_URL` should include `/api`. Keeping it explicit avoids inconsistent media or shared-link URL fallbacks during development.
 
----
+### 4. Generate Prisma client and push schema
 
-## Running the Application
+```bash
+cd backend
+npm run prisma:generate
+npm run prisma:push
+```
 
-### Start Development Servers
+### 5. Seed development data
 
-**Terminal 1 - Backend:**
-```powershell
+```bash
+npm run seed
+```
+
+The seed script clears existing application data and creates a Bangladesh-focused demo dataset. Use it only against a local or disposable development database.
+
+### 6. Start the development servers
+
+Terminal 1:
+
+```bash
 cd backend
 npm run dev
 ```
-Backend runs on: `http://localhost:4000`
 
-**Terminal 2 - Frontend:**
-```powershell
+Terminal 2:
+
+```bash
 cd frontend
 npm run dev
 ```
-Frontend runs on: `http://localhost:5173`
 
-### Stop Existing Processes
+Default local URLs:
 
-If ports are occupied:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:5000`
+- API health: `http://localhost:5000/api/health`
 
-```powershell
-$conn4000 = Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue
-if ($conn4000) { Stop-Process -Id $conn4000.OwningProcess -Force }
+## Environment Variables
 
-$conn5173 = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue
-if ($conn5173) { Stop-Process -Id $conn5173.OwningProcess -Force }
+### Backend
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes | MongoDB connection string used by Prisma |
+| `JWT_SECRET` | Yes | Secret for signing authentication cookies |
+| `GROQ_API_KEY` | Yes | Groq API key for text analysis and voice transcription |
+| `PORT` | No | Backend port, defaults to `5000` |
+| `CORS_ORIGIN` | No | Comma-separated allowed frontend origins, defaults to local Vite origins |
+| `GROQ_BASE_URL` | No | Groq-compatible API base URL |
+| `GROQ_WHISPER_MODEL` | No | Speech-to-text model, defaults to `whisper-large-v3` |
+| `GROQ_QWEN_MODEL` | No | Chat model, defaults to `qwen/qwen3-32b` |
+| `AI_REQUEST_TIMEOUT_MS` | No | Timeout for AI requests |
+| `OCR_PROVIDER` | No | Set to `ocrspace` or `mock` |
+| `OCR_SPACE_API_KEY` | No | OCR.space API key; missing key falls back to mock behavior |
+| `OCR_SPACE_ENDPOINT` | No | OCR.space endpoint override |
+| `OCR_REQUEST_TIMEOUT_MS` | No | OCR request timeout |
+| `GEMINI_API_KEY` | No | Enables Gemini-powered disaster image summaries in OCR workflows |
+| `RESEND_API_KEY` | No | Enables dispatch email delivery |
+| `RESEND_FROM_EMAIL` | No | Sender identity for dispatch email |
+| `ADMIN_EMAIL`, `ADMIN_PHONE`, `ADMIN_PASSWORD`, `ADMIN_NAME`, `ADMIN_LOCATION` | No | Seed-time admin account configuration |
+
+`backend/.env.example` also contains Twilio variables for legacy compatibility. The current dispatch implementation routes alerts through the Resend-backed dispatch service.
+
+### Frontend
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `VITE_API_URL` | Recommended | Backend API base URL, for example `http://localhost:5000/api` |
+| `VITE_GOOGLE_MAPS_API_KEY` | Required for maps | Google Maps JavaScript API key |
+
+## Database and Seed Data
+
+The seed file creates:
+
+- Admin, user, and volunteer accounts
+- Published and under-review incident reports
+- Clustered crisis events
+- Reviews and volunteer fraud/quality flags
+- Resources and resource availability states
+- Secure documentation folders, files, notes, and share links
+
+Useful development accounts after seeding:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Admin | `admin@core.local` or the configured `ADMIN_EMAIL` | `Admin@12345` or configured `ADMIN_PASSWORD` |
+| Admin | `mizan@core.local` | `Admin@12345` |
+| User | `farhan@core.local` | `User@12345` |
+| Volunteer | `ayesha.vol@core.local` | `Volunteer@12345` |
+
+Do not use seed credentials in production.
+
+## Scripts
+
+### Backend
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the Express server with `tsx watch` |
+| `npm run build` | Compile TypeScript to `dist/` |
+| `npm start` | Run the compiled backend from `dist/server.js` |
+| `npm test` | Run the Vitest backend suite |
+| `npm run prisma:generate` | Generate Prisma Client |
+| `npm run prisma:push` | Push the Prisma schema to MongoDB |
+| `npm run prisma:migrate` | Defined in `package.json`; for this MongoDB project, `prisma:push` is the normal schema sync path |
+| `npm run seed` | Seed demo data |
+
+### Frontend
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the Vite development server |
+| `npm run build` | Type-check and build production assets |
+| `npm run preview` | Preview the production build locally |
+
+## Testing and Quality Gates
+
+Run these before merging application changes:
+
+```bash
+cd backend
+npm test
+npm run build
+
+cd ../frontend
+npm run build
 ```
 
-### Access Points
+The backend test suite covers authentication utilities, RBAC behavior, validation, report services and routes, AI prompt behavior, dashboard/report map logic, crisis responder/update services, resource/review services, dispatch alerts, and external client error handling.
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| Frontend | http://localhost:5173 | Main application |
-| Backend API | http://localhost:4000/api | REST API |
-| Health Check | http://localhost:4000/api/health | API status |
-| Static Files | http://localhost:4000/uploads/ | Uploaded media |
+The frontend currently relies on TypeScript and the Vite production build as its primary automated quality gate.
 
----
+## Deployment Notes
 
-## Demo Accounts
+The live frontend is deployed at:
 
-After running `npm run seed`, the following accounts are available:
+[https://core-frontend-jx9h.onrender.com/](https://core-frontend-jx9h.onrender.com/)
 
-### Administrators
+Branch strategy:
 
-| Email | Password | Access |
-|-------|----------|--------|
-| `admin@core.local` | `Admin@12345` | Full admin privileges |
-| `mizan@core.local` | `Admin@12345` | Full admin privileges |
+- `main` is the primary development branch.
+- `deploy/render` contains Render-specific deployment adjustments and should be updated carefully so deploy-only changes are preserved.
 
-### Standard Users (Password: `User@12345`)
+Typical Render configuration:
 
-| Email | Purpose |
-|-------|---------|
-| `farhan@core.local` | Demo account (trusted reviewer) |
-| `babul@core.local` | New account (<1 day, fraud flag trigger) |
-| *(33 additional users)* | Various test scenarios |
+| Service | Root directory | Build command | Start/publish command |
+| --- | --- | --- | --- |
+| Backend web service | `backend` | `npm install && npm run prisma:generate && npm run build` | `npm start` |
+| Frontend static site | `frontend` | `npm install && npm run build` | Publish `dist` |
 
-### Volunteers (Password: `Volunteer@12345`)
+Production environment checklist:
 
-| Email | Status | Description |
-|-------|--------|-------------|
-| `ayesha.vol@core.local` | ✅ Exemplary | 4.6★ rating, 8 reviews |
-| `kamrul.vol@core.local` | ✅ Solid | 4.0★ rating, 6 reviews |
-| `rashida.vol@core.local` | ✅ Good | 4.3★ rating, 7 reviews |
-| `farzana.vol@core.local` | ✅ Excellent | 4.5★ rating, 6 reviews |
-| `masud.vol@core.local` | ✅ Good | 4.2★ rating, 5 reviews |
-| `billal.vol@core.local` | ⚠️ Flagged | 1.5★ avg, low-rating flag |
-| `sohel.vol@core.local` | ⚠️ Flagged | 67% fraud keywords |
-| `alamgir.vol@core.local` | ⚠️ Flagged | Negative trend in 30d |
-| `munira.vol@core.local` | 🆕 Fresh | Zero reviews yet |
-| *(3 additional volunteers)* | Various test scenarios |
+- Backend `DATABASE_URL` points to the production MongoDB database.
+- Backend `JWT_SECRET` is long, random, and unique to production.
+- Backend `GROQ_API_KEY` is configured.
+- Backend `CORS_ORIGIN` includes the deployed frontend origin: `https://core-frontend-jx9h.onrender.com`.
+- Frontend `VITE_API_URL` points to the deployed backend API and includes `/api`.
+- Frontend `VITE_GOOGLE_MAPS_API_KEY` is configured and allowed for the deployed domain.
+- Optional OCR, Gemini, and Resend credentials are configured only when those integrations are needed.
+- Persistent storage or object storage is planned for durable uploaded evidence and generated reports. Local `/uploads` storage is convenient for development but may not be durable on ephemeral hosting plans.
 
----
+## Security and Operational Notes
 
-## Testing Features
-
-### Emergency Reporting Workflow
-
-1. **Submit Report:**
-   - Login: `grace@core.local` / `User@12345`
-   - Navigate: Report Incident
-   - Complete: Title, description, type
-   - **Location**: Pin on the interactive Google Map (auto-fills address + GPS coordinates), or search for an address
-   - Optional: Attach media or voice note
-   - Submit → Redirects to Reports Explorer
-
-2. **Browse Reports:**
-   - Navigate: Reports Explorer (`/reports/explore`)
-   - Filter: Severity, credibility, time
-   - Toggle: Community Reports / My Submissions
-
-3. **Admin Moderation:**
-   - Login: Admin account
-   - Navigate: Admin Panel → Moderate Reports
-   - Action: Publish or Keep Under Review
-
-### Real-Time Dashboard Workflow
-
-1. **View Intelligence Briefing:**
-   - Login: Any user account
-   - Navigate: Dashboard (`/dashboard`)
-   - View: Threat level indicator, animated metrics, SitRep panel
-   - Expand: SitRep to see AI-generated community briefing
-
-2. **Explore Incident Feed:**
-   - View: Clustered Master Incident cards with merged report counts
-   - Filter: Incident type, severity, time range (1h, 6h, 24h, 7d)
-   - Sort: Most recent, highest severity, most reports merged
-   - Click: Any incident card to view details
-
-3. **Incident Detail View:**
-   - View: Full incident information with embedded Google Map
-   - See: All contributing reports from different users
-   - Check: Nearby available resources
-   - Hover: Map markers to see incident names
-
-4. **Test AI Clustering:**
-   - Submit: A new report similar to an existing incident
-   - Observe: Report merges into existing Master Incident
-   - Verify: Report count increases on dashboard card
-
-### Volunteer Review & Fraud Detection
-
-| Test Case | Steps | Expected |
-|-----------|-------|----------|
-| New Account Flag | Login as `frank@core.local` → Submit review | Review flagged |
-| Short Text Flag | Submit review with text <20 chars | Review flagged |
-| Fraud Keywords | Include "scam", "fake", "fraud" | Review flagged |
-| Low Rating Flag | View Mike Wilson profile | Volunteer flagged |
-| Admin Moderation | Admin Panel → Flagged Reviews | Approve/Delete options |
-
-### Resource Management
-
-1. **Add Resource:**
-   - Login: Any user
-   - Navigate: Resources → Add Resource
-   - Complete: Name, category, quantity, location (map)
-   - Optional: Photos (max 3), availability window
-   - Submit → My Resources
-
-2. **Interactive Map:**
-   - Navigate: Map
-   - View: Resource markers
-   - Click: Info window with details
-
-### Visual Evidence Gallery
-
-1. **Create Evidence Post:**
-   - Login: `admin@core.local` / `Admin@12345` or any volunteer account
-   - Navigate: Gallery (`/gallery`)
-   - Fill: Title, description, location, media type (IMAGE/VIDEO)
-   - Attach: Media files (images or videos)
-   - Submit → Post appears in feed (auto-verified for admins)
-
-2. **Interact with Posts:**
-   - Like: Click like to toggle (optimistic UI)
-   - Comment: Add comments visible in post modal
-   - Share: Uses Web Share API or copies link to clipboard
-   - Verify: Admin can verify unverified posts
-   - Flag: Report inappropriate/fake posts with reason prompt
-
-3. **Filter and Sort:**
-   - Filter: All posts / Verified only
-   - Sort: Newest first / Oldest first
-
----
-
-## API Endpoints
-
-### Authentication
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/signup` | Register new user |
-| POST | `/api/auth/login` | User login |
-| POST | `/api/auth/logout` | User logout |
-| POST | `/api/auth/forgot-password` | Request password reset |
-| POST | `/api/auth/reset-password` | Reset password with token |
-
-### Reports
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/reports` | Submit incident report |
-| GET | `/api/reports` | List community reports |
-| GET | `/api/reports/my` | List user submissions |
-| PUT | `/api/reports/:id/status` | Update report status (Admin) |
-
-### Volunteers
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/volunteers` | List volunteers |
-| GET | `/api/volunteers/:id` | Get volunteer profile |
-| POST | `/api/volunteers/:id/reviews` | Submit review |
-| GET | `/api/volunteers/:id/reviews` | Get volunteer reviews |
-
-### Resources
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/resources` | Register resource |
-| GET | `/api/resources` | List resources |
-| GET | `/api/resources/my` | List user resources |
-| PUT | `/api/resources/:id` | Update resource |
-| DELETE | `/api/resources/:id` | Delete resource |
-
-### Documents (Secure Folders)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/docs` | List user folders |
-| POST | `/api/docs` | Create folder |
-| GET | `/api/docs/:id` | Get folder details |
-| POST | `/api/docs/:id/files` | Upload file |
-| POST | `/api/docs/:id/notes` | Add note |
-| POST | `/api/docs/:id/share` | Generate share link |
-| DELETE | `/api/docs/:id` | Soft-delete folder |
-
-### Dashboard
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/dashboard/feed` | Get clustered incident feed with filters |
-| GET | `/api/dashboard/sitrep` | Get AI-generated Situation Report |
-| GET | `/api/dashboard/incidents/:id` | Get incident detail with contributing reports |
-
-### Crisis Updates (Module 3.1)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/dashboard/incidents/:id/updates` | Submit a crisis status/severity update |
-| GET | `/api/dashboard/incidents/:id/updates` | List crisis update timeline |
-| PATCH | `/api/dashboard/incidents/updates/:updateId/dismiss` | Dismiss a flagged update (Admin) |
-| PATCH | `/api/dashboard/incidents/:id/revert` | Revert a crisis to a prior status (Admin) |
-
-### Notifications (Module 3.5)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/notifications/preferences` | Get the user's notification subscription |
-| PUT | `/api/notifications/preferences` | Update category, radius, and enable flag |
-| GET | `/api/notifications/inbox` | Paginated notification inbox with unread count |
-| PATCH | `/api/notifications/inbox/:id/read` | Mark a single notification as read |
-| POST | `/api/notifications/inbox/read-all` | Mark every notification as read |
-| DELETE | `/api/notifications/inbox/clear-handled` | Delete all read notifications |
-| POST | `/api/notifications/dispatch` | Manually dispatch a crisis notification (Admin) |
-
-### Resource Reservation & Status (Module 3.2, 3.6)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| PATCH | `/api/resources/update/:id` | Update status, quantity, window, and notes |
-| PATCH | `/api/resources/deactivate/:id` | Deactivate a resource (owner only) |
-| GET | `/api/resources/:id/history` | List the resource status/quantity change log |
-| POST | `/api/resources/reserve` | Create a reservation with justification |
-| GET | `/api/resources/:id/reservations` | List reservations for a resource |
-| PATCH | `/api/resources/reservation/:id/approve` | Approve a pending reservation (owner) |
-| PATCH | `/api/resources/reservation/:id/decline` | Decline a pending reservation (owner) |
-
-### Evidence Gallery
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/evidence` | List evidence posts (filter: verified, sort: newest/oldest) |
-| POST | `/api/evidence` | Create evidence post with media files |
-| PATCH | `/api/evidence/:id` | Update post (owner only) |
-| DELETE | `/api/evidence/:id` | Delete post (owner only) |
-| POST | `/api/evidence/:id/like` | Toggle like |
-| POST | `/api/evidence/:id/comment` | Add comment |
-| POST | `/api/evidence/:id/verify` | Verify post (Admin only) |
-| POST | `/api/evidence/:id/flag` | Flag post for moderation |
-
-### Admin
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/admin/users` | List all users |
-| PUT | `/api/admin/users/:id/role` | Update user role |
-| PUT | `/api/admin/users/:id/ban` | Ban/unban user |
-| GET | `/api/admin/flagged-reviews` | Get flagged reviews |
-| GET | `/api/admin/flagged-volunteers` | Get flagged volunteers |
-
----
+- Passwords are hashed with bcrypt before storage.
+- Authentication uses signed JWTs stored in HTTP-only cookies.
+- Role-aware middleware protects volunteer and admin endpoints.
+- CORS is configured with credential support and an allowlist of trusted origins.
+- File upload routes use Multer with file type and size limits for incident media, resources, documents, evidence, OCR uploads, and task evidence.
+- Admin workflows exist for user bans, role changes, unpublished report moderation, review moderation, volunteer flag review, crisis update correction, and NGO report generation.
+- `.env` files, production secrets, uploads, and generated dependencies should stay out of version control.
 
 ## Troubleshooting
 
-### Port Conflicts
+### Authorization errors on protected pages
 
-**Error:** Port 5000 or 5173 already in use
+Check that:
 
-**Solution:**
-```powershell
-# Kill process on port 5000
-$conn = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue
-if ($conn) { Stop-Process -Id $conn.OwningProcess -Force }
+- The backend is running and reachable from the frontend.
+- `VITE_API_URL` points to the backend `/api` URL.
+- `CORS_ORIGIN` includes the exact frontend origin.
+- The browser is accepting cookies for the site.
+- The logged-in user has the required role for the route.
 
-# Kill process on port 5173
-$conn = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue
-if ($conn) { Stop-Process -Id $conn.OwningProcess -Force }
-```
+### Maps do not load
 
-### File Upload Failures
+Check that `VITE_GOOGLE_MAPS_API_KEY` is present, the Maps JavaScript API is enabled in Google Cloud, and the key allows the domain you are using.
 
-| Issue | Solution |
-|-------|----------|
-| Upload directory missing | Ensure `backend/uploads` exists |
-| File too large | Max size: 20MB (images/video), 10MB (audio) |
-| Invalid format | Supported: JPG, PNG, WEBP, MP4, WEBM |
-| Images not loading | Backend must be running (serves `/uploads/`) |
+### AI or voice analysis fails
 
-### Database Errors
+Check `GROQ_API_KEY`, `GROQ_BASE_URL`, `GROQ_QWEN_MODEL`, `GROQ_WHISPER_MODEL`, and `AI_REQUEST_TIMEOUT_MS`.
 
-| Issue | Solution |
-|-------|----------|
-| Connection failed | Verify `DATABASE_URL` in `.env` |
-| Schema mismatch | Run `npm run prisma:generate` then `npm run prisma:push` |
-| Seed failed | Drop database and re-run `npm run seed` |
+### OCR returns mock or empty results
 
-### Google Maps Issues
+Set `OCR_PROVIDER=ocrspace` and provide `OCR_SPACE_API_KEY`. Add `GEMINI_API_KEY` only if image summary generation is needed.
 
-| Issue | Solution |
-|-------|----------|
-| Blank map | Verify `VITE_GOOGLE_MAPS_API_KEY` |
-| API error | Enable Maps JavaScript API in Cloud Console |
-| Billing required | Add payment method to Google Cloud project |
+### Seed data removes existing records
 
-### Build Errors
-
-```powershell
-# Clear cache and rebuild
-cd backend
-rm -r node_modules
-rm package-lock.json
-npm install
-
-cd ../frontend
-rm -r node_modules
-rm package-lock.json
-npm install
-```
-
-### Missing tsx Runtime
-
-**Error:** `'tsx' is not recognized as an internal or external command`
-
-**Solution:**
-```powershell
-cd backend
-npm install -D tsx
-```
-> The `tsx` package is the TypeScript execution engine used by `npm run dev`. It must be installed in the `backend` directory before starting the server.
-
----
-
-## Verification Commands
-
-```powershell
-# Backend tests
-cd backend && npm test
-
-# Backend build
-cd backend && npm run build
-
-# Frontend build
-cd frontend && npm run build
-```
-
----
-
-## Roadmap
-
-### ✅ Completed (Module 1 + Module 2 Features)
-- [x] Feature 1: Emergency Reporting
-- [x] Feature 2: Resource Registration
-- [x] Feature 3: Volunteer Reviews & Fraud Detection
-- [x] Feature 4: Secure Documentation
-
-### 📋 Module 2 (In Progress)
-- [x] Feature 1: Real-Time Dashboard with AI duplicate clustering
-- [ ] Feature 2: Interactive Crisis Map (enhanced)
-- [x] Feature 3: Volunteer Directory Search
-- [x] Feature 4: Visual Evidence Gallery
-
-### 📋 Module 3 (In Progress)
-- [x] Feature 1: Live Crisis Updates
-- [x] Feature 2: Resource Status Management
-- [ ] Feature 3: Automated Dispatch SMS (Twilio)
-- [ ] Feature 4: NGO Summary Reports (PDF)
-- [x] Feature 5: Targeted Push Notifications
-- [x] Feature 6: Resource Reservation
-- [ ] Feature 7: Volunteer Timesheet & Gamification
-- [ ] Feature 8: Disaster Damage OCR (Google Vision API)
-
----
+`npm run seed` intentionally clears and recreates demo data. Run it only on local or disposable databases.
 
 ## License
 
-This project is part of CSE471 Coursework. All rights reserved.
-
-## Contributors
-
-Community Organization for Response & Emergency (CORE) Development Team
+No license file is currently included in this repository. Add one before distributing or open sourcing the project.

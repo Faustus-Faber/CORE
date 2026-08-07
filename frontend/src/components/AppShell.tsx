@@ -381,7 +381,7 @@ export function AppShell() {
     <div className="min-h-screen bg-canvas">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur-lg">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-3 py-2.5 sm:gap-6 sm:px-4">
-          <Link to="/" className="shrink-0 text-xl font-black tracking-tight text-ink">
+          <Link to={user ? "/dashboard" : "/"} className="shrink-0 text-xl font-black tracking-tight text-ink">
             CORE
           </Link>
 

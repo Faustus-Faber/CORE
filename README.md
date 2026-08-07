@@ -2,7 +2,7 @@
 
 CORE (Community Operations & Relief Engine) is a production-grade crisis management, emergency intake, volunteer mobilization, and disaster relief governance platform. Designed for high-stakes emergency environments, CORE connects citizens, field responders, crisis commanders, and NGO auditors into a unified operational ecosystem.
 
-**Live Application:** [https://core-frontend-jx9h.onrender.com/](https://core-frontend-jx9h.onrender.com/)
+**Live Application:** [https://core-frontend-sqgk.onrender.com/](https://core-frontend-sqgk.onrender.com/)
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)

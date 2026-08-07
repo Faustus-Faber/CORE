@@ -52,6 +52,12 @@ app.use(
         }
       }
 
+      // Allow any Render subdomain (*.onrender.com) automatically
+      if (/^https?:\/\/[a-zA-Z0-9-]+\.onrender\.com$/.test(origin)) {
+        callback(null, true);
+        return;
+      }
+
       // Check against configured allowed origins
       if (env.corsOrigins.includes(origin)) {
         callback(null, true);

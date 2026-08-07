@@ -163,30 +163,13 @@ export function OperationsWorkspacePage() {
   const [filter, setFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("recency");
-  const [tab, setTab] = useState<Tab>("copilot");
+  const [tab, setTab] = useState<Tab>("evidence");
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [draftRefreshKey, setDraftRefreshKey] = useState(0);
 
   const { showToast } = useToast();
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
-
-  const fetchCrises = useCallback(async () => {
-    try {
-      setLoading(true);
-      setLoadError(false);
-      const response = await apiFetch(`/dashboard/feed?sortBy=mostRecent&sortOrder=desc`);
-      if (!response.ok) throw new Error("Failed to load crisis feed");
-      const data = await response.json();
-      const events: CrisisEvent[] = data.feed ?? data.events ?? [];
-      setCrises(events);
-      setSelectedId((prev) => prev ?? events[0]?.id ?? null);
-    } catch {
-      setLoadError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   const showToastRef = useRef(showToast);
   showToastRef.current = showToast;
@@ -206,8 +189,39 @@ export function OperationsWorkspacePage() {
     }
   }, []);
 
+  const fetchCrises = useCallback(async () => {
+    try {
+      setLoading(true);
+      setLoadError(false);
+      const response = await apiFetch(`/dashboard/feed?sortBy=mostRecent&sortOrder=desc`);
+      if (!response.ok) throw new Error("Failed to load crisis feed");
+      const data = await response.json();
+      const events: CrisisEvent[] = data.feed ?? data.events ?? [];
+      setCrises(events);
+      const firstId = events[0]?.id;
+      if (firstId) {
+        setSelectedId(firstId);
+        // Kick off workspace fetch immediately in parallel — don't wait for re-render
+        fetchWorkspace(firstId);
+      }
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchWorkspace]);
+
   useEffect(() => { fetchCrises(); }, [fetchCrises]);
-  useEffect(() => { if (selectedId) fetchWorkspace(selectedId); }, [selectedId, fetchWorkspace]);
+  // Only refetch workspace when selectedId changes via user interaction,
+  // not on initial load (fetchCrises already kicks it off in parallel).
+  const initialLoadRef = useRef(true);
+  useEffect(() => {
+    if (initialLoadRef.current) {
+      initialLoadRef.current = false;
+      return;
+    }
+    if (selectedId) fetchWorkspace(selectedId);
+  }, [selectedId, fetchWorkspace]);
 
   // Search & Filter Logic
   const filteredCrises = crises

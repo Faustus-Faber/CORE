@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../services/api";
 import { useToast } from "../components/ui/Toast";
@@ -11,10 +11,26 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CopilotPanel } from "../components/CopilotPanel";
 import { ActionDraftsPanel } from "../components/ActionDraftsPanel";
-import { LeafletMap, SEVERITY_COLORS } from "../components/LeafletMap";
 import { ErrorState } from "../components/ui/ErrorState";
 import { severityBadgeClass, timeAgo, getTypeIconPath } from "../utils/incident";
 import type { EvidenceSummary } from "../types/evidence";
+
+// Lazy-load LeafletMap — avoids loading the entire Leaflet library (~40KB)
+// in the main bundle. The map renders inside a Suspense fallback placeholder.
+const LeafletMap = lazy(() =>
+  import("../components/LeafletMap").then((m) => ({ default: m.LeafletMap }))
+);
+
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: "#ef4444",
+  high: "#f97316",
+  medium: "#eab308",
+  low: "#22c55e",
+  CRITICAL: "#ef4444",
+  HIGH: "#f97316",
+  MEDIUM: "#eab308",
+  LOW: "#22c55e",
+};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -417,13 +433,15 @@ export function OperationsWorkspacePage() {
                 <div className={`rounded-lg overflow-hidden border border-slate-200 transition-all duration-300 ${
                   isMapExpanded ? "h-[450px]" : "h-80 sm:h-96"
                 }`}>
-                  <LeafletMap
-                    center={mapCenter}
-                    zoom={13}
-                    points={mapPoints}
-                    height="100%"
-                    fitBounds={mapPoints.length > 1}
-                  />
+                  <Suspense fallback={<div className="flex h-full items-center justify-center text-slate-400 text-sm">Loading map…</div>}>
+                    <LeafletMap
+                      center={mapCenter}
+                      zoom={13}
+                      points={mapPoints}
+                      height="100%"
+                      fitBounds={mapPoints.length > 1}
+                    />
+                  </Suspense>
                 </div>
               </div>
 

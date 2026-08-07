@@ -11,9 +11,12 @@ export const workspaceRoutes = Router();
 workspaceRoutes.get("/crises/:id/workspace", requireAuth, async (request, response) => {
   try {
     const crisisId = String(request.params.id);
-    const workspace = await getCrisisWorkspace(crisisId);
-    // Attach the real evidence summary — replaces opaque credibility score
-    const evidenceSummary = await getCrisisEvidenceSummary(crisisId);
+    // Run workspace + evidence summary in parallel — they hit different
+    // relations so there's no dependency between them.
+    const [workspace, evidenceSummary] = await Promise.all([
+      getCrisisWorkspace(crisisId),
+      getCrisisEvidenceSummary(crisisId),
+    ]);
     response.json({ data: { ...workspace, evidenceSummary } });
   } catch (error) {
     const isNotFound = error instanceof Error && error.message.includes("not found");

@@ -4,42 +4,105 @@ import { SafeError } from "../utils/SafeError.js";
 /**
  * FR-05: Get the unified crisis operations workspace data.
  * Returns crisis, claims, needs, assignments, and updates in one response.
+ *
+ * Performance: All sub-queries are fired in parallel via Promise.all to
+ * minimize MongoDB Atlas round-trip latency (each include would otherwise
+ * be a sequential query under Prisma's MongoDB connector).
  */
 export async function getCrisisWorkspace(crisisEventId: string) {
+  // Fetch the base crisis first — we need it to exist before fan-out.
   const crisis = await prisma.crisisEvent.findUnique({
     where: { id: crisisEventId },
-    include: {
-      reports: { include: { incidentReport: true } },
-      updates: {
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      severityLevel: true,
+      incidentType: true,
+      locationText: true,
+      latitude: true,
+      longitude: true,
+      version: true,
+      reportCount: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!crisis) {
+    throw new SafeError("Crisis event not found");
+  }
+
+  // Fan out all relation queries in parallel — each is a single MongoDB
+  // round-trip, so total latency ≈ max(queries) instead of sum(queries).
+  const [claims, needs, assignments, responders, updates, evidencePosts, ocrScans] =
+    await Promise.all([
+      prisma.claim.findMany({
+        where: { crisisEventId },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        select: {
+          id: true,
+          claimType: true,
+          subject: true,
+          value: true,
+          evidenceState: true,
+          conflictCount: true,
+          supportCount: true,
+          needsHumanDecision: true,
+        },
+      }),
+      prisma.need.findMany({
+        where: { crisisEventId },
         orderBy: { createdAt: "desc" },
         take: 50,
-      },
-      claims: {
-        orderBy: { createdAt: "desc" },
-      },
-      needs: {
-        orderBy: { createdAt: "desc" },
-      },
-      assignments: {
+        select: {
+          id: true,
+          needType: true,
+          description: true,
+          quantity: true,
+          unit: true,
+          urgency: true,
+          isMet: true,
+        },
+      }),
+      prisma.assignment.findMany({
+        where: { crisisEventId },
         include: {
           volunteer: { select: { id: true, fullName: true, skills: true } },
         },
         orderBy: { createdAt: "desc" },
-      },
-      responders: {
+      }),
+      prisma.crisisResponder.findMany({
+        where: { crisisEventId },
         include: {
           volunteer: { select: { id: true, fullName: true, avatarUrl: true, skills: true, location: true } },
         },
         orderBy: { optedInAt: "desc" },
-      },
-      evidencePosts: {
+      }),
+      prisma.crisisEventUpdate.findMany({
+        where: { crisisEventId },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        select: {
+          id: true,
+          updateType: true,
+          updateNote: true,
+          newStatus: true,
+          verificationStatus: true,
+          createdAt: true,
+        },
+      }),
+      prisma.evidencePost.findMany({
+        where: { crisisEventId },
         orderBy: { createdAt: "desc" },
         take: 50,
         include: {
           user: { select: { id: true, fullName: true, avatarUrl: true } },
         },
-      },
-      ocrScans: {
+      }),
+      prisma.oCRScan.findMany({
+        where: { crisisEventId },
         orderBy: { createdAt: "desc" },
         take: 20,
         select: {
@@ -48,68 +111,27 @@ export async function getCrisisWorkspace(crisisEventId: string) {
           sourceImageUrl: true,
           createdAt: true,
         },
-      },
-    },
-  });
-
-  if (!crisis) {
-    throw new SafeError("Crisis event not found");
-  }
+      }),
+    ]);
 
   return {
-    crisis: {
-      id: crisis.id,
-      title: crisis.title,
-      status: crisis.status,
-      severityLevel: crisis.severityLevel,
-      locationText: crisis.locationText,
-      latitude: crisis.latitude,
-      longitude: crisis.longitude,
-      version: crisis.version,
-      reportCount: crisis.reportCount,
-      createdAt: crisis.createdAt,
-      updatedAt: crisis.updatedAt,
-    },
-    claims: crisis.claims.map((c) => ({
-      id: c.id,
-      claimType: c.claimType,
-      subject: c.subject,
-      value: c.value,
-      evidenceState: c.evidenceState,
-      conflictCount: c.conflictCount,
-      supportCount: c.supportCount,
-      needsHumanDecision: c.needsHumanDecision,
-    })),
-    needs: crisis.needs.map((n) => ({
-      id: n.id,
-      needType: n.needType,
-      description: n.description,
-      quantity: n.quantity,
-      unit: n.unit,
-      urgency: n.urgency,
-      isMet: n.isMet,
-    })),
-    assignments: crisis.assignments.map((a) => ({
+    crisis,
+    claims,
+    needs,
+    assignments: assignments.map((a) => ({
       id: a.id,
       status: a.status,
       volunteer: a.volunteer,
     })),
-    responders: crisis.responders.map((r) => ({
+    responders: responders.map((r) => ({
       id: r.id,
       status: r.status,
       volunteer: r.volunteer,
       optedInAt: r.optedInAt,
       lastStatusAt: r.lastStatusAt,
     })),
-    updates: crisis.updates.map((u) => ({
-      id: u.id,
-      updateType: u.updateType,
-      updateNote: u.updateNote,
-      newStatus: u.newStatus,
-      verificationStatus: u.verificationStatus,
-      createdAt: u.createdAt,
-    })),
-    evidencePosts: crisis.evidencePosts.map((e) => ({
+    updates,
+    evidencePosts: evidencePosts.map((e) => ({
       id: e.id,
       title: e.title,
       description: e.description,
@@ -121,11 +143,6 @@ export async function getCrisisWorkspace(crisisEventId: string) {
       uploaderAvatar: e.user.avatarUrl,
       createdAt: e.createdAt,
     })),
-    ocrScans: crisis.ocrScans.map((o) => ({
-      id: o.id,
-      rawText: o.rawText,
-      sourceImageUrl: o.sourceImageUrl,
-      createdAt: o.createdAt,
-    })),
+    ocrScans,
   };
 }

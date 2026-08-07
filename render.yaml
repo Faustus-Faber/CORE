@@ -5,7 +5,7 @@ services:
   # Backend Express API Web Service
   - type: web
     name: core-backend
-    runtime: node
+    env: node
     plan: free
     rootDir: backend
     buildCommand: npm install && npm run prisma:generate && npm run build
@@ -26,10 +26,10 @@ services:
   # Frontend React SPA Static Site
   - type: web
     name: core-frontend
-    runtime: static
+    env: static
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: frontend/dist
+    staticPublishPath: dist
     routes:
       - type: rewrite
         source: /*

@@ -22,13 +22,14 @@ services:
         sync: false
       - key: CORS_ORIGIN
         fromService:
-          type: static
+          type: web
           name: core-frontend
           property: url
 
   # Frontend React SPA Static Site
-  - type: static
+  - type: web
     name: core-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: frontend/dist

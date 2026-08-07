@@ -13,6 +13,15 @@ enum Role {
   ADMIN
 }
 
+// Trust tier system — progressive trust levels for volunteers
+// Inspired by Discourse trust levels + Stack Exchange reputation privileges
+enum TrustTier {
+  REPORTER   // Tier 0: submit reports, evidence, tasks with photo proof
+  TRAINEE    // Tier 1: opt into crises, submit flagged observations
+  RESPONDER  // Tier 2: full update powers, can vouch for others
+  VETERAN    // Tier 3: co-approve trainee updates (community self-policing)
+}
+
 // FR-01: Responder approval lifecycle
 enum ResponderApprovalStatus {
   APPLICANT
@@ -88,15 +97,6 @@ enum EvidenceVerificationState {
   DISMISSED
 }
 
-// FR-13: After-action report lifecycle
-enum ReportStatus {
-  DRAFT
-  REVIEWED
-  PUBLISHED
-  SUPERSEDED
-  ARCHIVED
-}
-
 enum OrganizationType {
   NGO
   GOVERNMENT
@@ -113,6 +113,11 @@ enum NotificationType {
   RESERVATION_APPROVED
   RESERVATION_DECLINED
   DISPATCH_ALERT
+  VOUCH_RECEIVED
+  TRUST_TIER_PROMOTED
+  TASK_VERIFIED
+  TASK_REJECTED
+  CHAT_MESSAGE
 }
 
 enum IncidentSeverity {
@@ -226,6 +231,9 @@ model User {
   totalPoints          Int       @default(0)
   totalVerifiedHours   Float     @default(0)
 
+  // Trust tier — progressive trust system (replaces binary responder approval)
+  trustTier            TrustTier @default(REPORTER)
+
   // FR-01: Responder profile (approval workflow)
   responderProfile     ResponderProfile?
 
@@ -261,14 +269,21 @@ model User {
   draftsConfirmed ActionDraft[]      @relation("DraftConfirmer")
   mediaAssets     MediaAsset[]
   stockEntries    StockLedgerEntry[]
+  resources       Resource[]         @relation("ResourceOwner")
   fulfillments    Fulfillment[]
-  afterActionReports AfterActionReport[] @relation("ReportGenerator")
-  afterActionReportsApproved AfterActionReport[] @relation("ReportApprover")
   outboxJobs      OutboxJob[]
+
+  // Trust tier system: vouches given and received
+  vouchesGiven    Vouch[]     @relation("VouchGiven")
+  vouchesReceived Vouch[]     @relation("VouchReceived")
+
+  // Crisis chat messages sent by this user
+  crisisMessages  CrisisMessage[]
 
   @@index([role, isBanned])
   @@index([role, isFlagged])
   @@index([organizationId])
+  @@index([trustTier])
 }
 
 model IncidentReport {
@@ -351,6 +366,7 @@ model Resource {
   userId            String
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+  user         User              @relation("ResourceOwner", fields: [userId], references: [id], onDelete: Cascade)
   histories    ResourceHistory[]
   reservations Reservation[]
   allocations  Allocation[]
@@ -493,6 +509,7 @@ model CrisisEvent {
   organization  Organization?     @relation(fields: [organizationId], references: [id])
   reports CrisisEventReport[]
   updates CrisisEventUpdate[]
+  conflictResolutions ConflictResolution[]
   reviews Review[]
   responders CrisisResponder[]
   dispatchAlertLogs DispatchAlertLog[]
@@ -507,7 +524,6 @@ model CrisisEvent {
   briefs SituationBrief[]
   actionDrafts ActionDraft[]
   mediaAssets  MediaAsset[]
-  afterActionReports AfterActionReport[]
   evidencePosts EvidencePost[]
   outboxJobs   OutboxJob[]
 
@@ -564,7 +580,7 @@ model EvidencePost {
   mediaType      String // 'IMAGE' or 'VIDEO'
   isVerified     Boolean  @default(false)
   // AC-10.04: Visibility controls who can see this evidence
-  visibility     MediaVisibility @default(PUBLIC)
+  visibility     MediaVisibility @default(REDACTED_PUBLIC)
   // AC-10.3: Version tracking — increments on each edit, original preserved in EvidencePostVersion
   version        Int      @default(1)
   createdAt      DateTime @default(now())
@@ -659,6 +675,23 @@ model CrisisEventUpdate {
   createdAt              DateTime                        @default(now())
 
   @@index([crisisEventId, createdAt(sort: Desc)])
+}
+
+// AI-generated conflict resolution for simultaneous conflicting status changes
+model ConflictResolution {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId   String   @db.ObjectId
+  crisisEvent     CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  updateIds       String[] @db.ObjectId  // IDs of the conflicting CrisisEventUpdate entries
+  recommendation  String   // AI recommendation text
+  recommendedUpdateId String? @db.ObjectId  // Which update the AI recommends
+  reasoning       String?  // AI reasoning for the recommendation
+  resolved        Boolean  @default(false)  // Admin has made a decision
+  resolvedById    String?  @db.ObjectId
+  resolvedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([crisisEventId])
 }
 
 model NotificationSubscription {
@@ -772,9 +805,14 @@ model NGOReport {
   crisisEventId  String      @db.ObjectId
   generatedById  String      @db.ObjectId
   title          String
-  fileUrl        String
+  fileUrl        String?
   summary        String?
+  // Editable sections populated from crisis data; admin can edit before PDF generation
+  sectionsJson   String?
+  // Whether the PDF has been generated from the (possibly edited) sections
+  pdfGenerated   Boolean     @default(false)
   createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
   generatedBy User        @relation(fields: [generatedById], references: [id], onDelete: Cascade)
@@ -1345,41 +1383,6 @@ model Fulfillment {
   @@index([allocationId, createdAt(sort: Desc)])
 }
 
-// FR-13: Versioned after-action report with frozen snapshot
-model AfterActionReport {
-  id              String       @id @default(auto()) @map("_id") @db.ObjectId
-  crisisEventId   String       @db.ObjectId
-  version         Int
-  status          ReportStatus @default(DRAFT)
-  title           String
-  // Frozen snapshot of all data used to generate the report
-  snapshotJson    String
-  // Generated PDF storage key (private)
-  fileStorageKey  String?
-  summary         String?
-  checksum        String?
-  // Review/approval workflow
-  generatedById   String       @db.ObjectId
-  reviewedById    String?       @db.ObjectId
-  reviewedAt      DateTime?
-  approvedById    String?       @db.ObjectId
-  approvedAt      DateTime?
-  publishedAt     DateTime?
-  // Versioning
-  supersededById  String?       @db.ObjectId @unique
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  crisisEvent  CrisisEvent       @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
-  generatedBy  User              @relation("ReportGenerator", fields: [generatedById], references: [id])
-  approvedBy   User?             @relation("ReportApprover", fields: [approvedById], references: [id])
-  supersededBy AfterActionReport? @relation("ReportSupersedes_Fwd", fields: [supersededById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  supersedes   AfterActionReport? @relation("ReportSupersedes_Fwd")
-
-  @@index([crisisEventId, status])
-  @@unique([crisisEventId, version])
-}
-
 // FR-09/11: Transactional outbox for durable side effects
 model OutboxJob {
   id              String         @id @default(auto()) @map("_id") @db.ObjectId
@@ -1404,4 +1407,41 @@ model OutboxJob {
   @@index([state, availableAt])
   @@index([dedupeKey])
   @@index([jobType, state])
+}
+
+// ── Trust Tier System: Vouching ────────────────────────────────────────────
+// An approved responder (Tier 2+) can vouch for a volunteer, fast-tracking
+// them to Trainee (Tier 1) without needing 30 points. One vouch per volunteer
+// is enough — it means "I know this person, they're reliable."
+model Vouch {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  vouchedById     String   @db.ObjectId
+  vouchedForId    String   @db.ObjectId
+  reason          String
+  crisisEventId   String?  @db.ObjectId  // optional: vouching in context of a crisis
+  createdAt       DateTime @default(now())
+
+  vouchedBy     User @relation("VouchGiven", fields: [vouchedById], references: [id], onDelete: Cascade)
+  vouchedFor    User @relation("VouchReceived", fields: [vouchedForId], references: [id], onDelete: Cascade)
+
+  @@unique([vouchedForId])  // one vouch per volunteer is enough
+  @@index([vouchedById])
+}
+
+// ── Crisis Chat: async message board scoped to a crisis event ───────────────
+model CrisisMessage {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId   String   @db.ObjectId
+  senderId        String   @db.ObjectId
+  content         String
+  isPinned        Boolean  @default(false)
+  isDeleted       Boolean  @default(false)
+  deletedById     String?  @db.ObjectId
+  deletedAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  sender          User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([crisisEventId, createdAt])
+  @@index([senderId])
 }

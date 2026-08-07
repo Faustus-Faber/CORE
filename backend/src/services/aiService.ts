@@ -55,6 +55,8 @@ type GenerateOptions = {
   maxTokens?: number;
   temperature?: number;
   reasoning?: "none" | "default";
+  /** Per-call timeout in ms. Defaults to 15s for user-facing requests. Seed/background jobs pass a longer value. */
+  timeoutMs?: number;
 };
 
 function sleep(ms: number) {
@@ -86,7 +88,7 @@ async function callGroq(
       max_tokens: options.maxTokens,
       thinking: { type: "disabled" }
     }),
-    signal: AbortSignal.timeout(env.aiRequestTimeoutMs)
+    signal: AbortSignal.timeout(options.timeoutMs)
   });
 
   if (response.status === 429 && attempt < MAX_429_RETRIES) {
@@ -140,17 +142,18 @@ async function callGroq(
   return stripThinkingTags(raw);
 }
 
-/** §15.1: AI timeout wrapper — enforces a 30-second ceiling on all generateText calls. */
-const AI_TIMEOUT_MS = 30_000;
+/** §15.1: AI timeout wrapper — default 30s for user-facing calls. Seed scripts pass a longer timeout. */
+const DEFAULT_AI_TIMEOUT_MS = 30_000;
 
 export async function generateText(prompt: string, options: GenerateOptions = {}): Promise<string> {
   const resolved: Required<GenerateOptions> = {
     maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
     temperature: options.temperature ?? 0.7,
-    reasoning: options.reasoning ?? "none"
+    reasoning: options.reasoning ?? "none",
+    timeoutMs: options.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS
   };
 
-  // §15.1: Wrap the call with a 30-second timeout. If the AI provider does not
+  // §15.1: Wrap the call with a timeout. If the AI provider does not
   // respond within the ceiling, record a latency violation and fail fast so
   // the caller can fall back to deterministic logic.
   let timeoutId: NodeJS.Timeout | undefined;
@@ -159,8 +162,8 @@ export async function generateText(prompt: string, options: GenerateOptions = {}
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       metrics.recordLatencyViolation("ai:generateText");
-      reject(new Error("AI request timed out after 30 seconds (§15.1 latency ceiling)"));
-    }, AI_TIMEOUT_MS);
+      reject(new Error(`AI request timed out after ${resolved.timeoutMs / 1000} seconds (§15.1 latency ceiling)`));
+    }, resolved.timeoutMs);
   });
 
   try {

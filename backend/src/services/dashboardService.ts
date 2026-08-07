@@ -888,9 +888,9 @@ export async function generateSitRep(
 }
 
 /**
- * Fetch AI-generated safety advisories. This calls the AI model synchronously
- * and may take several seconds. The frontend should call this separately from
- * the SitRep so the main blueprint loads instantly.
+ * Fetch AI-generated safety advisories. Returns cached advisories instantly
+ * if available. If the cache is cold, returns defaults immediately and
+ * triggers async generation so the next request has fresh AI advisories.
  */
 export async function getAiAdvisories(
   lat?: number,
@@ -909,36 +909,40 @@ export async function getAiAdvisories(
     }
   }
 
-  let events = await prisma.crisisEvent.findMany({
-    where: { status: { in: ACTIVE_STATUSES } },
-    orderBy: [{ severityLevel: "desc" }, { createdAt: "desc" }],
-    take: 50
-  });
+  // Cache is cold or stale — return defaults immediately and trigger
+  // async generation so the next request has fresh AI advisories.
+  // This prevents the HTTP response from blocking on the AI provider.
+  void (async () => {
+    try {
+      let events = await prisma.crisisEvent.findMany({
+        where: { status: { in: ACTIVE_STATUSES } },
+        orderBy: [{ severityLevel: "desc" }, { createdAt: "desc" }],
+        take: 50
+      });
 
-  if (lat && lng && radiusKm) {
-    events = filterByRadius(events, lat, lng, radiusKm);
-  }
+      if (lat && lng && radiusKm) {
+        events = filterByRadius(events, lat, lng, radiusKm);
+      }
 
-  const rawResources = await prisma.resource.findMany({
-    where: { status: { in: ["Available", "Low Stock"] } },
-    select: RESOURCE_SELECT,
-    take: 200
-  });
+      const rawResources = await prisma.resource.findMany({
+        where: { status: { in: ["Available", "Low Stock"] } },
+        select: RESOURCE_SELECT,
+        take: 200
+      });
 
-  const nearbyResources: ResourceSummary[] = lat && lng
-    ? attachDistances(rawResources, lat, lng, radiusKm ?? DEFAULT_NEARBY_RADIUS_KM)
-    : rawResources;
+      const nearbyResources: ResourceSummary[] = lat && lng
+        ? attachDistances(rawResources, lat, lng, radiusKm ?? DEFAULT_NEARBY_RADIUS_KM)
+        : rawResources;
 
-  try {
-    const aiAdvisories = await generateAiAdvisories(events, nearbyResources);
-    if (aiAdvisories.length > 0) {
-      advisoryCache.set("latest", aiAdvisories);
-      advisoryCacheTime.set("latest", Date.now().toString());
-      return { advisories: aiAdvisories, source: "ai" };
+      const aiAdvisories = await generateAiAdvisories(events, nearbyResources);
+      if (aiAdvisories.length > 0) {
+        advisoryCache.set("latest", aiAdvisories);
+        advisoryCacheTime.set("latest", Date.now().toString());
+      }
+    } catch {
+      /* keep defaults — next request will retry */
     }
-  } catch {
-    /* fall through to default */
-  }
+  })();
 
   return { advisories: DEFAULT_ADVISORIES, source: "default" };
 }

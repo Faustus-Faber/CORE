@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { env } from "../config/env.js";
 
 /**
  * CSRF protection using the double-submit cookie pattern.
@@ -54,6 +55,13 @@ export function csrfProtection(request: Request, response: Response, next: NextF
 
   // Skip CSRF check for initial unauthenticated login / registration endpoints
   if (request.path.includes("/auth/login") || request.path.includes("/auth/register") || request.path.includes("/auth/forgot-password") || request.path.includes("/auth/reset-password")) {
+    return next();
+  }
+
+  // In production cross-site deployments, CORS origin validation verifies trusted domains.
+  // Allow state-changing requests originating from trusted CORS frontend origins.
+  const originHeader = request.headers.origin;
+  if (originHeader && (/^https?:\/\/[a-zA-Z0-9-]+\.onrender\.com$/.test(originHeader) || env.corsOrigins.includes(originHeader))) {
     return next();
   }
 

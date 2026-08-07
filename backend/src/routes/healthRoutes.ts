@@ -19,6 +19,14 @@ export const healthRoutes = Router();
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
 
+healthRoutes.get("/", (_request, response) => {
+  return response.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
 /**
  * Liveness probe — the process is running.
  * Does NOT check dependencies. Returns 200 as long as Express can respond.

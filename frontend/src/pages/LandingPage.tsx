@@ -1,4 +1,5 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 const features = [
   {
@@ -20,6 +21,12 @@ const features = [
 ];
 
 export function LandingPage() {
+  const { user } = useAuth();
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return (
     <div className="space-y-10">
       <section className="rounded-2xl bg-white/80 p-5 shadow-panel ring-1 ring-slate-200 sm:p-8">

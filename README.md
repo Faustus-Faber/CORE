@@ -1,6 +1,6 @@
 # CORE — Community Operations & Relief Engine
 
-CORE is an enterprise-grade crisis management, emergency reporting, and disaster relief coordination platform designed to empower citizens, field responders, and crisis commanders with real-time operational intelligence.
+CORE (Community Operations & Relief Engine) is a production-grade crisis management, emergency intake, volunteer mobilization, and disaster relief governance platform. Designed for high-stakes emergency environments, CORE connects citizens, field responders, crisis commanders, and NGO auditors into a unified operational ecosystem.
 
 **Live Application:** [https://core-frontend-jx9h.onrender.com/](https://core-frontend-jx9h.onrender.com/)
 
@@ -14,168 +14,136 @@ CORE is an enterprise-grade crisis management, emergency reporting, and disaster
 
 ---
 
-## Table of Contents
+## Executive Summary
 
-- [Executive Overview](#executive-overview)
-- [Role-Based Capability Matrix](#role-based-capability-matrix)
-  - [Public & Citizen Users](#1-public--citizen-users)
-  - [Field Responders & Volunteers](#2-field-responders--volunteers)
-  - [Crisis Operations Commanders & Admins](#3-crisis-operations-commanders--admins)
-- [Platform Architecture](#platform-architecture)
-- [Emergency AI Copilot & Automated Dispatch](#emergency-ai-copilot--automated-dispatch)
-- [After-Action Reports & NGO Audit Engine](#after-action-reports--ngo-audit-engine)
-- [Technology Stack](#technology-stack)
-- [Repository Layout](#repository-layout)
-- [Complete Route Mapping](#complete-route-mapping)
-- [API Architecture & Middleware](#api-architecture--middleware)
-- [Local Setup & Development Guide](#local-setup--development-guide)
-- [Environment Variables Reference](#environment-variables-reference)
-- [Database Seeding & Demo Accounts](#database-seeding--demo-accounts)
-- [Quality Gates & Testing](#quality-gates--testing)
-- [Deployment Strategy](#deployment-strategy)
-- [Security & Governance Compliance](#security--governance-compliance)
+During critical disaster scenarios—such as monsoons, chemical fires, building collapses, or flash floods—information fragmentation delays lifesaving action. CORE solves this by providing:
+
+1. **Intelligent Citizen Emergency Intake**: Multi-step reporting with auto-geolocation, AI duplicate detection, voice-to-text transcription (Groq Whisper), OCR document extraction, and offline draft synchronization (IndexedDB).
+2. **Geospatial GIS Command Maps**: Interactive Leaflet maps featuring live incident clusters, emergency shelters, supply drop-off locations, and real-time river flood risk telemetry (FFWC integration).
+3. **Emergency AI Copilot & Automated Dispatch**: Tactical AI engine powered by DeepSeek/OpenAI that formulates response plans, creates action drafts with Markdown rationale, and auto-assigns deployment squads (`Active Field Responders Squad`).
+4. **Resource Supply Marketplace & Stock Ledgers**: Supply pledge tracking, reservation workflows, fulfillment verification, and stock ledger balance enforcement.
+5. **Secure Documentation & OCR Vaults**: Crisis-linked folder archives, OCR text extraction (OCR.space & Gemini Vision), and tokenized guest access with optional password locks.
+6. **Immutable Audit & Executive NGO PDF Engine**: Cryptographically secured After-Action Reports (SHA-256 checksums) and 1-click executive multi-page PDF generation via PDFKit with direct streaming delivery.
 
 ---
 
-## Executive Overview
+## Comprehensive Role-Based Capability Matrix
 
-Disaster response requires seamless synchronization between ground eyewitnesses, volunteer dispatch teams, emergency coordinators, and donor agencies. CORE unifies these streams into a single operational picture featuring:
+CORE enforces strict Role-Based Access Control (RBAC) across three distinct user roles:
 
-1. **AI-Assisted Emergency Intake**: Citizen incident filing with automated location extraction, duplicate detection, credibility scoring, and offline submission queues.
-2. **Interactive GIS Command Maps**: Leaflet-based geospatial maps with active incident clusters, emergency shelters, supply offers, and live FFWC flood risk telemetry.
-3. **Emergency AI Copilot Intelligence**: DeepSeek/OpenAI-powered tactical copilot capable of drafting dispatch orders, assigning field responder squads (`Active Field Responders Squad`), and rendering markdown rationale.
-4. **Resilience & Resource Sharing**: Resource pledge marketplace tracking emergency supply allocations, delivery statuses, and stock ledgers.
-5. **Secure Documentation & OCR**: Crisis-linked document vaults, OCR text extraction, and token-based guest sharing with password controls.
-6. **Immutable Audit & NGO PDF Generation**: Cryptographically verified After-Action Reports (SHA-256 checksums) and 1-click executive PDF report generation via PDFKit.
+```text
+               +-------------------------------------------------------+
+               |                  PUBLIC / CITIZEN                     |
+               | Emergency Filing, GIS Maps, Dashboard, Marketplace    |
+               +---------------------------+---------------------------+
+                                           |
+                                           v
+               +-------------------------------------------------------+
+               |              FIELD RESPONDER / VOLUNTEER              |
+               | Shift Timers, Mission Proof-of-Work, Live Crisis Chat |
+               +---------------------------+---------------------------+
+                                           |
+                                           v
+               +-------------------------------------------------------+
+               |         CRISIS OPERATIONS COMMANDER / ADMIN           |
+               | AI Copilot, Triage, Verification Queue, NGO Audits    |
+               +-------------------------------------------------------+
+```
 
----
+### 1. Public & Citizen User Capabilities
 
-## Role-Based Capability Matrix
-
-CORE enforces fine-grained Role-Based Access Control (RBAC) across three distinct user personas:
-
-### 1. Public & Citizen Users
-
-Citizens have immediate access to public awareness, emergency filing, resource browsing, and evidence verification:
-
-| Capability | Access Path | Description |
+| Feature | Access Route | Functional Description |
 | --- | --- | --- |
-| **Public Landing Hub** | `/` | Live crisis ticker, emergency metrics, quick report filing trigger, and system trust overview. |
-| **Emergency Report Filing** | `/report-incident` | Multi-step incident wizard with auto-geolocation, image/audio attachments, AI OCR scanning, duplicate detection, and offline queueing (IndexedDB). |
-| **Live Crisis Dashboard** | `/dashboard` | Real-time crisis feed, severity filter pills, location markers, and situation report summaries. |
-| **Incident Detail Telemetry** | `/dashboard/incidents/:id` | Detailed incident briefing, timeline updates, linked community reports, resource needs, and responder activity logs. |
-| **GIS Crisis & Risk Map** | `/map` | Leaflet GIS interactive map featuring clustered incident markers, shelter locations, resource drop-offs, and live river flood level overlays. |
+| **Public Landing Hub** | `/` | Real-time crisis ticker, emergency metrics, quick report filing trigger, and system trust overview. |
+| **Authentication System** | `/login`, `/signup`, `/forgot-password`, `/reset-password` | JWT-based auth stored in HTTP-Only cookies with double-submit CSRF cookie protection and password hashing via bcrypt. |
+| **Live Crisis Command Dashboard** | `/dashboard` | Real-time crisis feed, severity filter pills (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), map previews, and situation report summaries. |
+| **Incident Telemetry Detail** | `/dashboard/incidents/:id` | Full incident telemetry, live maps, timeline updates, linked community reports, resource needs, and responder activity logs. |
+| **Emergency Incident Report Wizard** | `/report-incident` | Multi-step reporting wizard with auto-geolocation, image/audio attachments, AI OCR scanning, duplicate detection, and offline IndexedDB queueing. |
 | **Community Reports Explorer** | `/reports/explore` & `/reports/:id` | Search and explore citizen reports, upvote corroboration claims, inspect verification flags, and view preliminary credibility scores. |
-| **Visual Evidence Gallery** | `/gallery` | Inspect verified field photographs, OCR documentation scans, evidence trust tiers, and eyewitness statements. |
-| **Resource Marketplace** | `/browse-resources` | Search emergency supply offers (food, water, medicine, boats, generators, shelters) and request allocations. |
-| **Pledge Supplies** | `/resources/add` & `/resources/my` | Offer emergency resources to relief teams, track reservation decisions, and manage fulfillment history. |
+| **Leaflet GIS Command Map** | `/map` | Clustered incident markers, emergency shelters, supply drop-offs, and live FFWC river flood level risk layers. |
+| **Visual Evidence Gallery** | `/gallery` | Verified damage evidence, OCR document scans, trust tier badges, eyewitness statements, comments, and likes. |
+| **Resource Supply Marketplace** | `/browse-resources` | Search emergency supply offers (food, water, medicine, boats, generators, shelters) and request allocations. |
+| **Pledge Emergency Supplies** | `/resources/add` & `/resources/my` | Offer emergency resources to relief teams, track reservation decisions, and manage fulfillment history. |
 | **Volunteer Directory** | `/volunteers` & `/volunteers/:id` | Discover active responders, view skill tags, verified badges, community vouches, and emergency ratings. |
-| **Community Leaderboard** | `/leaderboard` | View top-ranked field responders, verified mission hours, community points, and achievement badges. |
-| **Notification Center** | `/notifications` & `/preferences` | Receive real-time inbox alerts, Web Push notifications, and set severity dispatch thresholds. |
-| **Guest Document Access** | `/shared/:token` | Secure guest view for shared crisis document folders with optional password protection. |
+| **Community Leaderboard** | `/leaderboard` | Top responder ranks, mission points, verified service hours, and achievement badges. |
+| **Notification Center** | `/notifications` & `/preferences` | Real-time inbox alerts, Web Push notifications, SMS/Email preferences, and severity threshold controls. |
+| **User Profile & Trust Progress** | `/profile` | Manage personal details, skill tags, responder opt-in status, vouch count, account settings, and trust tier progress. |
+| **Shared Vault Guest View** | `/shared/:token` | Secure guest access to shared documentation folders using tokenized links with optional password protection. |
 
 ---
 
-### 2. Field Responders & Volunteers
+### 2. Field Responder & Volunteer Capabilities
 
-*Volunteers inherit all Public & Citizen capabilities plus specialized operational features:*
+*Volunteers inherit all Citizen capabilities plus dedicated operational field tools:*
 
-| Capability | Access Path | Description |
+| Feature | Access Route | Functional Description |
 | --- | --- | --- |
-| **Field Task & Shift Console** | `/tasks` | Dedicated volunteer shift manager featuring deployment dispatch alerts, mission check-in/check-out shift timers, and supervisor sign-offs. |
-| **Mission Proof-of-Work** | `/tasks` | Upload field photos, work notes, and verified service hours to accumulate volunteer leaderboard points and badges. |
-| **Squad Dispatch Opt-In** | `/profile` | Opt into the **Active Field Responders Squad** for automated AI copilot assignment during emergency dispatches. |
-| **Crisis Chat Access** | `/operations/:crisisId` | Join live scoped WebSocket incident chat rooms, listen to field voice memos, view pinned announcements, and share attachments. |
+| **Field Shift & Task Console** | `/tasks` | Dedicated volunteer shift manager featuring deployment dispatch alerts, mission check-in/check-out shift timers, and supervisor sign-offs. |
+| **Proof-of-Work Uploader** | `/tasks` | Upload field photographs, work notes, and verified service hours to accumulate volunteer leaderboard points and badges. |
+| **Squad Dispatch Opt-In** | `/profile` | Opt into the **Active Field Responders Squad** for automated AI copilot emergency dispatch during incident escalations. |
+| **Live Incident Chat** | `/operations/:crisisId` | Join scoped incident WebSocket chat rooms, stream voice memos, view pinned announcements, and share field media. |
 
 ---
 
-### 3. Crisis Operations Commanders & Admins
+### 3. Crisis Operations Commander & Admin Capabilities
 
 *Commanders inherit all lower-tier capabilities plus full administrative, tactical, and audit controls:*
 
-| Capability | Access Path | Description |
+| Feature | Access Route | Functional Description |
 | --- | --- | --- |
-| **Crisis Operations Workspace** | `/operations` & `/operations/:crisisId` | Central command console for incident triage, severity escalation, and lifecycle state management (`REPORTED` → `UNDER_INVESTIGATION` → `RESPONSE_IN_PROGRESS` → `CONTAINED` → `RESOLVED` → `CLOSED`). |
-| **Emergency AI Copilot** | `/operations` | Interactive AI assistant powered by DeepSeek/OpenAI. Provides tactical reasoning, action draft generation, dispatch orders, and volunteer squad auto-assignment. |
-| **Action Drafts Console** | `/operations` | Review AI-generated action drafts, expand interactive execution logs, review formatted Markdown rationale, and execute actions in 1 click. |
+| **Crisis Operations Workspace** | `/operations` & `/operations/:crisisId` | Unified command console for incident triage, severity escalation, and lifecycle state management (`REPORTED` → `UNDER_INVESTIGATION` → `RESPONSE_IN_PROGRESS` → `CONTAINED` → `RESOLVED` → `CLOSED`). |
+| **Emergency AI Copilot Intelligence** | `/operations` | Interactive AI assistant powered by DeepSeek/OpenAI. Formulates real-time response recommendations, drafts dispatch orders, and auto-assigns deployment squads (`Active Field Responders Squad`). |
+| **Action Drafts Console** | `/operations` | Review AI-generated action drafts, expand collapsible execution logs, inspect ReactMarkdown reasoning, and execute actions with 1 click. |
 | **Live Command Incident Chat** | `/operations/:crisisId` | Scoped real-time communication channel per crisis featuring voice message playback, file sharing, and commander announcement pinning. |
-| **Verification Queue** | `/verification-queue` | Moderate unpublished citizen reports, review duplicate detection warnings, analyze GPS proximity clusters, and publish or reject reports. |
+| **Verification Queue Moderation** | `/verification-queue` | Inspect unpublished citizen reports, evaluate duplicate detection warnings, analyze GPS proximity clusters, credibility scores, and publish or reject reports. |
 | **Strategic Response Planner** | `/crises/:crisisId/response-plan` | Define operational milestones, deploy resource packages, assign volunteer squads, and plot supply distribution routes. |
-| **After-Action Reports** | `/after-action-reports` & `/:crisisId` | Access concluded incidents (`CONTAINED`, `RESOLVED`, `CLOSED`), generate 1-click After-Action snapshots locked with SHA-256 checksums, and publish audit versions. |
-| **NGO PDF Executive Report Engine** | `/after-action-reports` | 1-click executive PDF report compilation using PDFKit, streaming PDF documents directly with timeline logs, resource ledgers, and OCR appendices. |
-| **System Administration** | `/admin` | Manage user role elevations (User → Volunteer → Admin), review system health metrics, monitor latency SLOs, and inspect audit logs. |
+| **After-Action Reports Console** | `/after-action-reports` & `/:crisisId` | Select any crisis incident, compile 1-click After-Action snapshots locked with SHA-256 cryptographic checksums, and publish official audit versions. |
+| **NGO PDF Executive Report Engine** | `/after-action-reports` | 1-click executive PDF report compilation using PDFKit, streaming PDF documents directly (`Content-Type: application/pdf`) with timeline logs, resource ledgers, and OCR appendices. |
+| **System Administration Panel** | `/admin` | Manage user role elevations (User → Volunteer → Admin), manage user bans, monitor latency SLOs, and inspect audit logs. |
 
 ---
 
-## Platform Architecture
+## Technical Architecture & Security Model
 
 ```text
 +-----------------------------------------------------------------------------------+
 |                                 CLIENT LAYER                                      |
 |                                                                                   |
-|   React 19 + TypeScript + Vite 6 + Tailwind CSS + Leaflet GIS + ReactMarkdown    |
-|   Role-Based Routing: Public User | Field Responder | Command Admin               |
+|   React 19 + TypeScript 5.8 + Vite 6 + Tailwind CSS 3.4 + Leaflet GIS            |
+|   React Markdown + Remark GFM | Theme SVG Icons (Strict No-Emoji Standard)        |
 +------------------------------------------+----------------------------------------+
                                            |
-                                           | HTTPS REST API + WebSockets
-                                           | Auth: HTTP-Only Cookie JWT + Double-Submit CSRF
+                                           | HTTPS REST API + WebSockets / SSE
+                                           | Credentials: HTTP-Only Cookie JWT
                                            v
 +-----------------------------------------------------------------------------------+
 |                                 BACKEND API LAYER                                 |
 |                                                                                   |
 |   Express 4 Server + TypeScript + Node.js 20 LTS                                  |
-|   Middleware Suite: Security Headers | Rate Limiter | CSRF | Idempotency | SLO    |
+|   Middleware: Security Headers | Rate Limiter | CSRF | Idempotency | SLO Guard    |
 +-------------------+----------------------+-------------------+--------------------+
                     |                      |                   |
-                    | Prisma ORM           | Real-time Streams | AI & PDF Engines
+                    | Prisma Client ORM    | Real-time Engine  | AI & PDF Services
                     v                      v                   v
 +-------------------+---+          +-------+-------+   +-------+--------------------+
 | MongoDB Atlas Database|          | WebSockets /  |   | Groq / DeepSeek / OpenAI   |
 | Incident Telemetry    |          | SSE Server    |   | OCR.space + Gemini Vision  |
-| Resource Ledgers      |          | Live Chat     |   | PDFKit Streaming Engine    |
+| Stock Ledgers         |          | Crisis Chat   |   | PDFKit Streaming Engine    |
 +-----------------------+          +---------------+   +----------------------------+
 ```
 
----
+### Security & Governance Principles
 
-## Emergency AI Copilot & Automated Dispatch
-
-CORE features an Emergency AI Copilot integrated directly into the **Crisis Operations Workspace** (`/operations`):
-
-1. **Tactical Action Drafting**: AI continuously evaluates crisis telemetry, incident reports, resource deficits, and field updates to propose structured action drafts.
-2. **Active Responder Squad Assignment**: When dispatching field teams, the Copilot automatically assigns the **Active Field Responders Squad** as default volunteer dispatches.
-3. **Interactive Draft Console**: Commanders can view draft reasoning rendered in **ReactMarkdown**, toggle collapsible execution logs, adjust custom payloads, and execute actions with 1 click.
-4. **Audit Logging**: Every executed AI action draft is logged into an immutable audit trail (`logAuditEvent`).
+1. **Authentication & Authorization**: Signed JWT tokens delivered via HTTP-Only, SameSite cookies. Role-Based Access Control (RBAC) enforced via `requireAuth` and `requireRole` middleware.
+2. **Double-Submit CSRF Protection**: Synchronizer token protection headers on all state-modifying POST/PUT/PATCH/DELETE endpoints.
+3. **Idempotency Safeguards**: Header validation (`Idempotency-Key`) preventing duplicate action draft execution, report creation, or dispatch orders.
+4. **Latency SLO Enforcement**: Request latency guard (`latencyGuard`) logging and alerting on p95 performance violations.
+5. **Rate Limiting & Security Headers**: Tiered IP rate limiting (`authRateLimiter`, `apiRateLimiter`) and security headers modeled after Helmet patterns.
+6. **No-Emoji UI Standard**: All user interface elements strictly utilize vector-rendered inline `<svg>` theme icons for a clean, professional aesthetic.
 
 ---
 
-## After-Action Reports & NGO Audit Engine
-
-Post-disaster auditability is built directly into the platform under `/after-action-reports`:
-
-- **Strict Incident Governance**: Crisis dropdown selector allows switching between all incidents, while restricting executive NGO PDF generation to concluded incidents (`RESOLVED` and `CLOSED`).
-- **1-Click Published Snapshots**: Clicking **`Generate After-Action Report`** compiles an immutable JSON snapshot of all crisis events, responder logs, resource ledgers, and evidence posts, transitioning the status to `PUBLISHED` with an official SHA-256 cryptographic checksum.
-- **PDFKit Streaming Engine**: Clicking **`Generate NGO PDF Report`** dynamically compiles and streams an executive multi-page PDF containing executive summaries, structured timelines, resource allocation history, and OCR documentation appendices.
-
----
-
-## Technology Stack
-
-| Layer | Technologies & Libraries |
-| --- | --- |
-| **Frontend Core** | React 19, TypeScript 5.8, Vite 6, React Router 7, Tailwind CSS 3.4, React Markdown, Remark GFM |
-| **GIS & Mapping** | Leaflet, React-Leaflet, FFWC Water Level Layer Integration |
-| **Backend API** | Node.js 20 LTS, Express 4, TypeScript, Prisma ORM 6 |
-| **Database** | MongoDB Atlas |
-| **Authentication & Security** | JWT (HTTP-Only Cookies), bcrypt password hashing, Double-Submit CSRF protection, Idempotency-Key validation, Rate Limiting, Security Headers (Helmet pattern) |
-| **AI & Vision** | Groq Chat Completions (Qwen/Llama), Groq Whisper Voice Transcription, OCR.space API, Google Gemini Vision |
-| **Reporting & Export** | PDFKit PDF streaming engine |
-| **Real-Time Communication** | Server-Sent Events (SSE) & WebSocket crisis chat |
-| **Testing & Quality** | Vitest test suite, TypeScript strict type checks |
-
----
-
-## Repository Layout
+## Repository Structure
 
 ```text
 CORE/
@@ -184,22 +152,22 @@ CORE/
 │   │   ├── schema.prisma         # MongoDB schema, models, enums, indexes
 │   │   └── seed.ts               # Demo dataset seed script
 │   ├── src/
-│   │   ├── config/               # Environment loading & system thresholds
-│   │   ├── controllers/          # Express request controllers
+│   │   ├── config/               # System thresholds & env configuration
+│   │   ├── controllers/          # Express request handlers
 │   │   ├── lib/                  # Database connections & stream helpers
 │   │   ├── middleware/           # Auth, RBAC, CSRF, Idempotency, SLO, Rate Limit
-│   │   ├── routes/               # API route definitions
+│   │   ├── routes/               # Express router modules
 │   │   ├── services/             # Core business logic, Copilot, NGO Reports, AAR
-│   │   └── tests/                # Vitest backend integration tests
+│   │   └── tests/                # Vitest backend integration test suite
 │   └── uploads/                  # Local runtime storage for report PDFs & evidence
 ├── frontend/
 │   ├── public/                   # Static assets, web manifest, service worker
 │   └── src/
 │       ├── components/           # UI components, CopilotPanel, ActionDraftsPanel
-│       ├── contexts/             # Authentication & session context
+│       ├── contexts/             # Session & auth context
 │       ├── pages/                # Route screens (Dashboard, Operations, Reports, etc.)
 │       ├── services/             # API client functions & payload helpers
-│       ├── types/                # Domain TypeScript definitions
+│       ├── types/                # TypeScript domain definitions
 │       └── utils/                # Utility helpers & offline storage wrappers
 └── README.md
 ```
@@ -252,36 +220,14 @@ CORE/
 
 ---
 
-## API Architecture & Middleware
-
-All REST API endpoints are mounted under `/api`.
-
-| Endpoint Group | Key Operations |
-| --- | --- |
-| `/api/auth` | Login, Register, Logout, Current User, Password Reset |
-| `/api/profile` | Profile Updates, Dispatch Opt-in, Password Changes |
-| `/api/crises` | Crisis Telemetry, Status Escalation, Live Chat Stream, Updates |
-| `/api/reports` | Incident Filing, Verification Queue, Proximity Clustering |
-| `/api/copilot` | AI Recommendation Generation, Action Draft Execution |
-| `/api/after-action-reports` | AAR Snapshot Generation, Approval/Publishing, JSON Downloads |
-| `/api/ngo-reports` | NGO PDF Generation, Direct PDF Streaming (`Content-Type: application/pdf`) |
-| `/api/resources` | Supply Listings, Allocations, Reservations, History |
-| `/api/volunteers` | Directory Search, Skill Tagging, Rating Breakdown |
-| `/api/timesheet` | Volunteer Shift Logging, Hours Verification, Leaderboard Data |
-| `/api/evidence` | Evidence Uploads, Eyewitness Posts, Likes, Comments |
-| `/api/ocr` | OCR Scans, Text Extraction, Document Attachments |
-| `/api/health` | API Liveness & Readiness Endpoints |
-
----
-
-## Local Setup & Development Guide
+## Local Development & Setup Guide
 
 ### Prerequisites
 
 - **Node.js**: 20 LTS or higher
 - **npm**: 10+
 - **MongoDB**: Local MongoDB instance or MongoDB Atlas URI
-- **Groq API Key**: For AI report analysis & voice transcription
+- **Groq API Key**: For AI Copilot & Groq Whisper voice transcription
 
 ### 1. Clone & Install Dependencies
 
@@ -341,24 +287,7 @@ cd frontend
 npm run dev
 ```
 
-Application will be available at: `http://localhost:5173`
-
----
-
-## Environment Variables Reference
-
-### Backend (`backend/.env`)
-
-| Variable | Required | Description |
-| --- | --- | --- |
-| `DATABASE_URL` | Yes | MongoDB connection string for Prisma |
-| `JWT_SECRET` | Yes | Secret key for HTTP-Only authentication cookies |
-| `GROQ_API_KEY` | Yes | API key for AI copilot & Groq Whisper voice transcription |
-| `PORT` | No | Express port (default: `5000`) |
-| `CORS_ORIGIN` | No | Allowed CORS origin (default: `http://localhost:5173`) |
-| `OCR_SPACE_API_KEY` | Optional | Key for OCR text extraction |
-| `GEMINI_API_KEY` | Optional | Key for Google Gemini vision summaries |
-| `RESEND_API_KEY` | Optional | Key for dispatch alert emails |
+Application will be accessible at `http://localhost:5173`.
 
 ---
 
@@ -375,9 +304,9 @@ The seed script (`npm run seed`) populates a demo disaster dataset:
 
 ---
 
-## Quality Gates & Testing
+## Quality Gates & Verification
 
-To verify code quality and build stability across the codebase:
+To verify code quality, type safety, and build stability across the codebase:
 
 ```bash
 # Validate Backend Build & Tests
@@ -394,18 +323,8 @@ npm run build
 
 ## Deployment Strategy
 
-The production system is deployed on Render:
+The application is configured for production deployment on Render:
 
 - **Frontend Application**: Deployed as a static site running Vite build output.
 - **Backend Service**: Deployed as a Node.js web service running Node 20 LTS with Express and Prisma Client.
 - **Database**: Hosted on MongoDB Atlas.
-
----
-
-## Security & Governance Compliance
-
-- **Authentication**: Signed JWTs delivered in HTTP-Only, SameSite cookies.
-- **Double-Submit CSRF**: Synchronizer token protection headers on mutating state.
-- **Idempotency Safeguards**: Header checks (`Idempotency-Key`) preventing duplicate dispatch or report execution.
-- **Input Sanitation**: Zod schema validation on all incoming payload bodies.
-- **No-Emoji Standard**: All user interface elements utilize clean vector `<svg>` theme icons.

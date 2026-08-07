@@ -37,7 +37,7 @@ export function csrfProtection(request: Request, response: Response, next: NextF
     const newToken = randomBytes(32).toString("hex");
     response.cookie(CSRF_COOKIE_NAME, newToken, {
       httpOnly: false, // JavaScript must be able to read this
-      sameSite: "lax",
+      sameSite: isProduction ? "none" : "lax",
       secure: isProduction,
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
@@ -49,6 +49,11 @@ export function csrfProtection(request: Request, response: Response, next: NextF
 
   // Skip CSRF check for safe methods
   if (SAFE_METHODS.has(request.method)) {
+    return next();
+  }
+
+  // Skip CSRF check for initial unauthenticated login / registration endpoints
+  if (request.path.includes("/auth/login") || request.path.includes("/auth/register") || request.path.includes("/auth/forgot-password") || request.path.includes("/auth/reset-password")) {
     return next();
   }
 

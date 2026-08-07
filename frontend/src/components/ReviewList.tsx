@@ -122,6 +122,8 @@ export function ReviewList({ volunteerId, refreshKey = 0 }: Props) {
                                             src={review.reviewer.avatarUrl}
                                             alt={review.reviewer.fullName}
                                             className="h-8 w-8 rounded-full object-cover"
+                                            loading="lazy"
+                                            decoding="async"
                                         />
                                     ) : (
                                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-tide/10 text-sm font-semibold text-tide">

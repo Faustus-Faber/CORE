@@ -8,15 +8,17 @@ const prismaMock = vi.hoisted(() => ({
     findMany: vi.fn()
   },
   dispatchAlertLog: {
-    count: vi.fn(),
+    findFirst: vi.fn(),
+    groupBy: vi.fn(),
     create: vi.fn()
   }
 }));
 
 vi.mock("../config/env.js", () => ({
   env: {
-    resendApiKey: "re_test_key",
-    resendFromEmail: "CORE Dispatch <dispatch@core.local>",
+    brevoApiKey: "brevo_test_key",
+    brevoFromName: "CORE Dispatch",
+    brevoFromEmail: "dispatch@core.local",
     corsOrigins: ["http://localhost:5173"]
   }
 }));
@@ -62,7 +64,7 @@ describe("triggerDispatchAlertsForCrisis", () => {
 
   it("sends dispatch email to in-range opted-in volunteers and logs delivery", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      mockJsonResponse({ id: "resend-msg-1" })
+      mockJsonResponse({ messageId: "brevo-msg-1" })
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -83,20 +85,21 @@ describe("triggerDispatchAlertsForCrisis", () => {
         longitude: 90.4131
       }
     ]);
-    prismaMock.dispatchAlertLog.count.mockResolvedValue(0);
+    prismaMock.dispatchAlertLog.findFirst.mockResolvedValue(null);
+    prismaMock.dispatchAlertLog.groupBy.mockResolvedValue([]);
     prismaMock.dispatchAlertLog.create.mockResolvedValue({});
 
     await triggerDispatchAlertsForCrisis("507f1f77bcf86cd799439013");
 
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.resend.com/emails");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.brevo.com/v3/smtp/email");
     expect(prismaMock.dispatchAlertLog.create).toHaveBeenCalledWith({
       data: {
         userId: "507f1f77bcf86cd799439012",
         crisisEventId: "507f1f77bcf86cd799439013",
         emailMasked: "vo****@core.local",
         status: "SENT",
-        providerMessageId: "resend-msg-1",
+        providerMessageId: "brevo-msg-1",
         errorMessage: null
       }
     });

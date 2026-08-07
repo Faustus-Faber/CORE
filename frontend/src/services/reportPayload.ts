@@ -31,5 +31,7 @@ export function buildEmergencyReportFormData(
     );
   }
 
+  formData.append("aiConsent", String(payload.aiConsent ?? false));
+
   return formData;
 }

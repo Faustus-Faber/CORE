@@ -1,6 +1,14 @@
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.js";
 
+// P2: Environment guard — refuse to run in production unless forced
+const nodeEnv = process.env.NODE_ENV ?? "development";
+const forceDestructive = process.env.FORCE_DESTRUCTIVE === "true";
+if (nodeEnv === "production" && !forceDestructive) {
+  console.error(`Refusing to run in production (NODE_ENV=${nodeEnv}). Set FORCE_DESTRUCTIVE=true to override.`);
+  process.exit(1);
+}
+
 const OPEN1 = String.fromCharCode(60, 116, 104, 105, 110, 107, 105, 110, 103, 62);
 const CLOSE1 = String.fromCharCode(60, 47, 116, 104, 105, 110, 107, 105, 110, 103, 62);
 const OPEN2 = String.fromCharCode(60, 116, 104, 105, 110, 107, 62);

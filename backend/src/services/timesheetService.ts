@@ -1,5 +1,7 @@
 import { BadgeType, TaskCategory, TaskStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { SafeError } from "../utils/SafeError.js";
+import { requiresTaskEvidence } from "./trustTierService.js";
 
 // ── Category multipliers ───────────────────────────────────────────────────
 const MULTIPLIERS: Record<TaskCategory, number> = {
@@ -31,6 +33,31 @@ export interface LogTaskInput {
 }
 
 export async function logTask(volunteerId: string, input: LogTaskInput) {
+  // Validate hours and date
+  if (!Number.isFinite(input.hoursSpent) || input.hoursSpent <= 0) {
+    throw new SafeError("Hours spent must be a positive number");
+  }
+  if (input.hoursSpent > 24) {
+    throw new SafeError("Hours spent cannot exceed 24 per task");
+  }
+  if (input.dateOfTask > new Date()) {
+    throw new SafeError("Task date cannot be in the future");
+  }
+  if (!Object.values(TaskCategory).includes(input.category)) {
+    throw new SafeError("Invalid task category");
+  }
+
+  // Tier 0 (Reporter) and Tier 1 (Trainee) must provide photo evidence for tasks.
+  // Tier 2 (Responder) and Tier 3 (Veteran) are trusted and don't need evidence.
+  const needsEvidence = await requiresTaskEvidence(volunteerId);
+  if (needsEvidence) {
+    if (!input.evidenceUrls || input.evidenceUrls.length === 0) {
+      throw new SafeError(
+        "Photo evidence is required for task submissions. Please upload at least one photo as evidence of your work."
+      );
+    }
+  }
+
   const task = await prisma.volunteerTask.create({
     data: {
       volunteerId,
@@ -96,54 +123,101 @@ export async function verifyTask(
   decision: "VERIFIED" | "REJECTED",
   rejectionReason?: string
 ) {
-  const task = await prisma.volunteerTask.findUniqueOrThrow({ where: { id: taskId } });
-
-  if (task.status !== TaskStatus.PENDING) {
-    throw new Error("Task has already been reviewed");
-  }
-
   let pointsAwarded = 0;
+  let volunteerId = "";
+  let taskTitle = "";
 
   if (decision === "VERIFIED") {
-    pointsAwarded = calcPoints(task.hoursSpent, task.category);
+    // Use an interactive transaction so the status re-check and update are atomic
+    const result = await prisma.$transaction(async (tx) => {
+      const task = await tx.volunteerTask.findUniqueOrThrow({ where: { id: taskId } });
 
-    // Update task
-    await prisma.volunteerTask.update({
-      where: { id: taskId },
-      data: {
-        status: TaskStatus.VERIFIED,
-        pointsAwarded,
-        verifiedById: adminId,
-        verifiedAt: new Date()
+      if (task.status !== TaskStatus.PENDING) {
+        throw new SafeError("Task has already been reviewed");
       }
+
+      pointsAwarded = calcPoints(task.hoursSpent, task.category);
+
+      const updated = await tx.volunteerTask.update({
+        where: { id: taskId },
+        data: {
+          status: TaskStatus.VERIFIED,
+          pointsAwarded,
+          verifiedById: adminId,
+          verifiedAt: new Date()
+        }
+      });
+
+      await tx.user.update({
+        where: { id: task.volunteerId },
+        data: {
+          totalPoints: { increment: pointsAwarded },
+          totalVerifiedHours: { increment: task.hoursSpent }
+        }
+      });
+
+      return { task, updated };
     });
 
-    // Atomically update volunteer totals using absolute values for MongoDB compatibility
-    const currUser = await prisma.user.findUnique({
-      where: { id: task.volunteerId },
-      select: { totalPoints: true, totalVerifiedHours: true }
-    });
-    
-    await prisma.user.update({
-      where: { id: task.volunteerId },
-      data: {
-        totalPoints: (currUser?.totalPoints || 0) + pointsAwarded,
-        totalVerifiedHours: (currUser?.totalVerifiedHours || 0) + task.hoursSpent
-      }
-    });
+    volunteerId = result.task.volunteerId;
+    taskTitle = result.task.title;
 
-    // Check and award badges
-    await checkAndAwardBadges(task.volunteerId);
+    // Check and award badges + promote trust tier outside the transaction (non-critical)
+    await checkAndAwardBadges(result.task.volunteerId);
+    try {
+      const { checkAndPromoteTrustTier } = await import("./trustTierService.js");
+      await checkAndPromoteTrustTier(result.task.volunteerId);
+    } catch (err) {
+      console.error("[verify-task] Trust tier promotion failed:", err);
+    }
+
+    // Notify the volunteer that their task was verified
+    await prisma.notification
+      .create({
+        data: {
+          userId: volunteerId,
+          title: `Task Verified: +${pointsAwarded} points`,
+          body: `Your task "${taskTitle}" was verified by an admin. You earned ${pointsAwarded} points and ${result.task.hoursSpent} verified hours.`,
+          type: "TASK_VERIFIED",
+        },
+      })
+      .catch(() => null);
   } else {
-    await prisma.volunteerTask.update({
-      where: { id: taskId },
-      data: {
-        status: TaskStatus.REJECTED,
-        verifiedById: adminId,
-        verifiedAt: new Date(),
-        rejectionReason: rejectionReason ?? null
+    // Reject path: also re-check atomically to prevent double-review
+    const result = await prisma.$transaction(async (tx) => {
+      const task = await tx.volunteerTask.findUniqueOrThrow({ where: { id: taskId } });
+
+      if (task.status !== TaskStatus.PENDING) {
+        throw new SafeError("Task has already been reviewed");
       }
+
+      const updated = await tx.volunteerTask.update({
+        where: { id: taskId },
+        data: {
+          status: TaskStatus.REJECTED,
+          verifiedById: adminId,
+          verifiedAt: new Date(),
+          rejectionReason: rejectionReason ?? null
+        }
+      });
+
+      return { task, updated };
     });
+
+    volunteerId = result.task.volunteerId;
+    taskTitle = result.task.title;
+
+    // Notify the volunteer that their task was rejected
+    await prisma.notification
+      .create({
+        data: {
+          userId: volunteerId,
+          title: "Task Rejected",
+          body: `Your task "${taskTitle}" was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ""}`,
+          type: "TASK_REJECTED",
+        },
+      })
+      .catch(() => null);
   }
 
   return { taskId, decision, pointsAwarded };
@@ -157,7 +231,7 @@ async function awardBadgeIfNew(userId: string, badgeType: BadgeType) {
     .catch(() => null); // unique constraint violation means already awarded
 }
 
-async function checkAndAwardBadges(volunteerId: string) {
+export async function checkAndAwardBadges(volunteerId: string) {
   const user = await prisma.user.findUnique({
     where: { id: volunteerId },
     select: {
@@ -228,104 +302,6 @@ async function checkAndAwardBadges(volunteerId: string) {
   }
 }
 
-// ── Public leaderboard ────────────────────────────────────────────────────
-export type LeaderboardPeriod = "all" | "month" | "week";
-
-export async function getLeaderboard(period: LeaderboardPeriod = "all", limit = 50) {
-  if (period === "all") {
-    // Query on the cached totalPoints field — very fast
-    const volunteers = await prisma.user.findMany({
-      where: { role: "VOLUNTEER", isBanned: false },
-      orderBy: { totalPoints: "desc" },
-      take: limit,
-      select: {
-        id: true,
-        fullName: true,
-        avatarUrl: true,
-        totalPoints: true,
-        totalVerifiedHours: true,
-        badges: { select: { badgeType: true, awardedAt: true } },
-        reviewsReceived: { select: { rating: true } }
-      }
-    });
-
-    return volunteers.map((v, idx) => ({
-      rank: idx + 1,
-      id: v.id,
-      fullName: v.fullName,
-      avatarUrl: v.avatarUrl,
-      totalPoints: v.totalPoints,
-      totalVerifiedHours: v.totalVerifiedHours,
-      badgeCount: v.badges.length,
-      badges: v.badges,
-      avgRating:
-        v.reviewsReceived.length > 0
-          ? Number(
-              (
-                v.reviewsReceived.reduce((s, r) => s + r.rating, 0) / v.reviewsReceived.length
-              ).toFixed(1)
-            )
-          : null,
-      reviewCount: v.reviewsReceived.length
-    }));
-  }
-
-  // For month/week — aggregate from VolunteerTask
-  const since =
-    period === "month"
-      ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-  const grouped = await prisma.volunteerTask.groupBy({
-    by: ["volunteerId"],
-    where: { status: TaskStatus.VERIFIED, verifiedAt: { gte: since } },
-    _sum: { pointsAwarded: true, hoursSpent: true },
-    orderBy: { _sum: { pointsAwarded: "desc" } },
-    take: limit
-  });
-
-  if (grouped.length === 0) return [];
-
-  const ids = grouped.map((g) => g.volunteerId);
-  const users = await prisma.user.findMany({
-    where: { id: { in: ids }, isBanned: false },
-    select: {
-      id: true,
-      fullName: true,
-      avatarUrl: true,
-      badges: { select: { badgeType: true, awardedAt: true } },
-      reviewsReceived: { select: { rating: true } }
-    }
-  });
-
-  const userMap = new Map(users.map((u) => [u.id, u]));
-
-  return grouped
-    .filter((g) => userMap.has(g.volunteerId))
-    .map((g, idx) => {
-      const u = userMap.get(g.volunteerId)!;
-      return {
-        rank: idx + 1,
-        id: u.id,
-        fullName: u.fullName,
-        avatarUrl: u.avatarUrl,
-        totalPoints: g._sum.pointsAwarded ?? 0,
-        totalVerifiedHours: g._sum.hoursSpent ?? 0,
-        badgeCount: u.badges.length,
-        badges: u.badges,
-        avgRating:
-          u.reviewsReceived.length > 0
-            ? Number(
-                (
-                  u.reviewsReceived.reduce((s, r) => s + r.rating, 0) / u.reviewsReceived.length
-                ).toFixed(1)
-              )
-            : null,
-        reviewCount: u.reviewsReceived.length
-      };
-    });
-}
-
 // ── Active / recent crises (for dropdown) ─────────────────────────────────
 export async function getActiveCrisesForDropdown() {
   return prisma.crisisEvent.findMany({
@@ -336,4 +312,62 @@ export async function getActiveCrisesForDropdown() {
     take: 50,
     select: { id: true, title: true, status: true, incidentType: true }
   });
+}
+
+// ── Community Impact Board (replaces competitive leaderboard) ──────────────
+export async function getLeaderboard(period: "all" | "month" | "week" = "all", limit = 50) {
+  const where = {
+    role: "VOLUNTEER" as const,
+    isBanned: false,
+    ...(period === "week"
+      ? { updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }
+      : period === "month"
+        ? { updatedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }
+        : {}),
+  };
+
+  const users = await prisma.user.findMany({
+    where,
+    orderBy: { totalPoints: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      fullName: true,
+      avatarUrl: true,
+      totalPoints: true,
+      totalVerifiedHours: true,
+      trustTier: true,
+      _count: { select: { badges: true } },
+    },
+  });
+
+  // Get review stats for each user
+  const userIds = users.map((u) => u.id);
+  const reviewStats = await prisma.review.groupBy({
+    by: ["volunteerId"],
+    where: { volunteerId: { in: userIds } },
+    _avg: { rating: true },
+    _count: { rating: true },
+  });
+
+  const reviewMap = new Map(reviewStats.map((r) => [r.volunteerId, r]));
+
+  return {
+    period,
+    entries: users.map((u, index) => {
+      const review = reviewMap.get(u.id);
+      return {
+        id: u.id,
+        rank: index + 1,
+        fullName: u.fullName,
+        avatarUrl: u.avatarUrl,
+        totalPoints: u.totalPoints,
+        totalVerifiedHours: u.totalVerifiedHours,
+        badgeCount: u._count.badges,
+        trustTier: u.trustTier,
+        avgRating: review?._avg.rating ?? null,
+        reviewCount: review?._count.rating ?? 0,
+      };
+    }),
+  };
 }

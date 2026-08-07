@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Autocomplete, GoogleMap, InfoWindow, Marker, MarkerClusterer, useLoadScript } from "@react-google-maps/api";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import { useNavigate } from "react-router-dom";
 
 import { getAllResources, getMapReports, type MapIncident, type ResourceSummary } from "../services/api";
+import { coloredIcon, SEVERITY_COLORS, RESOURCE_COLORS } from "./LeafletMap";
 
-const MAP_LIBRARIES = ["places"] as never[];
 const INCIDENT_TYPE_OPTIONS = [
   "FLOOD",
   "FIRE",
@@ -16,28 +17,54 @@ const INCIDENT_TYPE_OPTIONS = [
   "OTHER"
 ] as const;
 
+// ── Recenter helper ──────────────────────────────────────────────
+function Recenter({ center, zoom }: { center: [number, number]; zoom: number }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, zoom);
+  }, [center, zoom, map]);
+  return null;
+}
+
+// ── Custom Zoom Controls (Bottom Right) ─────────────────────────
+function CustomZoomControls() {
+  const map = useMap();
+  return (
+    <div className="absolute bottom-6 right-6 z-[1000] flex flex-col gap-1.5 shadow-md">
+      <button
+        type="button"
+        onClick={() => map.zoomIn()}
+        className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-base font-bold text-slate-700 backdrop-blur transition hover:bg-slate-100 hover:text-ink shadow-xs"
+        title="Zoom In"
+      >
+        +
+      </button>
+      <button
+        type="button"
+        onClick={() => map.zoomOut()}
+        className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-base font-bold text-slate-700 backdrop-blur transition hover:bg-slate-100 hover:text-ink shadow-xs"
+        title="Zoom Out"
+      >
+        −
+      </button>
+    </div>
+  );
+}
+
 export default function ResourceMap() {
   const navigate = useNavigate();
-  const { isLoaded } = useLoadScript({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: MAP_LIBRARIES
-  });
 
   const [resources, setResources] = useState<ResourceSummary[]>([]);
   const [incidents, setIncidents] = useState<MapIncident[]>([]);
-  const [selectedResource, setSelectedResource] = useState<ResourceSummary | null>(null);
-  const [selectedIncident, setSelectedIncident] = useState<MapIncident | null>(null);
   const [showIncidents, setShowIncidents] = useState(true);
   const [showResources, setShowResources] = useState(true);
-  const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null);
   const [severityFilter, setSeverityFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [resourceCategoryFilter, setResourceCategoryFilter] = useState("all");
-  const [controlsOpen, setControlsOpen] = useState(false);
-  const [center, setCenter] = useState({
-    lat: 23.685,
-    lng: 90.356
-  });
+  const [controlsOpen, setControlsOpen] = useState(true);
+  const [center, setCenter] = useState<[number, number]>([23.685, 90.356]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
 
   const resourceCategories = Array.from(new Set(resources.map((resource) => resource.category))).sort();
 
@@ -45,9 +72,9 @@ export default function ResourceMap() {
     const refreshMapData = async () => {
       try {
         const [nextResources, nextIncidents] = await Promise.all([getAllResources(), getMapReports()]);
-        setResources(nextResources);
+        setResources(Array.isArray(nextResources) ? nextResources : []);
         setIncidents(
-          nextIncidents.map((incident) => ({
+          (Array.isArray(nextIncidents) ? nextIncidents : []).map((incident) => ({
             ...incident,
             severity: incident.severity.toUpperCase()
           }))
@@ -72,10 +99,7 @@ export default function ResourceMap() {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setCenter({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
+        setCenter([position.coords.latitude, position.coords.longitude]);
       },
       (error) => {
         console.error("Location error:", error);
@@ -83,9 +107,23 @@ export default function ResourceMap() {
     );
   }, []);
 
-  if (!isLoaded) {
-    return <div>Loading Map...</div>;
-  }
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1`,
+      { headers: { "Accept-Language": "en" } }
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && data.length > 0) {
+          setCenter([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setSearching(false));
+  };
 
   const visibleResources = resources.filter((resource) => {
     const latitude = Number(resource.latitude);
@@ -121,274 +159,213 @@ export default function ResourceMap() {
     return true;
   });
 
-  const getIncidentIcon = (severity: string) => {
-    switch (severity) {
-      case "CRITICAL":
-        return "http://maps.google.com/mapfiles/ms/icons/red-dot.png";
-      case "HIGH":
-        return "http://maps.google.com/mapfiles/ms/icons/orange-dot.png";
-      case "MEDIUM":
-        return "http://maps.google.com/mapfiles/ms/icons/yellow-dot.png";
-      default:
-        return "http://maps.google.com/mapfiles/ms/icons/green-dot.png";
-    }
-  };
+  const getIncidentColor = (severity: string) => SEVERITY_COLORS[severity] ?? "#22c55e";
 
-  const getResourceIcon = (resource: ResourceSummary) => {
+  const getResourceColor = (resource: ResourceSummary) => {
     if (resource.status === "Depleted" || resource.status === "Unavailable") {
-      return "http://maps.google.com/mapfiles/ms/icons/grey-dot.png";
+      return "#94a3b8";
     }
-
-    if (resource.category === "Medical Supplies") {
-      return "http://maps.google.com/mapfiles/ms/icons/blue-dot.png";
-    }
-
-    if (resource.category === "Food & Water") {
-      return "http://maps.google.com/mapfiles/ms/icons/green-dot.png";
-    }
-
-    if (resource.category === "Shelter") {
-      return "http://maps.google.com/mapfiles/ms/icons/purple-dot.png";
-    }
-
-    return "http://maps.google.com/mapfiles/ms/icons/ltblue-dot.png";
+    return RESOURCE_COLORS[resource.category] ?? RESOURCE_COLORS.default;
   };
 
   return (
     <div className="relative h-full w-full">
-      <div className="pointer-events-none absolute inset-x-3 top-3 z-[50] space-y-2 sm:inset-x-auto sm:left-3 sm:flex sm:w-auto sm:items-start sm:gap-3 sm:space-y-0">
-        <div className="pointer-events-auto flex w-full gap-2 sm:order-2 sm:w-80 lg:w-72">
-          <div className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur">
-            <Autocomplete
-              onLoad={(instance) => setAutocomplete(instance)}
-              onPlaceChanged={() => {
-                if (!autocomplete) {
-                  return;
-                }
-
-                const place = autocomplete.getPlace();
-                const location = place.geometry?.location;
-
-                if (!location) {
-                  return;
-                }
-
-                setCenter({
-                  lat: location.lat(),
-                  lng: location.lng()
-                });
-              }}
+      
+      {/* ── Top Bar & Controls Drawer Overlay (Top Left) ─────────────────── */}
+      <div className="absolute top-4 left-4 z-[1000] w-72 space-y-3">
+        {/* Search & Toggle Bar */}
+        <div className="rounded-xl border border-slate-200 bg-white/95 p-2 shadow-md backdrop-blur flex items-center gap-2">
+          <form onSubmit={handleSearch} className="flex min-w-0 flex-1 gap-1">
+            <input
+              type="text"
+              placeholder="Search location..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-ink focus:outline-none focus:border-tide"
+            />
+            <button
+              type="submit"
+              disabled={searching}
+              className="rounded-lg bg-tide px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-tide/90 disabled:opacity-50"
             >
-              <input
-                type="text"
-                placeholder="Search location..."
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-              />
-            </Autocomplete>
-          </div>
+              {searching ? "..." : "Go"}
+            </button>
+          </form>
 
           <button
             type="button"
             onClick={() => setControlsOpen((open) => !open)}
-            className="rounded-2xl border border-slate-200 bg-white/95 px-3 text-sm font-semibold text-slate-700 shadow-lg backdrop-blur transition hover:bg-slate-50 sm:hidden"
-            aria-expanded={controlsOpen}
+            className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+              controlsOpen
+                ? "border-tide/60 bg-tide/10 text-tide"
+                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+            }`}
+            title="Toggle Filter Panel"
           >
             Filters
           </button>
         </div>
 
-        <div
-          className={`pointer-events-auto max-h-[58dvh] w-full space-y-3 overflow-y-auto rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur sm:order-1 sm:block sm:max-h-[calc(100dvh-10rem)] sm:w-72 sm:p-4 ${
-            controlsOpen ? "block" : "hidden"
-          }`}
-        >
-          <div className="space-y-1">
-            <h2 className="text-base font-bold text-slate-900 sm:text-lg">Map Controls</h2>
-            <p className="text-xs text-slate-600 sm:text-sm">Track live incidents and reserve nearby relief resources.</p>
-          </div>
+        {/* Expandable Map Filters Panel */}
+        {controlsOpen && (
+          <div className="max-h-[calc(100vh-250px)] space-y-3 overflow-y-auto rounded-xl border border-slate-200/90 bg-white/95 p-4 shadow-lg backdrop-blur animate-fade-in">
+            <div className="space-y-1">
+              <h2 className="text-sm font-bold text-ink font-display">Map Controls</h2>
+              <p className="text-xs text-slate-500">Track live incidents & relief resources.</p>
+            </div>
 
-          <div className="grid gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showResources}
-                onChange={() => setShowResources((current) => !current)}
-              />
-              Resources
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showIncidents}
-                onChange={() => setShowIncidents((current) => !current)}
-              />
-              Incidents
-            </label>
-          </div>
+            <div className="grid gap-2 rounded-lg bg-slate-50 p-2.5 text-xs text-slate-700 border border-slate-100">
+              <label className="flex items-center gap-2 font-medium cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showResources}
+                  onChange={() => setShowResources((current) => !current)}
+                  className="rounded text-tide focus:ring-tide"
+                />
+                <span>Resources ({visibleResources.length})</span>
+              </label>
+              <label className="flex items-center gap-2 font-medium cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showIncidents}
+                  onChange={() => setShowIncidents((current) => !current)}
+                  className="rounded text-tide focus:ring-tide"
+                />
+                <span>Incidents ({visibleIncidents.length})</span>
+              </label>
+            </div>
 
-          <div>
-            <p className="mb-1 text-sm font-semibold text-slate-700">Incident Severity</p>
-            <select
-              value={severityFilter}
-              onChange={(event) => setSeverityFilter(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-            >
-              <option value="all">All severities</option>
-              <option value="CRITICAL">Critical</option>
-              <option value="HIGH">High</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="LOW">Low</option>
-            </select>
-          </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Severity</label>
+              <select
+                value={severityFilter}
+                onChange={(event) => setSeverityFilter(event.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-tide"
+              >
+                <option value="all">All Severities</option>
+                <option value="CRITICAL">Critical</option>
+                <option value="HIGH">High</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="LOW">Low</option>
+              </select>
+            </div>
 
-          <div>
-            <p className="mb-1 text-sm font-semibold text-slate-700">Incident Type</p>
-            <select
-              value={typeFilter}
-              onChange={(event) => setTypeFilter(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-            >
-              <option value="all">All incident types</option>
-              {INCIDENT_TYPE_OPTIONS.map((type) => (
-                <option key={type} value={type}>
-                  {type.replaceAll("_", " ")}
-                </option>
-              ))}
-            </select>
-          </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Incident Type</label>
+              <select
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-tide"
+              >
+                <option value="all">All Types</option>
+                {INCIDENT_TYPE_OPTIONS.map((type) => (
+                  <option key={type} value={type}>
+                    {type.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <p className="mb-1 text-sm font-semibold text-slate-700">Resource Category</p>
-            <select
-              value={resourceCategoryFilter}
-              onChange={(event) => setResourceCategoryFilter(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-            >
-              <option value="all">All resource categories</option>
-              {resourceCategories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">Resource Category</label>
+              <select
+                value={resourceCategoryFilter}
+                onChange={(event) => setResourceCategoryFilter(event.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:border-tide"
+              >
+                <option value="all">All Categories</option>
+                {resourceCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      <GoogleMap
-        mapContainerStyle={{ width: "100%", height: "100%" }}
+      {/* ── Leaflet Map Container with CartoDB Voyager Tiles ─────────────── */}
+      <MapContainer
         center={center}
         zoom={7}
-        options={{ disableDefaultUI: false }}
+        zoomControl={false}
+        scrollWheelZoom
+        style={{ height: "100%", width: "100%" }}
       >
-        <MarkerClusterer options={{ gridSize: 60 }}>
-          {(clusterer) => (
-            <>
-              {showResources &&
-                visibleResources.map((resource) => (
-                  <Marker
-                    key={resource.id}
-                    position={{
-                      lat: Number(resource.latitude),
-                      lng: Number(resource.longitude)
-                    }}
-                    title={resource.name}
-                    icon={getResourceIcon(resource)}
-                    clusterer={clusterer}
-                    onClick={() => setSelectedResource(resource)}
-                  />
-                ))}
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        />
+        <Recenter center={center} zoom={7} />
+        <CustomZoomControls />
 
-              {showIncidents &&
-                visibleIncidents.map((incident) => (
-                  <Marker
-                    key={incident.id}
-                    position={{
-                      lat: Number(incident.latitude),
-                      lng: Number(incident.longitude)
-                    }}
-                    title={incident.title}
-                    icon={getIncidentIcon(incident.severity)}
-                    clusterer={clusterer}
-                    onClick={() => setSelectedIncident(incident)}
-                  />
-                ))}
-            </>
-          )}
-        </MarkerClusterer>
+        {showResources &&
+          visibleResources.map((resource) => (
+            <Marker
+              key={resource.id}
+              position={[Number(resource.latitude), Number(resource.longitude)]}
+              icon={coloredIcon(getResourceColor(resource))}
+            >
+              <Popup>
+                <div className="max-w-xs space-y-2 p-1">
+                  <h3 className="text-sm font-bold text-ink font-display">{resource.name}</h3>
+                  <p className="text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800">Category:</span> {resource.category}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800">Quantity:</span> {resource.quantity} {resource.unit}
+                  </p>
+                  <p className="text-xs text-slate-600 truncate">
+                    <span className="font-semibold text-slate-800">Address:</span> {resource.address}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800">Status:</span> {resource.status}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/browse-resources?resourceId=${resource.id}`)}
+                    className="w-full mt-2 rounded-lg bg-tide px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-tide/90 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    disabled={!["Available", "Low Stock"].includes(resource.status)}
+                  >
+                    Reserve Resource
+                  </button>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
 
-        {selectedResource && (
-          <InfoWindow
-            position={{
-              lat: Number(selectedResource.latitude),
-              lng: Number(selectedResource.longitude)
-            }}
-            onCloseClick={() => setSelectedResource(null)}
-          >
-            <div className="max-w-xs space-y-2 p-2">
-              <h3 className="text-lg font-bold text-slate-900">{selectedResource.name}</h3>
-              <p className="text-sm text-slate-700">
-                <span className="font-semibold">Category:</span> {selectedResource.category}
-              </p>
-              <p className="text-sm text-slate-700">
-                <span className="font-semibold">Quantity:</span> {selectedResource.quantity} {selectedResource.unit}
-              </p>
-              <p className="text-sm text-slate-700">
-                <span className="font-semibold">Address:</span> {selectedResource.address}
-              </p>
-              <p className="text-sm text-slate-700">
-                <span className="font-semibold">Contact:</span> {selectedResource.contactPreference}
-              </p>
-              <p className="text-sm text-slate-700">
-                <span className="font-semibold">Status:</span> {selectedResource.status}
-              </p>
-              {selectedResource.notes ? (
-                <p className="text-sm text-slate-700">
-                  <span className="font-semibold">Notes:</span> {selectedResource.notes}
-                </p>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => navigate(`/browse-resources?resourceId=${selectedResource.id}`)}
-                className="w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                disabled={!["Available", "Low Stock"].includes(selectedResource.status)}
-              >
-                Reserve
-              </button>
-            </div>
-          </InfoWindow>
-        )}
-
-        {selectedIncident && (
-          <InfoWindow
-            position={{
-              lat: Number(selectedIncident.latitude),
-              lng: Number(selectedIncident.longitude)
-            }}
-            onCloseClick={() => setSelectedIncident(null)}
-          >
-            <div className="max-w-xs space-y-2 p-2">
-              <h3 className="text-lg font-bold text-slate-900">{selectedIncident.title}</h3>
-              <p className="text-sm text-slate-700">
-                <span className="font-semibold">Type:</span> {selectedIncident.type.replaceAll("_", " ")}
-              </p>
-              <p className="text-sm text-slate-700">
-                <span className="font-semibold">Severity:</span> {selectedIncident.severity}
-              </p>
-              {selectedIncident.description ? (
-                <p className="text-sm text-slate-600">{selectedIncident.description}</p>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => navigate(`/dashboard/incidents/${selectedIncident.id}`)}
-                className="w-full rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
-              >
-                View Details
-              </button>
-            </div>
-          </InfoWindow>
-        )}
-      </GoogleMap>
+        {showIncidents &&
+          visibleIncidents.map((incident) => (
+            <Marker
+              key={incident.id}
+              position={[Number(incident.latitude), Number(incident.longitude)]}
+              icon={coloredIcon(getIncidentColor(incident.severity))}
+            >
+              <Popup>
+                <div className="max-w-xs space-y-2 p-1">
+                  <h3 className="text-sm font-bold text-ink font-display">{incident.title}</h3>
+                  <p className="text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800">Type:</span> {incident.type.replaceAll("_", " ")}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800">Severity:</span> {incident.severity}
+                  </p>
+                  {incident.description && (
+                    <p className="text-xs text-slate-600 line-clamp-2">{incident.description}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/dashboard/incidents/${incident.id}`)}
+                    className="w-full mt-2 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-rose-700"
+                  >
+                    View Details
+                  </button>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+      </MapContainer>
     </div>
   );
 }

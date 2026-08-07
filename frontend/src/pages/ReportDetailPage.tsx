@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
+import { LeafletMap, SEVERITY_COLORS } from "../components/LeafletMap";
 
 import { getReportDetail } from "../services/api";
 import { CredibilityWheel } from "../components/CredibilityWheel";
@@ -62,6 +62,7 @@ function MediaGallery({ files }: { files: string[] }) {
                     src={mediaUrl}
                     alt={`Evidence ${index + 1}`}
                     className="w-full max-w-2xl rounded-lg"
+                    decoding="async"
                   />
                 )}
                 <button
@@ -89,6 +90,7 @@ function MediaGallery({ files }: { files: string[] }) {
                   src={mediaUrl}
                   alt={`Evidence ${index + 1}`}
                   loading="lazy"
+                  decoding="async"
                   className="h-32 w-full object-cover"
                 />
               ) : (
@@ -128,25 +130,24 @@ export function ReportDetailPage() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const { isLoaded } = useLoadScript({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ""
-  });
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
     const fetchDetail = async () => {
       setLoading(true);
       setError("");
       try {
         const response = await getReportDetail(id);
-        setReport(response.report);
+        if (!cancelled) setReport(response.report);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load report details");
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load report details");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     void fetchDetail();
+    return () => { cancelled = true; };
   }, [id]);
 
   if (loading) {
@@ -170,9 +171,9 @@ export function ReportDetailPage() {
     );
   }
 
-  const mapCenter = report.latitude && report.longitude
-    ? { lat: report.latitude, lng: report.longitude }
-    : { lat: 23.8103, lng: 90.4125 };
+  const mapCenter: [number, number] = report.latitude && report.longitude
+    ? [report.latitude, report.longitude]
+    : [23.8103, 90.4125];
 
   return (
     <div className="space-y-6">
@@ -229,16 +230,14 @@ export function ReportDetailPage() {
         <p className="mt-2 text-sm leading-relaxed text-slate-700">{report.description}</p>
       </section>
 
-      {isLoaded && report.latitude && report.longitude && (
+      {report.latitude && report.longitude && (
         <section className="overflow-hidden rounded-xl shadow-panel ring-1 ring-slate-200">
-          <GoogleMap
-            zoom={14}
+          <LeafletMap
             center={mapCenter}
-            mapContainerClassName="h-64 w-full"
-            options={{ disableDefaultUI: true, zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
-          >
-            <Marker position={mapCenter} />
-          </GoogleMap>
+            zoom={14}
+            height="256px"
+            points={[{ lat: mapCenter[0], lng: mapCenter[1], color: SEVERITY_COLORS[report.severityLevel] ?? "#ef4444" }]}
+          />
         </section>
       )}
 

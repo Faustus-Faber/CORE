@@ -68,7 +68,7 @@ export function DashboardPage() {
           lng: location?.lng,
           radiusKm: 10
         });
-        if (!cancelled) setEvents(response.feed);
+        if (!cancelled) setEvents(response.feed ?? []);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load dashboard feed");
       } finally {
@@ -90,21 +90,6 @@ export function DashboardPage() {
   return (
     <div className="space-y-5">
       <SitRepPanel lat={location?.lat} lng={location?.lng} radiusKm={10} />
-
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
-          <p className="text-xs font-semibold uppercase tracking-wider text-red-600">Active Incidents</p>
-          <p className="mt-1 text-2xl font-bold text-red-700">{stats.active}</p>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-center">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">Reports Merged</p>
-          <p className="mt-1 text-2xl font-bold text-slate-700">{stats.totalReports}</p>
-        </div>
-        <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-center">
-          <p className="text-xs font-semibold uppercase tracking-wider text-orange-600">Critical</p>
-          <p className="mt-1 text-2xl font-bold text-orange-700">{stats.critical}</p>
-        </div>
-      </section>
 
       <DashboardFilters filters={filters} onChange={setFilters} />
 

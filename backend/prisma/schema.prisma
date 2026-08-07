@@ -13,6 +13,98 @@ enum Role {
   ADMIN
 }
 
+// FR-01: Responder approval lifecycle
+enum ResponderApprovalStatus {
+  APPLICANT
+  UNDER_REVIEW
+  APPROVED
+  SUSPENDED
+  REJECTED
+}
+
+// FR-10: Evidence visibility classifications
+enum MediaVisibility {
+  PRIVATE
+  INCIDENT_TEAM
+  ORGANIZATION
+  REDACTED_PUBLIC
+  SHARE_PACKAGE
+}
+
+// FR-08: Atomic stock ledger entry types
+enum StockEntryType {
+  INCREMENT
+  DECREMENT
+  HOLD
+  RELEASE
+  FULFILL
+}
+
+// FR-09: Notification delivery lifecycle
+enum NotificationDeliveryState {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  ACKNOWLEDGED
+}
+
+// FR-11/Outbox: Background job lifecycle
+enum OutboxJobState {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+}
+
+enum OutboxJobType {
+  AI_TRIAGE
+  EVENT_FUSION
+  NOTIFICATION_DISPATCH
+  PDF_GENERATION
+  RESERVATION_EXPIRY
+  BRIEF_GENERATION
+}
+
+// FR-02: Signal processing lifecycle
+enum SignalProcessingState {
+  RECEIVED
+  PROCESSING
+  NEEDS_REVIEW
+  ACTIONABLE
+  LINKED
+  REJECTED
+  CANCELLED
+}
+
+// FR-07: Evidence verification states
+enum EvidenceVerificationState {
+  SELF_REPORTED
+  CORROBORATED
+  COORDINATOR_VERIFIED
+  OFFICIAL_CONFIRMED
+  DISPUTED
+  DISMISSED
+}
+
+// FR-13: After-action report lifecycle
+enum ReportStatus {
+  DRAFT
+  REVIEWED
+  PUBLISHED
+  SUPERSEDED
+  ARCHIVED
+}
+
+enum OrganizationType {
+  NGO
+  GOVERNMENT
+  COMMUNITY_NETWORK
+  UNIVERSITY
+  OTHER
+}
+
 enum NotificationType {
   CRISIS_ALERT
   CRISIS_UPDATE
@@ -33,6 +125,9 @@ enum IncidentSeverity {
 enum IncidentStatus {
   PUBLISHED
   UNDER_REVIEW
+  REJECTED
+  CLARIFICATION_REQUESTED
+  MERGED
 }
 
 enum IncidentType {
@@ -104,6 +199,15 @@ model User {
   location             String
   latitude             Float?
   longitude            Float?
+  // P0-06/FR-01: Consented location metadata
+  locationAccuracy     Float?
+  locationSource       String?  // "GPS" | "MAP_PIN" | "TYPED"
+  locationCapturedAt   DateTime?
+  locationConsentVersion String?
+  // P0-03: Session version for JWT invalidation
+  sessionVersion       Int       @default(0)
+  // FR-01: Organization scope
+  organizationId       String?   @db.ObjectId
   role                 Role      @default(USER)
   avatarUrl            String?
   skills               String[]
@@ -122,13 +226,17 @@ model User {
   totalPoints          Int       @default(0)
   totalVerifiedHours   Float     @default(0)
 
+  // FR-01: Responder profile (approval workflow)
+  responderProfile     ResponderProfile?
+
+  // Relations
+  organization         Organization?   @relation(fields: [organizationId], references: [id])
   reviewsGiven    Review[]       @relation("ReviewsGiven")
   reviewsReceived Review[]       @relation("ReviewsReceived")
   folders         SecureFolder[] // Feature 4: Secure Documentation
   evidencePosts   EvidencePost[]
-  comments        Comment[]
-  likes           Like[]
   evidenceFlags   EvidenceFlag[]
+  evidencePostVersions EvidencePostVersion[]
   crisisUpdates   CrisisEventUpdate[]
   notificationSub NotificationSubscription?
   notifications   Notification[]
@@ -139,9 +247,28 @@ model User {
   crisisResponses   CrisisResponder[]
   ngoReports      NGOReport[]
   ocrScans        OCRScan[]
+  claimsCreated   Claim[]
+  edgesCreated    EvidenceEdge[]
+  decisions       Decision[]
+  assignments     Assignment[]       @relation("AssignmentVolunteer")
+  assignmentsProposed Assignment[]   @relation("AssignmentProposer")
+  allocationsRequested Allocation[]  @relation("AllocationRequester")
+  allocationsApproved  Allocation[]  @relation("AllocationApprover")
+  briefsGenerated SituationBrief[]   @relation("BriefGenerator")
+  briefsReviewed  SituationBrief[]   @relation("BriefReviewer")
+  auditEvents     AuditEvent[]
+  draftsProposed  ActionDraft[]      @relation("DraftProposer")
+  draftsConfirmed ActionDraft[]      @relation("DraftConfirmer")
+  mediaAssets     MediaAsset[]
+  stockEntries    StockLedgerEntry[]
+  fulfillments    Fulfillment[]
+  afterActionReports AfterActionReport[] @relation("ReportGenerator")
+  afterActionReportsApproved AfterActionReport[] @relation("ReportApprover")
+  outboxJobs      OutboxJob[]
 
   @@index([role, isBanned])
   @@index([role, isFlagged])
+  @@index([organizationId])
 }
 
 model IncidentReport {
@@ -164,11 +291,17 @@ model IncidentReport {
   classifiedIncidentTitle String
   spamFlagged             Boolean          @default(false)
   status                  IncidentStatus   @default(PUBLISHED)
+  // P1-14: Consent for third-party AI processing of description/media
+  aiConsent               Boolean          @default(false)
   createdAt               DateTime         @default(now())
   updatedAt               DateTime         @updatedAt
 
-  crisisEvents CrisisEventReport[]
-  ocrScans     OCRScan[]
+  crisisEvents  CrisisEventReport[]
+  ocrScans      OCRScan[]
+  claims        Claim[]
+  aiAnalyses    AIAnalysis[]
+  signals       Signal[]                @relation("SignalToReport")
+  sourceAssets  SourceAsset[]           @relation("SourceAssetToReport")
 
   @@index([reporterId, createdAt(sort: Desc)])
   @@index([status, severityLevel])
@@ -220,6 +353,8 @@ model Resource {
   updatedAt         DateTime  @updatedAt
   histories    ResourceHistory[]
   reservations Reservation[]
+  allocations  Allocation[]
+  stockEntries StockLedgerEntry[]
   @@index([latitude, longitude])
 }
 
@@ -256,6 +391,9 @@ model FolderFile {
   sizeBytes   Int
   gpsLat      Float?
   gpsLng      Float?
+  // FR-10: Visibility classification and AI processing consent
+  visibility  MediaVisibility @default(PRIVATE)
+  aiConsent   Boolean          @default(false)
   ocrScans    OCRScan[]
 
   isDeleted Boolean   @default(false)
@@ -313,6 +451,12 @@ enum CrisisUpdateType {
 }
 
 enum CrisisUpdateVerificationStatus {
+  SELF_REPORTED
+  CORROBORATED
+  COORDINATOR_VERIFIED
+  OFFICIAL_CONFIRMED
+  DISPUTED
+  DISMISSED
   RESPONDER_CONFIRMED
   ADMIN_CONFIRMED
   SYSTEM_LOGGED
@@ -327,6 +471,8 @@ enum CrisisAccessStatus {
 
 model CrisisEvent {
   id            String            @id @default(auto()) @map("_id") @db.ObjectId
+  // Canonical human-readable ID (e.g. "FLOOD-2024-0001") — stable across renames/merges
+  canonicalId   String?           @unique
   title         String
   incidentType  IncidentType
   severityLevel IncidentSeverity
@@ -334,12 +480,17 @@ model CrisisEvent {
   latitude      Float?
   longitude     Float?
   status        CrisisEventStatus @default(REPORTED)
+  // FR-05: Optimistic concurrency version
+  version       Int               @default(1)
+  // FR-01: Organization scope
+  organizationId String?          @db.ObjectId
   sitRepText    String?
   reportCount   Int               @default(0)
   reporterCount Int               @default(0)
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
+  organization  Organization?     @relation(fields: [organizationId], references: [id])
   reports CrisisEventReport[]
   updates CrisisEventUpdate[]
   reviews Review[]
@@ -347,9 +498,22 @@ model CrisisEvent {
   dispatchAlertLogs DispatchAlertLog[]
   ngoReports NGOReport[]
   ocrScans OCRScan[]
+  aiAnalyses AIAnalysis[]
+  claims Claim[]
+  decisions Decision[]
+  needs Need[]
+  sourceAssets SourceAsset[]
+  assignments Assignment[]
+  briefs SituationBrief[]
+  actionDrafts ActionDraft[]
+  mediaAssets  MediaAsset[]
+  afterActionReports AfterActionReport[]
+  evidencePosts EvidencePost[]
+  outboxJobs   OutboxJob[]
 
   @@index([status, severityLevel, createdAt(sort: Desc)])
   @@index([latitude, longitude])
+  @@index([organizationId])
 }
 
 model CrisisEventReport {
@@ -362,7 +526,8 @@ model CrisisEventReport {
   incidentReport IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
 
   @@unique([crisisEventId, incidentReportId])
-  @@index([incidentReportId])
+  // AC-04.3: A report can only be linked to one crisis event (prevents duplicate fusion)
+  @@unique([incidentReportId])
   @@index([crisisEventId])
 }
 
@@ -385,25 +550,47 @@ model CrisisResponder {
 }
 
 model EvidencePost {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id])
-  title       String
-  description String
-  location    String
-  latitude    Float?
-  longitude   Float?
-  mediaUrls   String[] // Local filenames or URLs
-  mediaType   String // 'IMAGE' or 'VIDEO'
-  isVerified  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @db.ObjectId
+  user           User     @relation(fields: [userId], references: [id])
+  crisisEventId  String?  @db.ObjectId
+  crisisEvent    CrisisEvent? @relation(fields: [crisisEventId], references: [id])
+  title          String
+  description    String
+  location       String
+  latitude       Float?
+  longitude      Float?
+  mediaUrls      String[] // Local filenames or URLs
+  mediaType      String // 'IMAGE' or 'VIDEO'
+  isVerified     Boolean  @default(false)
+  // AC-10.04: Visibility controls who can see this evidence
+  visibility     MediaVisibility @default(PUBLIC)
+  // AC-10.3: Version tracking — increments on each edit, original preserved in EvidencePostVersion
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  comments Comment[]
-  likes    Like[]
   flags    EvidenceFlag[]
+  versions EvidencePostVersion[]
 
   @@index([userId, createdAt(sort: Desc)])
+  @@index([crisisEventId, createdAt(sort: Desc)])
+}
+
+// AC-10.3: Append-only version history for evidence posts
+model EvidencePostVersion {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  evidencePostId  String   @db.ObjectId
+  version         Int
+  title           String
+  description     String
+  editedById      String   @db.ObjectId
+  editedAt        DateTime @default(now())
+
+  evidencePost EvidencePost @relation(fields: [evidencePostId], references: [id], onDelete: Cascade)
+  editedBy     User         @relation(fields: [editedById], references: [id])
+
+  @@index([evidencePostId, version(sort: Desc)])
 }
 
 model ResourceHistory {
@@ -443,30 +630,6 @@ model EvidenceFlag {
   createdAt DateTime     @default(now())
 
   @@index([postId])
-}
-
-model Comment {
-  id        String       @id @default(auto()) @map("_id") @db.ObjectId
-  postId    String       @db.ObjectId
-  post      EvidencePost @relation(fields: [postId], references: [id], onDelete: Cascade)
-  userId    String       @db.ObjectId
-  user      User         @relation(fields: [userId], references: [id])
-  content   String
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-
-  @@index([postId, createdAt(sort: Desc)])
-}
-
-model Like {
-  id        String       @id @default(auto()) @map("_id") @db.ObjectId
-  postId    String       @db.ObjectId
-  post      EvidencePost @relation(fields: [postId], references: [id], onDelete: Cascade)
-  userId    String       @db.ObjectId
-  user      User         @relation(fields: [userId], references: [id])
-  createdAt DateTime     @default(now())
-
-  @@unique([postId, userId])
 }
 
 model CrisisEventUpdate {
@@ -521,6 +684,12 @@ model Notification {
   body            String
   survivalInstruction String?
   isRead          Boolean           @default(false)
+  // FR-09: Delivery lifecycle
+  deliveryState   NotificationDeliveryState @default(QUEUED)
+  attemptCount    Int               @default(0)
+  dedupeKey       String?  // recipient + event version + notification type
+  acknowledgedAt  DateTime?
+  channel         String?  // "IN_APP" | "EMAIL" | "WEB_PUSH"
   createdAt       DateTime          @default(now())
   reservationId String? @db.ObjectId
   type NotificationType?
@@ -528,6 +697,19 @@ model Notification {
 
   @@index([userId, isRead, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
+  @@index([dedupeKey])
+}
+
+// §19: Web Push subscription for browser push notifications
+model PushSubscription {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  endpoint    String   @unique
+  keys        Json     // { p256dh, auth }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
 }
 
 // ── Feature 3.7: Volunteer Timesheet & Gamification ─────────────────────────
@@ -645,4 +827,581 @@ model OCRItem {
   scan OCRScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
 
   @@index([scanId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TRACK B: Evidence Graph, Contradiction Radar, Assignments, Needs, Copilot
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum ClaimType {
+  ROAD_ACCESS
+  CASUALTY_ESTIMATE
+  RESOURCE_NEED
+  DAMAGE_ASSESSMENT
+  HAZARD_STATUS
+  LOCATION_UPDATE
+  OTHER
+}
+
+enum EvidenceState {
+  SINGLE_SOURCE
+  PARTIALLY_CORROBORATED
+  CORROBORATED
+  CONFLICTED
+  COORDINATOR_VERIFIED
+  OFFICIAL_CONFIRMED
+  REJECTED
+  STALE
+}
+
+enum EvidenceEdgeType {
+  SUPPORTS
+  CONTRADICTS
+  DUPLICATES
+  SUPERSEDES
+  DERIVES_FROM
+}
+
+enum AssignmentStatus {
+  PROPOSED
+  OFFERED
+  ACCEPTED
+  EN_ROUTE
+  ON_SITE
+  COMPLETED
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+
+enum AllocationStatus {
+  REQUESTED
+  HELD
+  APPROVED
+  READY
+  PICKED_UP
+  DELIVERED
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+
+enum BriefStatus {
+  DRAFT
+  REVIEWED
+  PUBLISHED
+  SUPERSEDED
+}
+
+enum ActionDraftStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+enum DecisionAction {
+  ACCEPT_CLAIM
+  REJECT_CLAIM
+  SUPERSEDE_CLAIM
+  LINK_SUPPORT
+  LINK_CONTRADICTION
+  MARK_RESOLVED
+  ESCALATE_SEVERITY
+}
+
+enum AIProcessingState {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  MANUAL_REVIEW
+}
+
+model Claim {
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  claimType        ClaimType
+  subject          String
+  value            String
+  unit             String?
+  locationText     String?
+  latitude         Float?
+  longitude        Float?
+  observedAt       DateTime?
+  validUntil       DateTime?
+  crisisEventId    String        @db.ObjectId
+  incidentReportId String?       @db.ObjectId
+  sourceText       String?
+  sourceRecordIds  String[]
+  sourceIndependenceGroup String? // reporterId + 5-min window; claims in same group are NOT independent
+  evidenceState    EvidenceState @default(SINGLE_SOURCE)
+  needsHumanDecision Boolean     @default(true)
+  supersededById   String?       @db.ObjectId
+  conflictCount    Int           @default(0)
+  supportCount     Int           @default(1)
+  createdById      String        @db.ObjectId
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  crisisEvent    CrisisEvent     @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  incidentReport IncidentReport? @relation(fields: [incidentReportId], references: [id], onDelete: SetNull)
+  createdBy      User            @relation(fields: [createdById], references: [id])
+  needsByNeed    Need[]
+  supersededBy   Claim?          @relation("Supersedes", fields: [supersededById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supersedes     Claim[]         @relation("Supersedes")
+  edgesFrom      EvidenceEdge[]  @relation("EdgeFrom")
+  edgesTo        EvidenceEdge[]  @relation("EdgeTo")
+
+  @@index([crisisEventId, evidenceState])
+  @@index([crisisEventId, claimType])
+}
+
+model EvidenceEdge {
+  id          String           @id @default(auto()) @map("_id") @db.ObjectId
+  fromClaimId String           @db.ObjectId
+  toClaimId   String           @db.ObjectId
+  edgeType    EvidenceEdgeType
+  reason      String?
+  createdById String           @db.ObjectId
+  createdAt   DateTime         @default(now())
+
+  fromClaim Claim @relation("EdgeFrom", fields: [fromClaimId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  toClaim   Claim @relation("EdgeTo",   fields: [toClaimId],   references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdBy User  @relation(fields: [createdById], references: [id])
+
+  @@index([fromClaimId])
+  @@index([toClaimId])
+}
+
+model Decision {
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  action        DecisionAction
+  crisisEventId String         @db.ObjectId
+  claimId       String?        @db.ObjectId
+  edgeId        String?        @db.ObjectId
+  actorId       String         @db.ObjectId
+  reason        String
+  beforeState   String?
+  afterState    String?
+  createdAt     DateTime       @default(now())
+
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  actor       User        @relation(fields: [actorId], references: [id])
+
+  @@index([crisisEventId, createdAt(sort: Desc)])
+}
+
+model AIAnalysis {
+  id               String            @id @default(auto()) @map("_id") @db.ObjectId
+  incidentReportId String?           @db.ObjectId
+  crisisEventId    String?           @db.ObjectId
+  provider         String
+  model            String
+  promptVersion    String            @default("v1")
+  inputSourceIds   String[]
+  outputJson       String?
+  state            AIProcessingState @default(QUEUED)
+  errorMessage     String?
+  latencyMs        Int?
+  createdAt        DateTime          @default(now())
+  completedAt      DateTime?
+
+  incidentReport IncidentReport? @relation(fields: [incidentReportId], references: [id], onDelete: SetNull)
+  crisisEvent    CrisisEvent?    @relation(fields: [crisisEventId], references: [id], onDelete: SetNull)
+
+  @@index([state, createdAt])
+}
+
+// §10.3: Signal — raw incoming signal before it becomes an IncidentReport.
+// Tracks the processing lifecycle from receipt through triage to linking.
+model Signal {
+  id                String                 @id @default(auto()) @map("_id") @db.ObjectId
+  incidentReportId  String?                @db.ObjectId
+  processingState   SignalProcessingState  @default(RECEIVED)
+  // Raw payload hash for deduplication
+  payloadHash       String?
+  // Channel through which the signal arrived
+  channel           String   // "WEB" | "VOICE" | "OCR" | "API" | "OFFLINE_SYNC"
+  // Idempotency key from the submission
+  idempotencyKey    String?  @unique
+  // Processing metadata
+  receivedAt        DateTime @default(now())
+  processedAt       DateTime?
+  rejectedReason    String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  incidentReport IncidentReport? @relation("SignalToReport", fields: [incidentReportId], references: [id], onDelete: SetNull)
+
+  @@index([processingState, receivedAt])
+  @@index([channel, receivedAt(sort: Desc)])
+}
+
+// §10.3: SourceAsset — the original media or text asset from which claims are extracted.
+// Links a Claim to its provenance (which media file, which report text, which OCR output).
+model SourceAsset {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId   String?  @db.ObjectId
+  incidentReportId String? @db.ObjectId
+  mediaAssetId    String?  @db.ObjectId
+  // Type of source: TEXT, IMAGE, VIDEO, AUDIO, OCR, EXTERNAL_FEED
+  assetType       String
+  // The raw content reference (file path, URL, or text snippet)
+  contentRef      String
+  // Metadata about the source
+  capturedAt      DateTime?
+  sourceSystem    String?  // "USER_REPORT", "RESPONDER_UPDATE", "FFWC", "NEWS_FEED"
+  // Integrity
+  checksum        String?
+  createdAt       DateTime @default(now())
+
+  crisisEvent    CrisisEvent? @relation(fields: [crisisEventId], references: [id], onDelete: SetNull)
+  incidentReport IncidentReport? @relation("SourceAssetToReport", fields: [incidentReportId], references: [id], onDelete: SetNull)
+  mediaAsset     MediaAsset?   @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  @@index([crisisEventId, assetType])
+  @@index([incidentReportId])
+}
+
+model Need {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId  String   @db.ObjectId
+  needType       String
+  description    String
+  quantity       Int
+  unit           String
+  urgency        String
+  isMet          Boolean  @default(false)
+  sourceClaimId  String?  @db.ObjectId
+  dueAt          DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  crisisEvent  CrisisEvent  @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  sourceClaim  Claim?       @relation(fields: [sourceClaimId], references: [id], onDelete: SetNull)
+  assignments  Assignment[]
+  allocations  Allocation[]
+
+  @@index([crisisEventId, isMet])
+}
+
+model Assignment {
+  id              String           @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId   String           @db.ObjectId
+  needId          String?          @db.ObjectId
+  volunteerId     String           @db.ObjectId
+  status          AssignmentStatus @default(PROPOSED)
+  proposedById    String           @db.ObjectId
+  proposedAt      DateTime         @default(now())
+  offeredAt       DateTime?
+  acceptedAt      DateTime?
+  completedAt     DateTime?
+  declinedAt      DateTime?
+  declineReason   String?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  outcomeNote     String?
+  outcomeApproved Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  need        Need?       @relation(fields: [needId], references: [id], onDelete: SetNull)
+  volunteer   User        @relation("AssignmentVolunteer", fields: [volunteerId], references: [id])
+  proposedBy  User        @relation("AssignmentProposer", fields: [proposedById], references: [id])
+
+  @@index([crisisEventId, status])
+  @@index([volunteerId, status])
+}
+
+model Allocation {
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  needId         String           @db.ObjectId
+  resourceId     String           @db.ObjectId
+  quantity       Int
+  status         AllocationStatus @default(REQUESTED)
+  requestedById  String           @db.ObjectId
+  approvedById   String?          @db.ObjectId
+  approvedAt     DateTime?
+  deliveredAt    DateTime?
+  deliveryNote   String?
+  idempotencyKey String?
+  expiresAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  need        Need     @relation(fields: [needId], references: [id], onDelete: Cascade)
+  resource    Resource @relation(fields: [resourceId], references: [id])
+  requestedBy User     @relation("AllocationRequester", fields: [requestedById], references: [id])
+  approvedBy  User?    @relation("AllocationApprover", fields: [approvedById], references: [id])
+  fulfillments Fulfillment[]
+
+  @@index([needId, status])
+  @@index([resourceId, status])
+}
+
+model SituationBrief {
+  id             String      @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId  String      @db.ObjectId
+  version        Int
+  status         BriefStatus @default(DRAFT)
+  cutOffAt       DateTime
+  content        String
+  changedFacts   String[]
+  unresolvedConflicts String[]
+  sourceClaimIds String[]
+  generatedById  String      @db.ObjectId
+  reviewedById   String?     @db.ObjectId
+  publishedAt    DateTime?
+  supersededById String?     @db.ObjectId @unique
+  createdAt      DateTime    @default(now())
+
+  crisisEvent  CrisisEvent     @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  generatedBy  User            @relation("BriefGenerator", fields: [generatedById], references: [id])
+  reviewedBy   User?           @relation("BriefReviewer", fields: [reviewedById], references: [id])
+  supersededBy SituationBrief? @relation("BriefSupersedes_Fwd", fields: [supersededById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supersedes   SituationBrief? @relation("BriefSupersedes_Fwd")
+
+  @@index([crisisEventId, status])
+  @@unique([crisisEventId, version])
+}
+
+model AuditEvent {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  actorId    String?  @db.ObjectId
+  actorRole  String?
+  action     String
+  targetType String
+  targetId   String?
+  reason     String?
+  beforeJson String?
+  afterJson  String?
+  requestId  String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@index([createdAt(sort: Desc)])
+}
+
+model IdempotencyKey {
+  id        String   @id @map("_id")
+  userId    String?  @db.ObjectId
+  operation String
+  resultId  String?
+  state     String   @default("COMPLETED")
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model ActionDraft {
+  id           String           @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId String          @db.ObjectId
+  draftType    String           // DISPATCH | ALLOCATION | STATUS_CHANGE | ALERT
+  payload      String           // JSON
+  reasoning    String
+  sourceIds    String[]
+  status       ActionDraftStatus @default(PENDING)
+  proposedById String           @db.ObjectId
+  confirmedById String?         @db.ObjectId
+  confirmedAt  DateTime?
+  expiresAt    DateTime
+  createdAt    DateTime         @default(now())
+
+  crisisEvent CrisisEvent @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  proposedBy  User        @relation("DraftProposer", fields: [proposedById], references: [id])
+  confirmedBy User?       @relation("DraftConfirmer", fields: [confirmedById], references: [id])
+
+  @@index([crisisEventId, status])
+  @@index([status, expiresAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TRACK C: Missing models from refinement plan
+// ═══════════════════════════════════════════════════════════════════════════
+
+// FR-01: Organization boundary for institutional customers
+model Organization {
+  id              String           @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  type            OrganizationType @default(NGO)
+  description     String?
+  adminIds        String[]
+  deploymentScope String?  // e.g. "dhaka-district" or "national"
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  users         User[]
+  crisisEvents  CrisisEvent[]
+
+  @@index([type, isActive])
+}
+
+// FR-01: Responder profile with approval workflow
+model ResponderProfile {
+  id                  String                  @id @default(auto()) @map("_id") @db.ObjectId
+  userId              String                  @unique @db.ObjectId
+  approvalStatus      ResponderApprovalStatus @default(APPLICANT)
+  approvedSkills      String[]
+  certifications      String[]
+  availabilityStatus  String?  // "AVAILABLE" | "BUSY" | "OFF_DUTY"
+  availabilityExpiry  DateTime?
+  operatingAreaLat    Float?
+  operatingAreaLng    Float?
+  operatingAreaText   String?
+  assignmentReliability Float                  @default(0)
+  completedMissions   Int                     @default(0)
+  coordinatorNotes    String?
+  reviewedById        String?                 @db.ObjectId
+  reviewedAt          DateTime?
+  rejectionReason     String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([approvalStatus])
+}
+
+// FR-10: Private media asset with opaque storage key
+model MediaAsset {
+  id                String         @id @default(auto()) @map("_id") @db.ObjectId
+  storageKey        String         @unique  // opaque key, never a public disk path
+  originalFileName  String
+  contentType       String
+  verifiedMimeType  String?  // from magic-byte validation
+  sizeBytes         Int
+  checksum          String?
+  visibility        MediaVisibility @default(PRIVATE)
+  crisisEventId     String?        @db.ObjectId
+  uploaderId        String         @db.ObjectId
+  capturedAt        DateTime?
+  uploadedAt        DateTime       @default(now())
+  // Consent for third-party AI processing
+  aiConsent         Boolean        @default(false)
+  consentVersion    String?
+  // Retention
+  retentionDays     Int?
+  deletedAt         DateTime?
+  // Derivative relation (e.g. OCR from an image)
+  derivativeOfId    String?        @db.ObjectId
+  // Versioning
+  version           Int            @default(1)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  crisisEvent   CrisisEvent?  @relation(fields: [crisisEventId], references: [id], onDelete: SetNull)
+  uploader      User          @relation(fields: [uploaderId], references: [id])
+  derivativeOf  MediaAsset?   @relation("DerivativeRelation", fields: [derivativeOfId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  derivatives   MediaAsset[]  @relation("DerivativeRelation")
+  sourceAssets  SourceAsset[]
+
+  @@index([crisisEventId, visibility])
+  @@index([uploaderId, createdAt(sort: Desc)])
+  @@index([visibility, deletedAt])
+}
+
+// FR-08: Atomic stock ledger for race-free inventory
+model StockLedgerEntry {
+  id              String         @id @default(auto()) @map("_id") @db.ObjectId
+  resourceId      String         @db.ObjectId
+  entryType       StockEntryType
+  quantity        Int            // positive for INCREMENT/HOLD, negative for DECREMENT
+  allocationId    String?        @db.ObjectId
+  idempotencyKey  String?
+  reason          String?
+  actorId         String         @db.ObjectId
+  createdAt       DateTime       @default(now())
+
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  actor      User     @relation(fields: [actorId], references: [id])
+
+  @@index([resourceId, createdAt(sort: Desc)])
+  @@index([allocationId])
+  @@index([idempotencyKey])
+}
+
+// FR-08: Fulfillment record for delivered resources
+model Fulfillment {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  allocationId      String   @db.ObjectId
+  deliveredQuantity Int
+  deliveredAt       DateTime @default(now())
+  recipientName     String?
+  verificationNote  String?
+  evidenceUrls      String[]
+  recordedById      String   @db.ObjectId
+  createdAt         DateTime @default(now())
+
+  allocation  Allocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+  recordedBy  User       @relation(fields: [recordedById], references: [id])
+
+  @@index([allocationId, createdAt(sort: Desc)])
+}
+
+// FR-13: Versioned after-action report with frozen snapshot
+model AfterActionReport {
+  id              String       @id @default(auto()) @map("_id") @db.ObjectId
+  crisisEventId   String       @db.ObjectId
+  version         Int
+  status          ReportStatus @default(DRAFT)
+  title           String
+  // Frozen snapshot of all data used to generate the report
+  snapshotJson    String
+  // Generated PDF storage key (private)
+  fileStorageKey  String?
+  summary         String?
+  checksum        String?
+  // Review/approval workflow
+  generatedById   String       @db.ObjectId
+  reviewedById    String?       @db.ObjectId
+  reviewedAt      DateTime?
+  approvedById    String?       @db.ObjectId
+  approvedAt      DateTime?
+  publishedAt     DateTime?
+  // Versioning
+  supersededById  String?       @db.ObjectId @unique
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  crisisEvent  CrisisEvent       @relation(fields: [crisisEventId], references: [id], onDelete: Cascade)
+  generatedBy  User              @relation("ReportGenerator", fields: [generatedById], references: [id])
+  approvedBy   User?             @relation("ReportApprover", fields: [approvedById], references: [id])
+  supersededBy AfterActionReport? @relation("ReportSupersedes_Fwd", fields: [supersededById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supersedes   AfterActionReport? @relation("ReportSupersedes_Fwd")
+
+  @@index([crisisEventId, status])
+  @@unique([crisisEventId, version])
+}
+
+// FR-09/11: Transactional outbox for durable side effects
+model OutboxJob {
+  id              String         @id @default(auto()) @map("_id") @db.ObjectId
+  jobType         OutboxJobType
+  state           OutboxJobState @default(PENDING)
+  payloadJson     String
+  dedupeKey       String?
+  targetEntityId  String?        @db.ObjectId
+  crisisEventId   String?        @db.ObjectId
+  actorId         String?        @db.ObjectId
+  attempts        Int            @default(0)
+  maxAttempts     Int            @default(5)
+  lastError       String?
+  availableAt     DateTime       @default(now())
+  lockedAt        DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime       @default(now())
+
+  crisisEvent CrisisEvent? @relation(fields: [crisisEventId], references: [id], onDelete: SetNull)
+  actor       User?        @relation(fields: [actorId], references: [id])
+
+  @@index([state, availableAt])
+  @@index([dedupeKey])
+  @@index([jobType, state])
 }

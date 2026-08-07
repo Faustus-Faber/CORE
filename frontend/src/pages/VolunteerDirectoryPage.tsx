@@ -48,8 +48,7 @@ export function VolunteerDirectoryPage() {
     };
 
     const toggleAvailability = (opt: string) => {
-        setSelectedSkills(prev => prev); // dummy
-        setAvailability(prev => 
+        setAvailability(prev =>
             prev.includes(opt) ? prev.filter(a => a !== opt) : [...prev, opt]
         );
     };
@@ -68,7 +67,7 @@ export function VolunteerDirectoryPage() {
                     radiusKm: radiusKm,
                     sortBy
                 });
-                setVolunteers(response.volunteers);
+                setVolunteers(Array.isArray(response.volunteers) ? response.volunteers : []);
                 setError("");
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to load directory");

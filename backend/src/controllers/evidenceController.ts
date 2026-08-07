@@ -1,9 +1,42 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
+import { redactCoordinates } from "../utils/geoRedact.js";
+import { metrics } from "../utils/metrics.js";
+
+/**
+ * FR-14 / P0-16: Redacted DTO for public evidence views.
+ * Strips internal user IDs, roles, exact timestamps, and precise GPS
+ * for non-internal viewers.
+ */
+function toPublicEvidenceDTO(
+  post: any,
+  viewerRole: string | undefined
+) {
+  const isInternal = viewerRole === "ADMIN" || viewerRole === "VOLUNTEER";
+  const coords = redactCoordinates(post.latitude, post.longitude, viewerRole);
+  return {
+    id: post.id,
+    title: post.title,
+    description: post.description,
+    location: post.location,
+    latitude: coords.latitude,
+    longitude: coords.longitude,
+    mediaUrls: post.mediaUrls,
+    mediaType: post.mediaType,
+    isVerified: post.isVerified,
+    crisisEventId: post.crisisEventId,
+    // Only expose author name for internal roles; public sees "Verified Reporter" or "Reporter"
+    authorName: isInternal ? post.user?.fullName : (post.isVerified ? "Verified Reporter" : "Reporter"),
+    authorAvatar: isInternal ? post.user?.avatarUrl : undefined,
+    // Round timestamp to date only for public; full timestamp for internal
+    createdAt: isInternal ? post.createdAt : (post.createdAt ? new Date(post.createdAt).toISOString().split("T")[0] : null),
+    flagCount: post._count?.flags ?? 0,
+  };
+}
 
 function inferFileExtension(file: Express.Multer.File) {
   const nameExtension = path.extname(file.originalname).toLowerCase();
@@ -52,10 +85,21 @@ export async function createEvidencePost(
     return response.status(401).json({ message: "Authentication required" });
   }
 
-  const { title, description, mediaType, location, latitude, longitude } = request.body;
-  
+  const { title, description, mediaType, location, latitude, longitude, crisisEventId, visibility } = request.body;
+
   if (!title || !description || !mediaType || !location) {
     return response.status(400).json({ message: "Missing required fields" });
+  }
+
+  // Validate string lengths to prevent DoS via huge payloads
+  if (title.length > 200) {
+    return response.status(400).json({ message: "Title must be at most 200 characters" });
+  }
+  if (description.length > 5000) {
+    return response.status(400).json({ message: "Description must be at most 5000 characters" });
+  }
+  if (location.length > 500) {
+    return response.status(400).json({ message: "Location must be at most 500 characters" });
   }
 
   const files = request.files as Express.Multer.File[] | undefined;
@@ -66,17 +110,24 @@ export async function createEvidencePost(
   const mediaUrls = await persistMediaFiles(files);
   const isVerified = request.authUser?.role === "ADMIN";
 
+  // Parse coordinates safely — parseFloat returns NaN for invalid strings
+  const parsedLat = latitude ? parseFloat(latitude) : null;
+  const parsedLng = longitude ? parseFloat(longitude) : null;
+
   const post = await prisma.evidencePost.create({
     data: {
       userId,
+      crisisEventId: crisisEventId || null,
       title,
       description,
       location,
-      latitude: latitude ? parseFloat(latitude) : null,
-      longitude: longitude ? parseFloat(longitude) : null,
+      latitude: parsedLat != null && Number.isFinite(parsedLat) ? parsedLat : null,
+      longitude: parsedLng != null && Number.isFinite(parsedLng) ? parsedLng : null,
       mediaUrls,
       mediaType,
       isVerified,
+      // FR-10: Visibility classification — defaults to REDACTED_PUBLIC if not specified
+      visibility: visibility || "REDACTED_PUBLIC",
     },
     include: {
       user: {
@@ -100,11 +151,19 @@ export async function listEvidencePosts(
   response: Response,
   _next: NextFunction
 ) {
-  const { filter, sort } = request.query;
+  const { filter, sort, crisisEventId } = request.query;
 
   const where: any = {};
   if (filter === "verified") {
     where.isVerified = true;
+  }
+  if (crisisEventId) {
+    where.crisisEventId = String(crisisEventId);
+  }
+  // AC-10.04: Enforce MediaVisibility — non-admins can't see PRIVATE or INCIDENT_TEAM evidence
+  const viewerRole = request.authUser?.role;
+  if (viewerRole !== "ADMIN") {
+    where.visibility = { in: ["REDACTED_PUBLIC", "ORGANIZATION", "SHARE_PACKAGE"] };
   }
 
   const orderBy: any = {};
@@ -117,6 +176,7 @@ export async function listEvidencePosts(
   const posts = await prisma.evidencePost.findMany({
     where,
     orderBy,
+    take: 100,
     include: {
       user: {
         select: {
@@ -125,34 +185,16 @@ export async function listEvidencePosts(
           role: true,
         }
       },
-      comments: {
-        include: {
-          user: {
-            select: {
-              fullName: true,
-              avatarUrl: true,
-            }
-          }
-        },
-        orderBy: {
-          createdAt: "asc"
-        }
-      },
-      likes: {
-        select: {
-          userId: true
-        }
-      },
       _count: {
         select: {
-          likes: true,
-          comments: true
+          flags: true
         }
       }
     }
   });
 
-  return response.status(200).json(posts);
+  // P0-16: Return redacted DTOs to prevent leaking internal user fields
+  return response.status(200).json(posts.map((p) => toPublicEvidenceDTO(p, viewerRole)));
 }
 
 export async function verifyEvidencePost(
@@ -181,8 +223,25 @@ export async function verifyEvidencePost(
       }
     });
 
+    // Award community contribution points for verified evidence (+5 pts)
+    // This helps unapproved volunteers earn points toward responder status
+    if (post.user.role === "VOLUNTEER") {
+      try {
+        await prisma.user.update({
+          where: { id: post.userId },
+          data: { totalPoints: { increment: 5 } }
+        });
+        const { checkAndAwardBadges } = await import("../services/timesheetService.js");
+        const { checkAndPromoteTrustTier } = await import("../services/trustTierService.js");
+        await checkAndAwardBadges(post.userId);
+        await checkAndPromoteTrustTier(post.userId);
+      } catch (err) {
+        console.error("[evidence-verify] Failed to award points:", err);
+      }
+    }
+
     return response.status(200).json({
-      message: "Post verified successfully",
+      message: "Post verified successfully (+5 points awarded)",
       post
     });
   } catch (error) {
@@ -203,8 +262,11 @@ export async function flagEvidencePost(
   const { id } = request.params as { id: string };
   const { reason } = request.body;
 
-  if (!reason) {
+  if (!reason || typeof reason !== "string") {
     return response.status(400).json({ message: "Flagging reason is required" });
+  }
+  if (reason.length > 500) {
+    return response.status(400).json({ message: "Reason must be 500 characters or less" });
   }
 
   try {
@@ -232,6 +294,14 @@ export async function updateEvidencePost(
   const id = request.params.id as string;
   const { title, description } = request.body;
 
+  // Validate string lengths to prevent DoS via huge payloads
+  if (typeof title !== "string" || title.length === 0 || title.length > 200) {
+    return response.status(400).json({ message: "Title must be 1-200 characters" });
+  }
+  if (typeof description !== "string" || description.length > 5000) {
+    return response.status(400).json({ message: "Description must be at most 5000 characters" });
+  }
+
   const post = await prisma.evidencePost.findUnique({ where: { id } });
 
   if (!post) {
@@ -239,12 +309,43 @@ export async function updateEvidencePost(
   }
 
   if (post.userId !== userId) {
+    // §15.4: Record asset auth failure — unauthorized access attempt to media asset
+    metrics.recordAssetAuthFailure();
     return response.status(403).json({ message: "Forbidden" });
   }
 
-  const updatedPost = await prisma.evidencePost.update({
+  // AC-10.3: Save the previous version to append-only history before updating
+  await prisma.$transaction([
+    prisma.evidencePostVersion.create({
+      data: {
+        evidencePostId: id,
+        version: post.version,
+        title: post.title,
+        description: post.description,
+        editedById: userId,
+      }
+    }),
+    prisma.evidencePost.update({
+      where: { id },
+      data: {
+        title,
+        description,
+        version: { increment: 1 }
+      },
+      include: {
+        user: {
+          select: {
+            fullName: true,
+            avatarUrl: true,
+            role: true,
+          }
+        }
+      }
+    })
+  ]);
+
+  const updatedPost = await prisma.evidencePost.findUnique({
     where: { id },
-    data: { title, description },
     include: {
       user: {
         select: {
@@ -273,70 +374,29 @@ export async function deleteEvidencePost(
   }
 
   if (post.userId !== userId) {
+    // §15.4: Record asset auth failure — unauthorized access attempt to media asset
+    metrics.recordAssetAuthFailure();
     return response.status(403).json({ message: "Forbidden" });
+  }
+
+  // Clean up associated media files from disk
+  const uploadsRoot = path.resolve(process.cwd(), "uploads");
+  for (const mediaUrl of post.mediaUrls) {
+    try {
+      const filePath = path.resolve(process.cwd(), mediaUrl.replace(/^\//, ""));
+      // Defense-in-depth: ensure resolved path is within uploads directory
+      if (!filePath.startsWith(uploadsRoot + path.sep)) {
+        console.error(`Refusing to delete file outside uploads dir: ${mediaUrl}`);
+        continue;
+      }
+      await unlink(filePath);
+    } catch (err) {
+      console.error(`Failed to delete file ${mediaUrl}:`, err);
+      // Continue with deletion even if file cleanup fails
+    }
   }
 
   await prisma.evidencePost.delete({ where: { id } });
 
   return response.status(200).json({ message: "Post deleted successfully" });
-}
-
-export async function toggleLikePost(
-  request: Request,
-  response: Response
-) {
-  const userId = request.authUser?.userId;
-  const postId = request.params.id as string;
-
-  if (!userId) return response.status(401).json({ message: "Auth required" });
-
-  const existingLike = await prisma.like.findUnique({
-    where: {
-      postId_userId: { postId, userId }
-    }
-  });
-
-  if (existingLike) {
-    await prisma.like.delete({
-      where: {
-        postId_userId: { postId, userId }
-      }
-    });
-    return response.status(200).json({ liked: false });
-  } else {
-    await prisma.like.create({
-      data: { postId, userId }
-    });
-    return response.status(200).json({ liked: true });
-  }
-}
-
-export async function addComment(
-  request: Request,
-  response: Response
-) {
-  const userId = request.authUser?.userId;
-  const postId = request.params.id as string;
-  const { content } = request.body;
-
-  if (!userId) return response.status(401).json({ message: "Auth required" });
-  if (!content) return response.status(400).json({ message: "Content required" });
-
-  const comment = await prisma.comment.create({
-    data: {
-      postId,
-      userId,
-      content
-    },
-    include: {
-      user: {
-        select: {
-          fullName: true,
-          avatarUrl: true
-        }
-      }
-    }
-  });
-
-  return response.status(201).json(comment);
 }

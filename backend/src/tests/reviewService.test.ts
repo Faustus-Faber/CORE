@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
   $runCommandRaw: vi.fn(),
+  $transaction: vi.fn(),
   user: {
     findUnique: vi.fn(),
     update: vi.fn()
@@ -57,6 +58,10 @@ describe("submitReview", () => {
     vi.clearAllMocks();
 
     prismaMock.$runCommandRaw.mockResolvedValue({ n: 0 });
+    // Transaction mock: pass through review mocks to the transaction client
+    prismaMock.$transaction.mockImplementation(async (callback: any) =>
+      callback({ review: prismaMock.review })
+    );
     prismaMock.user.update.mockResolvedValue({});
     prismaMock.review.findMany.mockResolvedValue([]);
     prismaMock.review.count.mockResolvedValue(0);

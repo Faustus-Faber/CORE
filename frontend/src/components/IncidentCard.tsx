@@ -11,7 +11,7 @@ import {
 } from "../utils/incident";
 
 export function IncidentCard({ event }: { event: CrisisEventCard }) {
-  const mediaThumb = event.mediaFilenames.length > 0 ? event.mediaFilenames[0] : null;
+  const mediaThumb = event.mediaFilenames?.length > 0 ? event.mediaFilenames[0] : null;
   const thumbUrl = mediaThumb ? normalizeMediaUrl(mediaThumb) : null;
   const isFinalStatus = event.status === "RESOLVED" || event.status === "CLOSED";
 
@@ -82,9 +82,10 @@ export function IncidentCard({ event }: { event: CrisisEventCard }) {
               alt={`${event.classifiedIncidentTitle || event.title} evidence`}
               className="h-14 w-14 flex-shrink-0 rounded-lg object-cover ring-1 ring-slate-200"
               loading="lazy"
+              decoding="async"
             />
           )}
-          <CredibilityWheel score={event.credibilityScore} />
+          <CredibilityWheel score={event.credibilityScore ?? 0} />
         </div>
       </div>
 

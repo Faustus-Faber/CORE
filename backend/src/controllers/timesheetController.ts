@@ -31,17 +31,20 @@ const logTaskSchema = z.object({
 
 const verifyTaskSchema = z.object({
   decision: z.enum(["VERIFIED", "REJECTED"]),
-  rejectionReason: z.string().optional()
+  rejectionReason: z.string().min(10, "Rejection reason must be at least 10 characters").max(500, "Rejection reason must be 500 characters or less").optional()
+}).superRefine((data, ctx) => {
+  if (data.decision === "REJECTED" && (!data.rejectionReason || data.rejectionReason.trim().length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Rejection reason is required when rejecting a task",
+      path: ["rejectionReason"]
+    });
+  }
 });
 
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20)
-});
-
-const leaderboardSchema = z.object({
-  period: z.enum(["all", "month", "week"]).default("all"),
-  limit: z.coerce.number().int().min(1).max(100).default(50)
 });
 
 // ── Handlers ───────────────────────────────────────────────────────────────
@@ -50,7 +53,7 @@ export async function logTaskHandler(req: Request, res: Response, _next: NextFun
   const volunteerId = req.authUser!.userId;
   const body = logTaskSchema.parse(JSON.parse(typeof req.body === "string" ? req.body : JSON.stringify(req.body)));
 
-  const evidenceUrls = (req.files as Express.Multer.File[] | undefined)?.map((f) => f.filename) ?? [];
+  const evidenceUrls = (req.files as Express.Multer.File[] | undefined)?.map((f) => `/uploads/docs/${f.filename}`) ?? [];
 
   const task = await logTask(volunteerId, {
     title: body.title,
@@ -72,12 +75,6 @@ export async function getMyTimesheetHandler(req: Request, res: Response, _next: 
   return res.status(200).json(result);
 }
 
-export async function getLeaderboardHandler(req: Request, res: Response, _next: NextFunction) {
-  const { period, limit } = leaderboardSchema.parse(req.query);
-  const entries = await getLeaderboard(period, limit);
-  return res.status(200).json({ entries, period });
-}
-
 export async function getPendingTasksHandler(req: Request, res: Response, _next: NextFunction) {
   const { page, limit } = paginationSchema.parse(req.query);
   const result = await getPendingTasks(page, limit);
@@ -95,4 +92,12 @@ export async function verifyTaskHandler(req: Request, res: Response, _next: Next
 export async function getCrisesForDropdownHandler(_req: Request, res: Response, _next: NextFunction) {
   const crises = await getActiveCrisesForDropdown();
   return res.status(200).json({ crises });
+}
+
+export async function getLeaderboardHandler(req: Request, res: Response, _next: NextFunction) {
+  const period = (req.query.period as string) === "week" ? "week"
+    : (req.query.period as string) === "month" ? "month"
+    : "all";
+  const result = await getLeaderboard(period);
+  return res.status(200).json(result);
 }

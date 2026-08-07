@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   getOCRHistory,
   getOCRScan,
@@ -9,10 +11,10 @@ import {
   uploadOCRImage
 } from "../services/api";
 
-const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "http://localhost:5000/api").replace("/api", "");
+const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "/api").replace("/api", "") || "";
 const CATEGORIES = ["License Plate", "Street Address", "Warning Label", "Sign", "General Text"];
 
-// Helper to parse the combined AI + OCR text from the new backend
+// Helper to parse the combined AI + OCR text from the backend
 function parseCombinedText(rawText: string) {
   if (rawText.includes("--- AI SCENARIO SUMMARY ---")) {
     const parts = rawText.split("--- RAW EXTRACTED TEXT ---");
@@ -32,13 +34,15 @@ export function OCRToolPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
+  const [aiConsent, setAiConsent] = useState(true);
 
   const refreshHistory = async () => {
     setLoading(true);
     try {
       const data = await getOCRHistory(1, 20);
-      setHistory(data.scans);
-      setActiveScan((current) => current ?? data.scans[0] ?? null);
+      const scans = Array.isArray(data.scans) ? data.scans : [];
+      setHistory(scans);
+      setActiveScan((current) => current ?? scans[0] ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load OCR history");
     } finally {
@@ -51,12 +55,14 @@ export function OCRToolPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const scanId = (location.state as { scanId?: string } | null)?.scanId;
     if (!scanId) return;
 
     getOCRScan(scanId)
-        .then(({ scan }) => setActiveScan(scan))
-        .catch((err) => setError(err instanceof Error ? err.message : "Failed to load OCR scan"));
+      .then((response) => { if (!cancelled && response?.scan) setActiveScan(response.scan); })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load OCR scan"); });
+    return () => { cancelled = true; };
   }, [location.state]);
 
   const handleScan = async () => {
@@ -69,7 +75,7 @@ export function OCRToolPage() {
     setScanning(true);
     setError("");
     try {
-      const { scan } = await uploadOCRImage({ image: selectedFile });
+      const { scan } = await uploadOCRImage({ image: selectedFile, aiConsent });
       setActiveScan(scan);
       setHistory((current) => [scan, ...current.filter((item) => item.id !== scan.id)]);
       setSelectedFile(null);
@@ -87,122 +93,159 @@ export function OCRToolPage() {
   };
 
   return (
-      <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 md:p-10">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Secure Documentation</p>
-            <h1 className="mt-1 text-3xl font-bold text-slate-900">AI & OCR Scan Tool</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-500">
-              Analyze disaster scenes with Gemini AI and extract readable text for documentation or NGO report appendices.
-            </p>
-          </div>
-          <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 sm:w-auto"
-          >
-            Select Image
-          </button>
+    <div className="space-y-6">
+      
+      {/* ── 1. Signature Header Card Box ────────────────────────────────────────── */}
+      <div className="rounded-xl border border-[#0e7490]/30 bg-white p-6 shadow-panel ring-1 ring-[#0e7490]/20 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-tide">Secure Documentation</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-ink font-display">AI & OCR Scan Tool</h1>
+          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+            Analyze disaster scenes with Gemini AI and extract readable text for documentation or NGO report appendices.
+          </p>
         </div>
 
-        {error && (
-            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-        )}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-tide px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-tide/90 flex-shrink-0"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span>Select Image</span>
+        </button>
+      </div>
 
-        <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-          <aside className="space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-xs">
+          {error}
+        </div>
+      )}
+
+      {/* ── 2. Grid Workspace Layout ───────────────────────────────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
+        
+        {/* Left Sidebar Controls */}
+        <aside className="space-y-4">
+          
+          {/* Upload Card */}
+          <div className="rounded-xl border border-[#0e7490]/30 bg-white p-5 shadow-panel ring-1 ring-[#0e7490]/20 space-y-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+            />
+
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/70 p-5 text-center cursor-pointer transition hover:bg-slate-100/70 hover:border-tide/50"
+            >
+              <svg className="mx-auto h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <p className="mt-2 text-xs font-semibold text-ink">
+                {selectedFile ? selectedFile.name : "No image selected"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">JPG, PNG, WEBP up to 10MB</p>
+            </div>
+
+            <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
               <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                type="checkbox"
+                checked={aiConsent}
+                onChange={(e) => setAiConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-tide focus:ring-tide"
               />
-              <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-4 text-center sm:p-6">
-                <p className="text-sm font-semibold text-slate-900">
-                  {selectedFile ? selectedFile.name : "No image selected"}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">JPG, PNG, WEBP up to 10MB</p>
-              </div>
+              <span>I consent to sending this image to a third-party AI provider for analysis.</span>
+            </label>
+
+            <button
+              type="button"
+              disabled={!selectedFile || scanning || !aiConsent}
+              onClick={() => void handleScan()}
+              className="w-full rounded-lg bg-tide px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-tide/90 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {scanning ? (
+                "Analyzing Image..."
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span>Scan with AI</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Scan History Card */}
+          <div className="rounded-xl border border-[#0e7490]/30 bg-white p-5 shadow-panel ring-1 ring-[#0e7490]/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">Scan History</h2>
               <button
-                  type="button"
-                  disabled={!selectedFile || scanning}
-                  onClick={() => void handleScan()}
-                  className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
+                type="button"
+                onClick={() => void refreshHistory()}
+                className="text-xs font-semibold text-tide hover:underline"
               >
-                {scanning ? (
-                    "Analyzing Image..."
-                ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      Scan with AI
-                    </>
-                )}
+                Refresh
               </button>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Scan History</h2>
-                <button
-                    type="button"
-                    onClick={() => void refreshHistory()}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                >
-                  Refresh
-                </button>
-              </div>
-              {loading ? (
-                  <p className="py-8 text-center text-sm text-slate-500">Loading scans...</p>
-              ) : history.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-slate-500">No scans yet.</p>
-              ) : (
-                  <div className="space-y-2">
-                    {history.map((scan) => (
-                        <button
-                            key={scan.id}
-                            type="button"
-                            onClick={() => setActiveScan(scan)}
-                            className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                                activeScan?.id === scan.id
-                                    ? "border-blue-300 bg-blue-50"
-                                    : "border-slate-100 hover:bg-slate-50"
-                            }`}
-                        >
-                          <p className="truncate text-sm font-semibold text-slate-800">{scan.sourceFileName}</p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {scan.items.length} items · {new Date(scan.createdAt).toLocaleDateString()}
-                          </p>
-                        </button>
-                    ))}
-                  </div>
-              )}
-            </div>
-          </aside>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            {activeScan ? (
-                <OCRScanDetails scan={activeScan} onItemUpdated={handleItemUpdated} />
+            {loading ? (
+              <p className="py-6 text-center text-xs text-slate-400">Loading scans...</p>
+            ) : history.length === 0 ? (
+              <p className="py-6 text-center text-xs text-slate-400">No scans yet.</p>
             ) : (
-              <div className="flex min-h-[260px] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 p-4 text-center text-sm text-slate-500 sm:min-h-[420px]">
-                  Select or create a scan to view AI analysis and extracted text.
-                </div>
+              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                {history.map((scan) => {
+                  const isSelected = activeScan?.id === scan.id;
+                  return (
+                    <button
+                      key={scan.id}
+                      type="button"
+                      onClick={() => setActiveScan(scan)}
+                      className={`w-full rounded-lg border p-3 text-left transition-all ${
+                        isSelected
+                          ? "border-[#0e7490]/80 bg-tide/5 ring-1 ring-[#0e7490]/40 shadow-md text-tide font-semibold"
+                          : "border-[#0e7490]/30 bg-white ring-1 ring-[#0e7490]/20 hover:border-[#0e7490]/60 hover:ring-[#0e7490]/30 shadow-xs text-ink"
+                      }`}
+                    >
+                      <p className="truncate text-xs font-bold">{scan.sourceFileName}</p>
+                      <p className="mt-1 text-[11px] text-slate-500 font-normal">
+                        {scan.items.length} items · {new Date(scan.createdAt).toLocaleDateString()}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
             )}
-          </section>
-        </div>
+          </div>
+
+        </aside>
+
+        {/* Right Main Analysis Card */}
+        <section className="rounded-xl border border-[#0e7490]/30 bg-white p-6 shadow-panel ring-1 ring-[#0e7490]/20">
+          {activeScan ? (
+            <OCRScanDetails scan={activeScan} onItemUpdated={handleItemUpdated} />
+          ) : (
+            <div className="flex min-h-[320px] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 p-6 text-center text-xs text-slate-500">
+              Select an existing scan from history or upload a new image to view AI analysis and extracted text.
+            </div>
+          )}
+        </section>
+
       </div>
+    </div>
   );
 }
 
 function OCRScanDetails({
-                          scan,
-                          onItemUpdated
-                        }: {
+  scan,
+  onItemUpdated
+}: {
   scan: OCRScan;
   onItemUpdated: (item: OCRItem) => void;
 }) {
@@ -210,8 +253,8 @@ function OCRScanDetails({
   const [draftText, setDraftText] = useState("");
   const [draftCategory, setDraftCategory] = useState("General Text");
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
+  const [saveError, setSaveError] = useState("");
 
-  // Parse the rawText to see if it contains the AI Summary
   const { aiSummary } = parseCombinedText(scan.rawText);
 
   const startEditing = (item: OCRItem) => {
@@ -221,181 +264,196 @@ function OCRScanDetails({
   };
 
   const saveItem = async (item: OCRItem) => {
-    const { item: updated } = await updateOCRItem(scan.id, item.id, {
-      text: draftText,
-      category: draftCategory
-    });
-    onItemUpdated(updated);
-    setEditingId(null);
+    try {
+      setSaveError("");
+      const { item: updated } = await updateOCRItem(scan.id, item.id, {
+        text: draftText,
+        category: draftCategory
+      });
+      onItemUpdated(updated);
+      setEditingId(null);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Failed to save item");
+    }
   };
 
   return (
-      <div className="space-y-5">
-        <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">{scan.sourceFileName}</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Provider: {scan.provider} · Created {new Date(scan.createdAt).toLocaleString()}
-            </p>
-            {scan.folder && <p className="mt-1 text-xs font-medium text-blue-600">Folder: {scan.folder.name}</p>}
-          </div>
-          <button
-              type="button"
-              onClick={() => void navigator.clipboard.writeText(scan.rawText)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            Copy All Data
-          </button>
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-ink font-display">{scan.sourceFileName}</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Provider: {scan.provider} · Created {new Date(scan.createdAt).toLocaleString()}
+          </p>
+          {scan.folder && <p className="mt-1 text-xs font-semibold text-tide">Folder: {scan.folder.name}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={() => void navigator.clipboard.writeText(scan.rawText)}
+          className="rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50"
+        >
+          Copy All Data
+        </button>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        
+        {/* Source Image Frame */}
+        <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 h-fit">
+          <img
+            src={`${API_ORIGIN}${scan.sourceImageUrl}`}
+            alt={scan.sourceFileName}
+            loading="lazy"
+            decoding="async"
+            onLoad={(event) => {
+              setImageSize({
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight
+              });
+            }}
+            className="max-h-[520px] w-full object-contain"
+          />
+          {imageSize && scan.items.map((item) => (
+            <OCRBoxOverlay key={item.id} item={item} imageSize={imageSize} />
+          ))}
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50 h-fit">
-            <img
-                src={`${API_ORIGIN}${scan.sourceImageUrl}`}
-                alt={scan.sourceFileName}
-                onLoad={(event) => {
-                  setImageSize({
-                    width: event.currentTarget.naturalWidth,
-                    height: event.currentTarget.naturalHeight
-                  });
-                }}
-                className="max-h-[560px] w-full object-contain"
-            />
-            {imageSize && scan.items.map((item) => (
-                <OCRBoxOverlay key={item.id} item={item} imageSize={imageSize} />
-            ))}
-          </div>
+        {/* Extracted Details & AI Summary */}
+        <div className="space-y-4 overflow-y-auto max-h-[520px] pr-1 custom-scrollbar">
 
-          <div className="space-y-5 overflow-y-auto max-h-[560px] pr-1 custom-scrollbar">
-
-            {/* New AI Summary Section */}
-            {aiSummary && (
-                <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 shadow-sm">
-                  <h3 className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-indigo-700">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    AI Scenario Summary
-                  </h3>
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                    {aiSummary}
-                  </p>
-                </div>
-            )}
-
-            {/* Extracted Text Section */}
-            <div>
-              <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-700">
-                OCR Extracted Text
+          {/* AI Scenario Summary Box */}
+          {aiSummary && (
+            <div className="rounded-xl border border-[#0e7490]/30 bg-tide/5 p-4 shadow-sm space-y-2">
+              <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-tide">
+                <svg className="w-4 h-4 text-tide" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span>AI Scenario Summary</span>
               </h3>
-              {scan.items.length === 0 ? (
-                  <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">No readable text was detected.</p>
-              ) : (
-                  <div className="space-y-3">
-                    {scan.items.map((item) => (
-                        <div key={item.id} className="rounded-lg border border-slate-100 p-3 bg-white">
-                          {editingId === item.id ? (
-                              <div className="space-y-2">
+              <div className="text-xs text-slate-800 leading-relaxed prose prose-xs max-w-none prose-headings:text-ink prose-strong:text-ink prose-p:my-1">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {aiSummary}
+                </ReactMarkdown>
+              </div>
+            </div>
+          )}
+
+          {/* Extracted Text Items */}
+          <div>
+            <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wider text-slate-700">
+              OCR Extracted Text
+            </h3>
+            {scan.items.length === 0 ? (
+              <p className="rounded-lg bg-slate-50 p-4 text-xs text-slate-500 border border-slate-100">No readable text was detected.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {scan.items.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs">
+                    {editingId === item.id ? (
+                      <div className="space-y-2">
                         <textarea
-                            value={draftText}
-                            onChange={(event) => setDraftText(event.target.value)}
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10"
-                            rows={2}
+                          value={draftText}
+                          onChange={(event) => setDraftText(event.target.value)}
+                          className="w-full rounded-md border border-slate-300 p-2 text-xs text-ink focus:border-tide focus:ring-1 focus:ring-tide"
+                          rows={2}
                         />
-                                <select
-                                    value={draftCategory}
-                                    onChange={(event) => setDraftCategory(event.target.value)}
-                                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                                >
-                                  {CATEGORIES.map((category) => (
-                                      <option key={category} value={category}>{category}</option>
-                                  ))}
-                                </select>
-                                <div className="flex gap-2">
-                                  <button
-                                      type="button"
-                                      onClick={() => void saveItem(item)}
-                                      className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                      type="button"
-                                      onClick={() => setEditingId(null)}
-                                      className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                          ) : (
-                              <>
-                                <div className="flex items-start justify-between gap-3">
-                                  <p className="text-sm font-semibold text-slate-900">{item.text}</p>
-                                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                        <select
+                          value={draftCategory}
+                          onChange={(event) => setDraftCategory(event.target.value)}
+                          className="w-full rounded-md border border-slate-300 p-2 text-xs text-ink focus:border-tide focus:ring-1 focus:ring-tide"
+                        >
+                          {CATEGORIES.map((category) => (
+                            <option key={category} value={category}>{category}</option>
+                          ))}
+                        </select>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void saveItem(item)}
+                            className="rounded-md bg-tide px-3 py-1 text-xs font-semibold text-white shadow-xs hover:bg-tide/90"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setEditingId(null); setSaveError(""); }}
+                            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {saveError && (
+                          <p className="text-[11px] text-red-600 mt-1">{saveError}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-semibold text-ink">{item.text}</p>
+                          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                             {item.confidence == null ? "N/A" : `${Math.round(item.confidence)}%`}
                           </span>
-                                </div>
-                                <p className="mt-1 text-xs font-medium text-blue-600">{item.category}</p>
-                                <div className="mt-3 flex gap-2">
-                                  <button
-                                      type="button"
-                                      onClick={() => void navigator.clipboard.writeText(item.text)}
-                                      className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                                  >
-                                    Copy
-                                  </button>
-                                  <button
-                                      type="button"
-                                      onClick={() => startEditing(item)}
-                                      className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                                  >
-                                    Edit
-                                  </button>
-                                </div>
-                              </>
-                          )}
                         </div>
-                    ))}
+                        <p className="mt-1 text-[11px] font-semibold text-tide">{item.category}</p>
+                        <div className="mt-2.5 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void navigator.clipboard.writeText(item.text)}
+                            className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            Copy
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => startEditing(item)}
+                            className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
-              )}
-            </div>
-
+                ))}
+              </div>
+            )}
           </div>
+
         </div>
       </div>
+    </div>
   );
 }
 
 function OCRBoxOverlay({
-                         item,
-                         imageSize
-                       }: {
+  item,
+  imageSize
+}: {
   item: OCRItem;
   imageSize: { width: number; height: number };
 }) {
   if (
-      item.bboxLeft == null ||
-      item.bboxTop == null ||
-      item.bboxWidth == null ||
-      item.bboxHeight == null ||
-      imageSize.width === 0 ||
-      imageSize.height === 0
+    item.bboxLeft == null ||
+    item.bboxTop == null ||
+    item.bboxWidth == null ||
+    item.bboxHeight == null ||
+    imageSize.width === 0 ||
+    imageSize.height === 0
   ) {
     return null;
   }
 
   return (
-      <div
-          title={item.text}
-          className="pointer-events-none absolute rounded border border-emerald-400 bg-emerald-300/10"
-          style={{
-            left: `${(item.bboxLeft / imageSize.width) * 100}%`,
-            top: `${(item.bboxTop / imageSize.height) * 100}%`,
-            width: `${(item.bboxWidth / imageSize.width) * 100}%`,
-            height: `${(item.bboxHeight / imageSize.height) * 100}%`
-          }}
-      />
+    <div
+      title={item.text}
+      className="pointer-events-none absolute rounded border border-emerald-400 bg-emerald-300/10"
+      style={{
+        left: `${(item.bboxLeft / imageSize.width) * 100}%`,
+        top: `${(item.bboxTop / imageSize.height) * 100}%`,
+        width: `${(item.bboxWidth / imageSize.width) * 100}%`,
+        height: `${(item.bboxHeight / imageSize.height) * 100}%`
+      }}
+    />
   );
 }
 

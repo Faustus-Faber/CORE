@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { registerUser } from "../services/api";
@@ -35,13 +35,38 @@ export function RegisterPage() {
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clean up any pending redirect timer on unmount
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    };
+  }, []);
 
   const isVolunteer = useMemo(() => form.role === "VOLUNTEER", [form.role]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (isSubmitting) return;
     setError("");
     setSuccess("");
+
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    if (form.password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+
+    if (!/[A-Z]/.test(form.password) || !/[a-z]/.test(form.password) || !/[0-9]/.test(form.password) || !/[^A-Za-z0-9]/.test(form.password)) {
+      setError("Password must contain uppercase, lowercase, number, and a symbol");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -64,7 +89,7 @@ export function RegisterPage() {
       });
 
       setSuccess("Registration complete. Redirecting to login...");
-      setTimeout(() => navigate("/login"), 900);
+      redirectTimerRef.current = setTimeout(() => navigate("/login"), 900);
     } catch (submissionError) {
       setError(
         submissionError instanceof Error

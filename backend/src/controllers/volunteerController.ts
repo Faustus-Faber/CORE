@@ -1,30 +1,46 @@
 import type { Request, Response } from "express";
 
 import { prisma } from "../lib/prisma.js";
+import { redactCoordinates } from "../utils/geoRedact.js";
 
 export async function listVolunteers(request: Request, response: Response) {
     const { search, skills, availability, minRating, lat, lng, radiusKm, sortBy } = request.query;
 
+    // §15.1: Pagination — no unbounded feeds
+    const page = Math.max(1, Number(request.query.page ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(request.query.limit ?? 50)));
+
+    const viewerRole = request.authUser?.role;
+    const isAdmin = viewerRole === "ADMIN";
+
     const where: any = { role: "VOLUNTEER" };
 
+    // Hide banned volunteers from non-admin viewers
+    if (!isAdmin) {
+        where.isBanned = false;
+    }
+
+    // AC-01.5: Exclude email and exact coordinates for non-admin viewers
     let volunteers = await prisma.user.findMany({
         where,
         select: {
             id: true,
             fullName: true,
-            email: true,
+            email: isAdmin,          // only admins see email
             location: true,
             latitude: true,
             longitude: true,
             skills: true,
             avatarUrl: true,
             availability: true,
-            isFlagged: true,
+            isFlagged: isAdmin,      // only admins see flag status
             reviewsReceived: {
-                select: { rating: true }
+                select: { rating: true },
+                take: 100
             }
         },
-        orderBy: { createdAt: "desc" }
+        orderBy: { createdAt: "desc" },
+        take: 500
     });
 
     let results = volunteers.map(v => {
@@ -51,8 +67,12 @@ export async function listVolunteers(request: Request, response: Response) {
         }
         
         const { reviewsReceived, ...rest } = v;
+        // P1-15: Redact exact coordinates for non-internal viewers
+        const { latitude, longitude } = redactCoordinates(v.latitude, v.longitude, viewerRole);
         return {
             ...rest,
+            latitude,
+            longitude,
             avgRating,
             reviewCount: v.reviewsReceived.length,
             distance
@@ -108,26 +128,46 @@ export async function listVolunteers(request: Request, response: Response) {
         });
     }
 
-    return response.status(200).json({ volunteers: results });
+    // Apply pagination after filtering/sorting
+    const total = results.length;
+    const paginated = results.slice((page - 1) * limit, page * limit);
+
+    return response.status(200).json({
+        volunteers: paginated,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    });
 }
 
 export async function getVolunteerProfile(request: Request, response: Response) {
     const volunteerId = String(request.params.volunteerId);
+    const viewerRole = request.authUser?.role;
+    const isAdmin = viewerRole === "ADMIN";
 
     const volunteer = await prisma.user.findUnique({
         where: { id: volunteerId },
         select: {
             id: true,
             fullName: true,
-            email: true,
+            email: isAdmin,          // AC-01.5: only admins see email
             location: true,
             role: true,
             skills: true,
             availability: true,
             certifications: true,
             avatarUrl: true,
-            isFlagged: true,
-            volunteerFlagReasons: true
+            isFlagged: isAdmin,      // only admins see flag status
+            volunteerFlagReasons: isAdmin, // only admins see flag reasons
+            latitude: true,
+            longitude: true,
+            trustTier: true,
+            totalPoints: true,
+            totalVerifiedHours: true,
+            badges: { select: { badgeType: true, awardedAt: true } },
+            vouchesReceived: {
+                include: {
+                    vouchedBy: { select: { fullName: true, avatarUrl: true, trustTier: true } }
+                }
+            }
         }
     });
 
@@ -139,5 +179,13 @@ export async function getVolunteerProfile(request: Request, response: Response) 
         return response.status(400).json({ message: "User is not a volunteer" });
     }
 
-    return response.status(200).json({ volunteer });
+    // AC-01.5: Redact exact coordinates for non-internal viewers
+    const { latitude, longitude } = redactCoordinates(
+        (volunteer as any).latitude,
+        (volunteer as any).longitude,
+        viewerRole
+    );
+    const { latitude: _lat, longitude: _lng, ...rest } = volunteer as any;
+
+    return response.status(200).json({ volunteer: { ...rest, latitude, longitude } });
 }

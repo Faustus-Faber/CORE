@@ -25,11 +25,21 @@ export const registrationSchema = z
     password: passwordSchema,
     confirmPassword: z.string(),
     location: z.string().min(2, "Location is required").max(200),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    // P0-06/FR-01: Consented location metadata
+    locationAccuracy: z.number().min(0).max(10000).optional(),
+    locationSource: z.enum(["GPS", "MAP_PIN", "TYPED"]).optional(),
+    locationCapturedAt: z.string().regex(dateTimeLikeRegex, "Invalid captured-at datetime").optional(),
+    locationConsentVersion: z.string().max(40).optional(),
     role: roleSchema.refine((value) => value !== "ADMIN", {
       message: "Admin role cannot be self-registered"
     }),
-    skills: z.array(z.string()).optional(),
-    availability: z.string().optional(),
+    // P0-04: Volunteer self-registration is gated — users register as USER
+    // and can be promoted to VOLUNTEER by an admin after review.
+    // We still accept skills/availability for the future promotion.
+    skills: z.array(z.string().min(1).max(50)).max(20, "Maximum 20 skills allowed").optional(),
+    availability: z.string().max(200).optional(),
     certifications: z.string().max(400).optional()
   })
   .superRefine((payload, context) => {
@@ -41,16 +51,8 @@ export const registrationSchema = z
       });
     }
 
-    if (
-      payload.role === "VOLUNTEER" &&
-      (!payload.skills?.length || !payload.availability?.trim())
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Volunteer skills and availability are required",
-        path: ["skills"]
-      });
-    }
+    // Skills/availability are optional for USER registration.
+    // They will be required when an admin promotes to VOLUNTEER.
   });
 
 export const loginSchema = z.object({
@@ -83,9 +85,16 @@ export const profileUpdateSchema = z.object({
   fullName: z.string().min(2).max(120).optional(),
   phone: z.string().regex(phoneRegex, "Invalid phone format").optional(),
   location: z.string().min(2).max(200).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  // P0-06/FR-01: Consented location metadata
+  locationAccuracy: z.number().optional(),
+  locationSource: z.enum(["GPS", "MAP_PIN", "TYPED"]).optional(),
+  locationCapturedAt: z.string().regex(dateTimeLikeRegex, "Invalid captured-at datetime").optional(),
+  locationConsentVersion: z.string().max(40).optional(),
   avatarUrl: z.string().url("Avatar must be a valid URL").optional(),
-  skills: z.array(z.string()).optional(),
-  availability: z.string().optional(),
+  skills: z.array(z.string().min(1).max(50)).max(20, "Maximum 20 skills allowed").optional(),
+  availability: z.string().max(200).optional(),
   certifications: z.string().max(400).optional(),
   dispatchOptIn: z.boolean().optional()
 });
@@ -350,8 +359,8 @@ export const createFolderSchema = z.object({
 
 export const addNoteSchema = z.object({
   content: z.string().min(1, "Note content is required").max(2000, "Note must be at most 2000 characters"),
-  lat: z.number().optional(),
-  lng: z.number().optional()
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional()
 });
 
 export const shareFolderSchema = z.object({
@@ -360,14 +369,16 @@ export const shareFolderSchema = z.object({
 
 export function validateDashboardFeedQuery(raw: unknown) {
   const schema = z.object({
-    lat: z.coerce.number().optional(),
-    lng: z.coerce.number().optional(),
+    lat: z.coerce.number().min(-90).max(90).optional(),
+    lng: z.coerce.number().min(-180).max(180).optional(),
     radiusKm: z.coerce.number().min(1).max(100).default(10),
     incidentType: z.enum(["ALL", "FLOOD", "FIRE", "EARTHQUAKE", "BUILDING_COLLAPSE", "ROAD_ACCIDENT", "VIOLENCE", "MEDICAL_EMERGENCY", "OTHER"]).optional(),
     severity: z.enum(["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
     timeRangeHours: z.coerce.number().min(0).max(168).optional(),
     sortBy: z.enum(["mostRecent", "highestSeverity", "mostReports"]).optional(),
-    sortOrder: z.enum(["asc", "desc"]).optional()
+    sortOrder: z.enum(["asc", "desc"]).optional(),
+    page: z.coerce.number().min(1).default(1),
+    limit: z.coerce.number().min(1).max(100).default(50)
   });
 
   const parsed = schema.safeParse(raw);
@@ -378,7 +389,9 @@ export function validateDashboardFeedQuery(raw: unknown) {
       severity: "ALL" as const,
       timeRangeHours: undefined,
       sortBy: "mostRecent" as const,
-      sortOrder: "desc" as const
+      sortOrder: "desc" as const,
+      page: 1,
+      limit: 50
     };
   }
 
@@ -390,7 +403,9 @@ export function validateDashboardFeedQuery(raw: unknown) {
     severity: parsed.data.severity ?? "ALL",
     timeRangeHours: parsed.data.timeRangeHours,
     sortBy: parsed.data.sortBy ?? "mostRecent",
-    sortOrder: parsed.data.sortOrder ?? "desc"
+    sortOrder: parsed.data.sortOrder ?? "desc",
+    page: parsed.data.page,
+    limit: parsed.data.limit
   };
 }
 

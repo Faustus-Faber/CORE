@@ -10,13 +10,14 @@ export function ForgotPasswordPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (isSubmitting) return;
     setIsSubmitting(true);
     setError("");
     setMessage("");
 
     try {
       const response = await forgotPassword(email);
-      setMessage(response.message);
+      setMessage(response.message || "Reset link sent to your email");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Request failed");
     } finally {

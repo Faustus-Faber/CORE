@@ -48,8 +48,8 @@ export async function uploadFile(req: Request, res: Response) {
         fileName: file.originalname,
         fileSize: file.size,
         mimeType: file.mimetype,
-        lat: req.body.lat ? parseFloat(req.body.lat) : null,
-        lng: req.body.lng ? parseFloat(req.body.lng) : null
+        lat: req.body.lat ? (Number.isFinite(parseFloat(req.body.lat)) ? parseFloat(req.body.lat) : null) : null,
+        lng: req.body.lng ? (Number.isFinite(parseFloat(req.body.lng)) ? parseFloat(req.body.lng) : null) : null
     });
 
     res.status(201).json(savedFile);
@@ -158,7 +158,7 @@ export async function restoreNote(req: Request, res: Response) {
 export async function updateFileDescription(req: Request, res: Response) {
     const fileId = req.params.fileId as string;
     const userId = req.authUser!.userId;
-    const { description } = req.body;
+    const description = typeof req.body.description === "string" ? req.body.description.slice(0, 1000) : "";
     const file = await docService.updateFileDescription(userId, fileId, description);
     res.json(file);
 }

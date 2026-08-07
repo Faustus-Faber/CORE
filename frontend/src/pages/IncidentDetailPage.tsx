@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
+import { LeafletMap, SEVERITY_COLORS } from "../components/LeafletMap";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -19,17 +19,17 @@ import {
 } from "../utils/incident";
 import { stripThinkingTags } from "../utils/sanitize";
 import type {
-  CrisisAccessStatus,
   CrisisResponder,
   CrisisResponderStatus,
   CrisisUpdateEntry,
-  CrisisUpdateType,
   IncidentDetailResponse,
   ContributingReport
 } from "../types";
-import { CrisisUpdateForm } from "../components/CrisisUpdateForm";
-import { UpdateTimeline } from "../components/UpdateTimeline";
+import { ResponseTeamPanel } from "../components/ResponseTeamPanel";
+import { CrisisActivityPanel } from "../components/CrisisActivityPanel";
+import { CrisisChatPanel } from "../components/CrisisChatPanel";
 import { AdminCrisisControls } from "../components/AdminCrisisControls";
+import { NGOReportSection } from "../components/NGOReportSection";
 import { useAuth } from "../context/AuthContext";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -43,40 +43,6 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const CAN_UPDATE_ROLES = ["VOLUNTEER", "ADMIN"];
-
-const RESPONDER_STATUS_LABEL: Record<CrisisResponderStatus, string> = {
-  RESPONDING: "Responding",
-  EN_ROUTE: "En Route",
-  ON_SITE: "On Site",
-  COMPLETED: "Completed",
-  UNAVAILABLE: "Unavailable"
-};
-
-const UPDATE_TYPE_LABEL: Record<CrisisUpdateType, string> = {
-  STATUS_CHANGE: "Status Change",
-  FIELD_OBSERVATION: "Field Observation",
-  ACCESS_UPDATE: "Access Update",
-  IMPACT_UPDATE: "Impact Update",
-  RESOURCE_NEED: "Resource Need",
-  CLOSURE_NOTE: "Closure Note",
-  ADMIN_CORRECTION: "Admin Correction",
-  RESPONDER_STATUS: "Responder Status"
-};
-
-const ACCESS_STATUS_LABEL: Record<CrisisAccessStatus, string> = {
-  OPEN: "Open",
-  LIMITED: "Limited",
-  BLOCKED: "Blocked",
-  UNKNOWN: "Unknown"
-};
-
-const NEXT_RESPONDER_STATUSES: Record<CrisisResponderStatus, CrisisResponderStatus[]> = {
-  RESPONDING: ["EN_ROUTE", "ON_SITE", "COMPLETED", "UNAVAILABLE"],
-  EN_ROUTE: ["ON_SITE", "COMPLETED", "UNAVAILABLE"],
-  ON_SITE: ["COMPLETED", "UNAVAILABLE"],
-  COMPLETED: ["RESPONDING", "UNAVAILABLE"],
-  UNAVAILABLE: ["RESPONDING"]
-};
 
 function ContributingReportCard({ report }: { report: ContributingReport }) {
   const [expanded, setExpanded] = useState(false);
@@ -134,7 +100,7 @@ function ContributingReportCard({ report }: { report: ContributingReport }) {
                   className="overflow-hidden rounded-md ring-1 ring-slate-200 transition hover:ring-tide"
                 >
                   {isImageFile(mediaPath) ? (
-                    <img src={mediaUrl} alt={`Evidence from ${report.reporterName}`} loading="lazy" className="h-24 w-full object-cover" />
+                    <img src={mediaUrl} alt={`Evidence from ${report.reporterName}`} loading="lazy" decoding="async" className="h-24 w-full object-cover" />
                   ) : (
                     <div className="flex h-24 items-center justify-center bg-slate-100 text-xs font-medium text-slate-600">
                       File Attachment
@@ -161,10 +127,7 @@ export function IncidentDetailPage() {
   const [myResponderStatus, setMyResponderStatus] = useState<CrisisResponderStatus | null>(null);
   const [isUpdatingResponder, setIsUpdatingResponder] = useState(false);
   const [responderError, setResponderError] = useState("");
-  const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const { isLoaded } = useLoadScript({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ""
-  });
+  const [chatOpen, setChatOpen] = useState(false);
 
   const isAdmin = user?.role === "ADMIN";
   const canManageResponderStatus = user?.role === "VOLUNTEER";
@@ -223,7 +186,30 @@ export function IncidentDetailPage() {
   };
 
   useEffect(() => {
-    void fetchDetail();
+    let cancelled = false;
+    const doFetch = async () => {
+      if (!id) return;
+      setLoading(true);
+      setError("");
+      try {
+        const [incidentResponse, updatesResponse, responderResponse] = await Promise.all([
+          getIncidentDetail(id),
+          getCrisisUpdates(id),
+          getCrisisResponders(id)
+        ]);
+        if (cancelled) return;
+        setDetail(incidentResponse.incident);
+        setUpdates(updatesResponse.entries);
+        setResponders(responderResponse.responders);
+        setMyResponderStatus(responderResponse.myStatus);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load incident details");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void doFetch();
+    return () => { cancelled = true; };
   }, [id]);
 
   if (loading) {
@@ -252,12 +238,9 @@ export function IncidentDetailPage() {
   }
 
   const { crisisEvent, commandCenter, contributingReports, nearbyResources } = detail;
-  const mapCenter = crisisEvent.latitude && crisisEvent.longitude
-    ? { lat: crisisEvent.latitude, lng: crisisEvent.longitude }
-    : { lat: 23.8103, lng: 90.4125 };
-  const nextResponderStatuses: CrisisResponderStatus[] = myResponderStatus
-    ? NEXT_RESPONDER_STATUSES[myResponderStatus]
-    : ["RESPONDING"];
+  const mapCenter: [number, number] = crisisEvent.latitude && crisisEvent.longitude
+    ? [crisisEvent.latitude, crisisEvent.longitude]
+    : [23.8103, 90.4125];
 
   return (
     <div className="space-y-6">
@@ -291,6 +274,18 @@ export function IncidentDetailPage() {
               <span>Created {timeAgo(crisisEvent.createdAt)}</span>
             </div>
           </div>
+          {user && (
+            <button
+              type="button"
+              onClick={() => setChatOpen(true)}
+              className="flex flex-shrink-0 items-center gap-2 rounded-xl bg-tide px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-cyan-700"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span className="hidden sm:inline">Coordination Chat</span>
+            </button>
+          )}
         </div>
       </section>
 
@@ -335,16 +330,14 @@ export function IncidentDetailPage() {
         </section>
       )}
 
-      {isLoaded && crisisEvent.latitude && crisisEvent.longitude && (
+      {crisisEvent.latitude && crisisEvent.longitude && (
         <section className="overflow-hidden rounded-xl shadow-panel ring-1 ring-slate-200">
-          <GoogleMap
-            zoom={14}
+          <LeafletMap
             center={mapCenter}
-            mapContainerClassName="h-64 w-full"
-            options={{ disableDefaultUI: true, zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
-          >
-            <Marker position={mapCenter} />
-          </GoogleMap>
+            zoom={14}
+            height="256px"
+            points={[{ lat: mapCenter[0], lng: mapCenter[1], color: SEVERITY_COLORS[crisisEvent.severityLevel] ?? "#ef4444" }]}
+          />
         </section>
       )}
 
@@ -363,288 +356,54 @@ export function IncidentDetailPage() {
         </section>
       )}
 
-      <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-              Field Intelligence Snapshot
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Verified command intelligence compiled from responder and admin updates.
-            </p>
-          </div>
-          <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-            {commandCenter.lastVerifiedAt
-              ? `Last verified ${timeAgo(commandCenter.lastVerifiedAt)}`
-              : "No verified field update yet"}
-          </div>
-        </div>
+      <ResponseTeamPanel
+        responders={responders}
+        myStatus={myResponderStatus}
+        myTrustTier={user?.trustTier}
+        myObservationCount={responders.find((r) => r.volunteerId === user?.id)?.observationCount ?? 0}
+        myResourceNeedCount={responders.find((r) => r.volunteerId === user?.id)?.resourceNeedCount ?? 0}
+        crisisNeeds={commandCenter.resourceNeeds}
+        canOptIn={canManageResponderStatus}
+        isUpdating={isUpdatingResponder}
+        responderError={responderError}
+        onStatusUpdate={(status) => void handleResponderStatusUpdate(status)}
+      />
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-              Verification
-            </p>
-            <p className="mt-2 text-base font-semibold text-ink">
-              {commandCenter.lastVerifiedBy ?? "Awaiting field confirmation"}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              {commandCenter.latestUpdateType
-                ? UPDATE_TYPE_LABEL[commandCenter.latestUpdateType]
-                : "No command update yet"}
-            </p>
-          </article>
+      <CrisisActivityPanel
+        crisisEventId={crisisEvent.id}
+        crisisStatus={crisisEvent.status}
+        crisisSeverity={crisisEvent.severityLevel}
+        commandCenter={commandCenter}
+        updates={updates}
+        isAdmin={isAdmin}
+        userTrustTier={user?.trustTier}
+        canSubmitCommand={canSubmitCommand}
+        canOpenCommandPanel={canOpenCommandPanel}
+        onRefresh={() => void fetchDetail()}
+      />
 
-          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-              Access
-            </p>
-            <p className="mt-2 text-base font-semibold text-ink">
-              {commandCenter.accessStatus
-                ? ACCESS_STATUS_LABEL[commandCenter.accessStatus]
-                : "No access update"}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              {commandCenter.affectedArea ?? "Affected area has not been refined yet."}
-            </p>
-          </article>
-
-          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-              Impact
-            </p>
-            <p className="mt-2 text-base font-semibold text-ink">
-              {commandCenter.casualtyCount != null
-                ? `${commandCenter.casualtyCount} casualties`
-                : "No casualty estimate"}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              {commandCenter.displacedCount != null
-                ? `${commandCenter.displacedCount} displaced`
-                : "No displacement estimate"}
-            </p>
-          </article>
-
-          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-              Responders
-            </p>
-            <p className="mt-2 text-base font-semibold text-ink">
-              {commandCenter.activeResponderCount} active
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              {commandCenter.responderCounts.ON_SITE} on site / {commandCenter.responderCounts.EN_ROUTE} en route
-            </p>
-          </article>
-        </div>
-
-        <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-          <article className="rounded-2xl border border-slate-200 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-              Current Command Note
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-700">
-              {commandCenter.latestNote ?? "No command note has been published yet."}
-            </p>
-            {commandCenter.damageNotes && (
-              <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                <span className="font-semibold text-slate-800">Damage: </span>
-                {commandCenter.damageNotes}
-              </p>
-            )}
-          </article>
-
-          <article className="rounded-2xl border border-slate-200 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-              Urgent Needs
-            </p>
-            {commandCenter.resourceNeeds.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">
-                No urgent resource needs are currently recorded.
-              </p>
-            ) : (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {commandCenter.resourceNeeds.map((need) => (
-                  <span
-                    key={`${crisisEvent.id}-${need}`}
-                    className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700"
-                  >
-                    {need}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {commandCenter.closureChecklist && (
-              <div className="mt-4 grid gap-2">
-                {[
-                  {
-                    label: "Area safe",
-                    value: commandCenter.closureChecklist.areaSafe
-                  },
-                  {
-                    label: "People accounted",
-                    value: commandCenter.closureChecklist.peopleAccounted
-                  },
-                  {
-                    label: "Urgent needs stabilised",
-                    value: commandCenter.closureChecklist.urgentNeedsStabilized
-                  }
-                ].map((item) => (
-                  <div
-                    key={`${crisisEvent.id}-${item.label}`}
-                    className={`rounded-xl px-3 py-2 text-sm font-medium ${
-                      item.value
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {item.label}
-                  </div>
-                ))}
-              </div>
-            )}
-          </article>
-        </div>
-      </section>
-
-      <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200 space-y-4">
-        <div className="flex items-center justify-between">
+      {isAdmin && (
+        <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-            Responder Report Card
+            Admin Controls
           </h2>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-            {responders.length} responder{responders.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-
-        {canManageResponderStatus && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-sm font-semibold text-ink">
-              Your status: {myResponderStatus ? RESPONDER_STATUS_LABEL[myResponderStatus] : "Not opted in"}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {nextResponderStatuses.map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  disabled={isUpdatingResponder}
-                  onClick={() => void handleResponderStatusUpdate(status)}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-tide hover:text-tide disabled:opacity-60"
-                >
-                  {isUpdatingResponder
-                    ? "Updating..."
-                    : status === "RESPONDING" && !myResponderStatus
-                      ? "Opt In to Respond"
-                      : `Mark ${RESPONDER_STATUS_LABEL[status]}`}
-                </button>
-              ))}
-            </div>
-            {responderError && (
-              <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
-                {responderError}
-              </p>
-            )}
-          </div>
-        )}
-
-        {responders.length === 0 ? (
-          <p className="text-sm text-slate-500">No volunteers have opted in for this crisis yet.</p>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {responders.map((responder) => (
-              <article key={responder.id} className="rounded-lg border border-slate-200 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-ink">{responder.volunteerName}</p>
-                    <p className="mt-1 text-xs text-slate-500">{responder.location || "Location unavailable"}</p>
-                  </div>
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                    {RESPONDER_STATUS_LABEL[responder.status]}
-                  </span>
-                </div>
-                {responder.skills.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {responder.skills.slice(0, 4).map((skill) => (
-                      <span
-                        key={`${responder.id}-${skill}`}
-                        className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <p className="mt-2 text-[11px] text-slate-500">
-                  Last update: {new Date(responder.lastStatusAt).toLocaleString()}
-                </p>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-              Incident Command
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Structured field intelligence, verified updates, and audit-ready command history.
-            </p>
-          </div>
-          {canSubmitCommand && (
-            <button
-              type="button"
-              onClick={() => setShowUpdateForm((value) => !value)}
-              className="rounded-xl bg-tide px-3 py-2 text-xs font-semibold text-white transition hover:bg-cyan-700"
-            >
-              {showUpdateForm ? "Hide Composer" : "New Command Update"}
-            </button>
-          )}
-        </div>
-
-        {canSubmitCommand && showUpdateForm && (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <CrisisUpdateForm
+          <div className="mt-4">
+            <AdminCrisisControls
               crisisEventId={crisisEvent.id}
               currentStatus={crisisEvent.status}
-              isAdmin={isAdmin}
-              onSubmit={() => {
-                setShowUpdateForm(false);
-                void fetchDetail();
-              }}
+              onReverted={() => void fetchDetail()}
             />
           </div>
-        )}
+        </section>
+      )}
 
-        {canOpenCommandPanel && !canSubmitCommand && user?.role === "VOLUNTEER" && (
-          <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
-            Opt in from the responder report card to publish crisis-scoped field intelligence.
-          </div>
-        )}
-
-        {!canOpenCommandPanel && (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Sign in as an active responder or admin to publish command updates. The verified timeline remains visible to all authenticated users.
-          </div>
-        )}
-
-        {isAdmin && (
-          <AdminCrisisControls
-            crisisEventId={crisisEvent.id}
-            currentStatus={crisisEvent.status}
-            onReverted={() => void fetchDetail()}
-          />
-        )}
-
-        <UpdateTimeline
-          entries={updates}
+      {isAdmin && (
+        <NGOReportSection
+          crisisEventId={crisisEvent.id}
+          status={crisisEvent.status}
           isAdmin={isAdmin}
-          onRefresh={() => void fetchDetail()}
         />
-      </section>
+      )}
 
       <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
         <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
@@ -656,6 +415,14 @@ export function IncidentDetailPage() {
           ))}
         </div>
       </section>
+
+      {/* Crisis Coordination Chat — glassmorphism popup */}
+      <CrisisChatPanel
+        crisisEventId={crisisEvent.id}
+        crisisTitle={crisisEvent.title}
+        isOpen={chatOpen}
+        onClose={() => setChatOpen(false)}
+      />
     </div>
   );
 }

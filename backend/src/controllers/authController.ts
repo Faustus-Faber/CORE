@@ -27,7 +27,10 @@ export async function login(
   _next: NextFunction
 ) {
   const { user, rememberMe } = await loginUser(request.body);
-  const token = signAuthToken({ userId: user.id, role: user.role }, rememberMe);
+  const token = signAuthToken(
+    { userId: user.id, role: user.role, sessionVersion: user.sessionVersion },
+    rememberMe
+  );
 
   response.cookie("core_token", token, buildAuthCookieOptions(rememberMe));
 

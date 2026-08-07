@@ -19,8 +19,8 @@ export const timesheetRoutes = Router();
 timesheetRoutes.use(requireAuth);
 
 // ── Public (all authenticated users) ──────────────────────────────────────
-timesheetRoutes.get("/leaderboard", asyncHandler(getLeaderboardHandler));
 timesheetRoutes.get("/crises", asyncHandler(getCrisesForDropdownHandler));
+timesheetRoutes.get("/leaderboard", asyncHandler(getLeaderboardHandler));
 
 // ── Volunteer-only ───────────────────────────────────────────────────────
 timesheetRoutes.post(

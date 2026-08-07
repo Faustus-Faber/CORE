@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import { comparePassword, hashPassword } from "../utils/password.js";
 import { changePasswordSchema, profileUpdateSchema } from "../utils/validation.js";
+import { SafeError } from "../utils/SafeError.js";
 
 export async function updateProfile(userId: string, payload: unknown) {
   const parsed = profileUpdateSchema.parse(payload);
@@ -14,7 +15,7 @@ export async function updateProfile(userId: string, payload: unknown) {
     });
 
     if (duplicatePhoneUser) {
-      throw new Error("Phone already in use by another account");
+      throw new SafeError("Phone already in use by another account");
     }
   }
 
@@ -49,7 +50,7 @@ export async function changePassword(userId: string, payload: unknown) {
   });
 
   if (!user) {
-    throw new Error("User not found");
+    throw new SafeError("User not found");
   }
 
   const isCurrentPasswordValid = await comparePassword(
@@ -58,7 +59,7 @@ export async function changePassword(userId: string, payload: unknown) {
   );
 
   if (!isCurrentPasswordValid) {
-    throw new Error("Current password is incorrect");
+    throw new SafeError("Current password is incorrect");
   }
 
   await prisma.user.update({

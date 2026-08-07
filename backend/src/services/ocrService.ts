@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
 dotenv.config();
 import { prisma } from "../lib/prisma.js";
-// import { env } from "../config/env.js";
-let time=process.env.OCR_REQUEST_TIMEOUT_MS || 30000;
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+import { env } from "../config/env.js";
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_OCR_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -29,47 +26,77 @@ type ScanSource = {
 // --- Core AI & OCR Logic ---
 
 async function describeDisaster(buffer: Buffer, mimeType: string): Promise<string> {
+    if (!env.groqApiKey || env.groqApiKey === "test-key") {
+        return "AI description skipped: no AI API key configured.";
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
     try {
-        if (!process.env.GEMINI_API_KEY) return "AI Description skipped: No Gemini API Key.";
+        const base64Image = buffer.toString("base64");
+        const dataUri = `data:${mimeType};base64,${base64Image}`;
 
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-        const prompt = `
-      Analyze this image of a potential natural disaster or incident.
-      1. Identify the disaster type (Flood, Fire, Earthquake, etc.).
-      2. Describe the severity and visible damage.
-      3. Identify any immediate dangers or needed assistance.
-      Provide a concise, professional summary for emergency responders.
-    `;
+        const response = await fetch(`${env.groqBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${env.groqApiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: env.groqVisionModel,
+                temperature: 0.2,
+                max_tokens: 16000,
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            {
+                                type: "text",
+                                text: "Analyze this image of a potential natural disaster or incident. 1) Identify the disaster type (Flood, Fire, Earthquake, Building Collapse, etc.). 2) Describe the severity and visible damage. 3) Identify any immediate dangers or needed assistance. Provide a concise, professional summary for emergency responders."
+                            },
+                            { type: "image_url", image_url: { url: dataUri } }
+                        ]
+                    }
+                ]
+            }),
+            signal: controller.signal
+        });
 
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { data: buffer.toString("base64"), mimeType } }
-        ]);
-        return result.response.text();
+        if (!response.ok) {
+            return `AI description unavailable (Groq status ${response.status}).`;
+        }
+
+        const payload = await response.json() as {
+            choices: Array<{ message: { content: string } }>
+        };
+
+        return payload.choices[0]?.message?.content?.trim() || "No description generated.";
     } catch (error) {
-        console.error("Gemini Error:", error);
+        console.error("Groq vision error:", error);
         return "Failed to generate AI scenario description.";
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
 async function extractText(source: ScanSource) {
-    if (process.env.OCR_PROVIDER === "mock" || !process.env.OCR_SPACE_API_KEY) {
-        const text = "CORE OCR demo result. Add OCR_SPACE_API_KEY to scan live images.";
-        return { provider: "mock", rawText: text, items: splitTextIntoItems(text) };
+    if (env.ocrProvider === "mock" || !env.ocrSpaceApiKey) {
+        throw new Error("OCR provider not configured. Set OCR_SPACE_API_KEY in backend/.env to enable text extraction.");
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(),  30000);
+    const timeout = setTimeout(() => controller.abort(), env.ocrRequestTimeoutMs);
 
     try {
         const form = new FormData();
-        form.append("apikey", process.env.OCR_SPACE_API_KEY);
+        form.append("apikey", env.ocrSpaceApiKey);
         form.append("language", "auto");
         form.append("OCREngine", "2");
         form.append("isOverlayRequired", "true");
         form.append("scale", "true");
         const base64Image = `data:${source.mimeType};base64,${source.buffer.toString("base64")}`;
-        form.append("base64Image", base64Image);        const response = await fetch(process.env.OCR_SPACE_ENDPOINT || "https://api.ocr.space/parse/image", {
+        form.append("base64Image", base64Image);        const response = await fetch(env.ocrSpaceEndpoint, {
             method: "POST",
             body: form,
             signal: controller.signal
@@ -191,7 +218,7 @@ export async function listUserScans(userId: string, page = 1, limit = 20) {
         prisma.oCRScan.findMany({
             where: { userId },
             include: {
-                items: { orderBy: { createdAt: "asc" } },
+                items: { orderBy: { createdAt: "asc" }, take: 100 },
                 folder: { select: { id: true, name: true } },
                 crisisEvent: { select: { id: true, title: true } },
                 incidentReport: { select: { id: true, incidentTitle: true } }
@@ -210,7 +237,7 @@ export async function getUserScan(userId: string, scanId: string) {
     const scan = await prisma.oCRScan.findFirst({
         where: { id: scanId, userId },
         include: {
-            items: { orderBy: { createdAt: "asc" } },
+            items: { orderBy: { createdAt: "asc" }, take: 100 },
             folder: { select: { id: true, name: true } },
             crisisEvent: { select: { id: true, title: true } },
             incidentReport: { select: { id: true, incidentTitle: true } }
@@ -244,7 +271,7 @@ export async function attachScan(userId: string, scanId: string, links: any) {
             incidentReportId: links.incidentReportId
         },
         include: {
-            items: { orderBy: { createdAt: "asc" } },
+            items: { orderBy: { createdAt: "asc" }, take: 100 },
             folder: { select: { id: true, name: true } },
             crisisEvent: { select: { id: true, title: true } },
             incidentReport: { select: { id: true, incidentTitle: true } }
@@ -305,9 +332,15 @@ function extensionFromMime(mimeType: string) {
 
 function resolveUploadPath(fileUrl: string) {
     const relative = fileUrl.replace(/^\/+/, "");
-    const resolved = path.resolve(process.cwd(), relative);
     const uploadsRoot = path.resolve(process.cwd(), "uploads");
-    if (!resolved.startsWith(uploadsRoot)) throw new Error("Invalid file path");
+    const resolved = path.resolve(uploadsRoot, relative);
+    // Ensure the resolved path is inside uploadsRoot (prevent path traversal).
+    // Use path.relative to check containment robustly (avoidsstartsWith bypass
+    // e.g. uploads-evil sibling directories).
+    const relativeToRoot = path.relative(uploadsRoot, resolved);
+    if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
+        throw new Error("Invalid file path");
+    }
     return resolved;
 }
 

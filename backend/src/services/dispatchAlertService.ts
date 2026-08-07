@@ -1,6 +1,7 @@
 import { env } from "../config/env.js";
 import { prisma } from "../lib/prisma.js";
 import { haversineDistanceKm } from "../utils/geo.js";
+import { metrics } from "../utils/metrics.js";
 
 const ALERT_RADIUS_KM = 15;
 const MAX_ALERTS_PER_24_HOURS = 10;
@@ -48,33 +49,34 @@ async function sendDispatchEmail(
     body: string;
   }
 ): Promise<DispatchResult> {
-  if (!env.resendApiKey) {
+  if (!env.brevoApiKey) {
     return {
       status: "FAILED",
       providerMessageId: null,
-      errorMessage: "Resend API key is not configured"
+      errorMessage: "Brevo API key is not configured"
     };
   }
 
   try {
-    const response = await fetch("https://api.resend.com/emails", {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${env.resendApiKey}`,
-        "Content-Type": "application/json"
+        "api-key": env.brevoApiKey,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
       },
       body: JSON.stringify({
-        from: env.resendFromEmail,
-        to: [recipientEmail],
+        sender: { name: env.brevoFromName, email: env.brevoFromEmail },
+        to: [{ email: recipientEmail }],
         subject: emailPayload.subject,
-        text: emailPayload.body
+        textContent: emailPayload.body
       })
     });
 
     const payload = (await response.json().catch(() => ({}))) as {
-      id?: string;
-      error?: { message?: string };
+      messageId?: string;
       message?: string;
+      code?: string;
     };
 
     if (!response.ok) {
@@ -82,15 +84,13 @@ async function sendDispatchEmail(
         status: "FAILED",
         providerMessageId: null,
         errorMessage:
-          payload.error?.message ??
-          payload.message ??
-          `Dispatch email failed with status ${response.status}`
+          payload.message ?? `Dispatch email failed with status ${response.status} (${payload.code ?? "?"})`
       };
     }
 
     return {
       status: "SENT",
-      providerMessageId: payload.id ?? null,
+      providerMessageId: payload.messageId ?? null,
       errorMessage: null
     };
   } catch (error) {
@@ -113,6 +113,19 @@ export async function triggerDispatchAlertsForCrisis(
   if (!["CRITICAL", "HIGH"].includes(crisis.severityLevel)) return;
   if (crisis.latitude == null || crisis.longitude == null) return;
 
+  // Prevent duplicate dispatch for the same crisis within 1 hour
+  const recentDispatch = await prisma.dispatchAlertLog.findFirst({
+    where: {
+      crisisEventId,
+      createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }
+    },
+    select: { id: true }
+  });
+  if (recentDispatch) {
+    console.log(`[dispatch] Crisis ${crisisEventId} already dispatched recently, skipping`);
+    return;
+  }
+
   const volunteers = await prisma.user.findMany({
     where: {
       role: "VOLUNTEER",
@@ -124,7 +137,8 @@ export async function triggerDispatchAlertsForCrisis(
       email: true,
       latitude: true,
       longitude: true
-    }
+    },
+    take: 500
   });
 
   const inRangeVolunteers = volunteers.filter((volunteer) => {
@@ -144,38 +158,73 @@ export async function triggerDispatchAlertsForCrisis(
   const now = Date.now();
   const lookback = new Date(now - 24 * 60 * 60 * 1000);
 
+  // Batch-fetch alert counts for all in-range volunteers (avoids N+1)
+  const alertCounts = await prisma.dispatchAlertLog.groupBy({
+    by: ["userId"],
+    where: {
+      userId: { in: inRangeVolunteers.map((v) => v.id) },
+      createdAt: { gte: lookback }
+    },
+    _count: { _all: true }
+  });
+  const countMap = new Map<string, number>();
+  for (const ac of alertCounts) {
+    countMap.set(ac.userId, ac._count._all);
+  }
+
   for (const volunteer of inRangeVolunteers) {
-    const sentRecently = await prisma.dispatchAlertLog.count({
-      where: {
-        userId: volunteer.id,
-        createdAt: { gte: lookback }
-      }
-    });
+    const sentRecently = countMap.get(volunteer.id) ?? 0;
 
     if (sentRecently >= MAX_ALERTS_PER_24_HOURS) {
       continue;
     }
 
-    const subject = `[CORE DISPATCH ALERT] ${crisis.severityLevel} ${crisis.title}`;
-    const body = formatDispatchEmailBody({
-      title: crisis.title,
-      severityLevel: crisis.severityLevel,
-      locationText: crisis.locationText,
-      sitRepText: crisis.sitRepText,
-      crisisEventId: crisis.id
-    });
+    try {
+      const subject = `[CORE DISPATCH ALERT] ${crisis.severityLevel} ${crisis.title}`;
+      const body = formatDispatchEmailBody({
+        title: crisis.title,
+        severityLevel: crisis.severityLevel,
+        locationText: crisis.locationText,
+        sitRepText: crisis.sitRepText,
+        crisisEventId: crisis.id
+      });
 
-    const dispatch = await sendDispatchEmail(volunteer.email, { subject, body });
+      const dispatch = await sendDispatchEmail(volunteer.email, { subject, body });
 
-    await prisma.dispatchAlertLog.create({
-      data: {
-        userId: volunteer.id,
-        crisisEventId: crisis.id,
-        emailMasked: maskEmail(volunteer.email),
-        status: dispatch.status,
-        providerMessageId: dispatch.providerMessageId,
-        errorMessage: dispatch.errorMessage
+      // §15.4: Record alert delivery metric when an alert is successfully dispatched
+      if (dispatch.status === "SENT") {
+        metrics.recordAlertDelivery();
       }
-    });
+
+      await prisma.dispatchAlertLog.create({
+        data: {
+          userId: volunteer.id,
+          crisisEventId: crisis.id,
+          emailMasked: maskEmail(volunteer.email),
+          status: dispatch.status,
+          providerMessageId: dispatch.providerMessageId,
+          errorMessage: dispatch.errorMessage
+        }
+      });
+    } catch (err) {
+      console.error(`[dispatch] Failed to send alert to volunteer ${volunteer.id}:`, err);
+    }
   }
+}
+
+/**
+ * §15.4: Record that a dispatched alert was acknowledged by the recipient.
+ * Verifies the alert log exists and records the ack metric.
+ */
+export async function acknowledgeDispatchAlert(alertLogId: string): Promise<void> {
+  const alert = await prisma.dispatchAlertLog.findUnique({
+    where: { id: alertLogId }
+  });
+
+  if (!alert) {
+    throw new Error("Dispatch alert log not found");
+  }
+
+  // §15.4: Record alert acknowledgement metric
+  metrics.recordAlertAck();
 }

@@ -6,21 +6,23 @@ import { env } from "../config/env.js";
 export type AuthTokenPayload = {
   userId: string;
   role: Role;
+  sessionVersion?: number;
   exp?: number;
   iat?: number;
 };
 
 export function signAuthToken(
-  payload: { userId: string; role: Role },
+  payload: { userId: string; role: Role; sessionVersion?: number },
   rememberMe = false
 ) {
   return jwt.sign(payload, env.jwtSecret, {
+    algorithm: "HS256",
     expiresIn: rememberMe ? "7d" : "24h"
   });
 }
 
 export function verifyAuthToken(token: string) {
-  return jwt.verify(token, env.jwtSecret) as AuthTokenPayload;
+  return jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] }) as AuthTokenPayload;
 }
 
 export function buildAuthCookieOptions(rememberMe = false) {

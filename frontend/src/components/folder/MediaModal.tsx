@@ -15,6 +15,9 @@ export const MediaModal: React.FC<MediaModalProps> = ({
         <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-2 backdrop-blur-sm sm:p-4"
             onClick={onClose} // Clicking outside closes it
+            role="dialog"
+            aria-modal="true"
+            aria-label="Media preview"
         >
             <div className="group relative flex max-h-full w-full max-w-5xl items-center justify-center">
                 {/* Close button that shows up top right */}
@@ -24,6 +27,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                         e.stopPropagation();
                         onClose();
                     }}
+                    aria-label="Close media preview"
                 >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
@@ -33,6 +37,7 @@ export const MediaModal: React.FC<MediaModalProps> = ({
                         src={selectedMedia}
                         alt="Expanded view"
                         className="max-h-[calc(100dvh-1rem)] max-w-full rounded-lg object-contain shadow-2xl sm:max-h-[90vh]"
+                        decoding="async"
                         onClick={(e) => e.stopPropagation()} // Prevents closing when clicking the image itself
                     />
                 ) : (

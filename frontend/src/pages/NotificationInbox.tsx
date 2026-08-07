@@ -38,53 +38,83 @@ export function NotificationInbox() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     getNotifications(page)
       .then((data) => {
+        if (cancelled) return;
         setNotifications(data.notifications);
         setUnreadCount(data.unreadCount);
         setTotal(data.total);
       })
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (!cancelled) setActionError("Failed to load notifications. Please try again.");
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [page]);
 
   const refreshNotifications = async (targetPage = page) => {
-    const data = await getNotifications(targetPage);
-    setNotifications(data.notifications);
-    setUnreadCount(data.unreadCount);
-    setTotal(data.total);
+    try {
+      const data = await getNotifications(targetPage);
+      setNotifications(data.notifications);
+      setUnreadCount(data.unreadCount);
+      setTotal(data.total);
+    } catch (error) {
+      console.error("Failed to refresh notifications:", error instanceof Error ? error.message : String(error));
+    }
   };
 
   const handleSelect = async (n: NotificationItem) => {
-    if (!n.isRead) {
-      await markNotificationRead(n.id);
-      setNotifications((prev) =>
-        prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))
-      );
-      setUnreadCount((c) => Math.max(0, c - 1));
-    }
     setExpandedId(expandedId === n.id ? null : n.id);
+    if (!n.isRead) {
+      try {
+        await markNotificationRead(n.id);
+        setNotifications((prev) =>
+          prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x))
+        );
+        setUnreadCount((c) => Math.max(0, c - 1));
+      } catch (error) {
+        console.error("Failed to mark notification as read:", error instanceof Error ? error.message : String(error));
+      }
+    }
   };
 
   const handleApprove = async (reservationId: string) => {
-    await approveReservationApi(reservationId);
-    await refreshNotifications(page);
-    setExpandedId(null);
+    try {
+      setActionError("");
+      await approveReservationApi(reservationId);
+      await refreshNotifications(page);
+      setExpandedId(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to approve reservation");
+    }
   };
 
   const handleDecline = async (reservationId: string) => {
-    await declineReservationApi(reservationId);
-    await refreshNotifications(page);
-    setExpandedId(null);
+    try {
+      setActionError("");
+      await declineReservationApi(reservationId);
+      await refreshNotifications(page);
+      setExpandedId(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to decline reservation");
+    }
   };
 
   const handleClearHandled = async () => {
-    await clearHandledNotifications();
-    await refreshNotifications(page);
+    try {
+      setActionError("");
+      await clearHandledNotifications();
+      await refreshNotifications(page);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to clear handled notifications");
+    }
   };
 
   if (loading) {
@@ -138,6 +168,12 @@ export function NotificationInbox() {
           </button>
         </div>
       </section>
+
+      {actionError && (
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">
+          {actionError}
+        </div>
+      )}
 
       <section className="rounded-xl bg-white p-6 shadow-panel ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between">
@@ -299,6 +335,17 @@ export function NotificationInbox() {
                       className="inline-block rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       View Incident Timeline
+                    </Link>
+                  </div>
+                )}
+
+                {isExpanded && n.type === "CHAT_MESSAGE" && n.crisisEventId && (
+                  <div className="mt-4">
+                    <Link
+                      to={`/dashboard/incidents/${n.crisisEventId}`}
+                      className="inline-block rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Open Coordination Chat
                     </Link>
                   </div>
                 )}

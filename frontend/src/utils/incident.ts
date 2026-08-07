@@ -74,11 +74,13 @@ export function credibilityStyle(score: number): CredibilityStyle {
 }
 
 export function clampScore(score: number): number {
+  if (typeof score !== "number" || !Number.isFinite(score)) return 0;
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 export function timeAgo(dateInput: string | Date): string {
   const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) return "Unknown date";
   const diffMin = Math.floor((Date.now() - date.getTime()) / 60000);
   if (diffMin < 1) return "just now";
   if (diffMin < 60) return `${diffMin}m ago`;
@@ -96,6 +98,7 @@ export function normalizeMediaUrl(filePath: string): string {
   if (!filePath) return "";
   if (/^https?:\/\//.test(filePath)) return filePath;
   if (filePath.startsWith("/")) return `${API_ORIGIN}${filePath}`;
+  if (filePath.startsWith("uploads/")) return `${API_ORIGIN}/${filePath}`;
   return `${API_ORIGIN}/uploads/reports/${filePath}`;
 }
 

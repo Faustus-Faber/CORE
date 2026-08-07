@@ -1,4 +1,7 @@
 import { prisma } from "../lib/prisma.js";
+import { enqueueJob } from "./outboxService.js";
+import { metrics } from "../utils/metrics.js";
+import { SafeError } from "../utils/SafeError.js";
 
 export interface CreateResourceData {
   name: string;
@@ -181,7 +184,8 @@ export async function getResourceById(id: string) {
 export async function getUserResources(userId: string) {
   return prisma.resource.findMany({
     where: { userId },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    take: 200
   });
 }
 
@@ -205,49 +209,96 @@ export async function deactivateResource(id: string) {
 }
 
 export async function deleteResource(id: string) {
-  return prisma.resource.delete({
-    where: { id }
-  }).catch(() => null);
+  // Allocation doesn't have onDelete: Cascade, so we need to handle it
+  // Check if resource has active allocations before deleting
+  const activeAllocations = await prisma.allocation.count({
+    where: { resourceId: id, status: { notIn: ["DELIVERED", "CANCELLED"] } }
+  });
+
+  if (activeAllocations > 0) {
+    throw new SafeError("Cannot delete resource with active allocations");
+  }
+
+  // Delete non-cascade related records and the resource in a transaction
+  return prisma.$transaction(async (tx) => {
+    // Delete allocations that reference this resource (DELIVERED/CANCELLED only at this point)
+    await tx.allocation.deleteMany({
+      where: { resourceId: id }
+    });
+
+    return tx.resource.delete({
+      where: { id }
+    });
+  });
 }
 
 export async function updateResource(id: string, data: UpdateResourceData) {
-  const existing = await prisma.resource.findUnique({
-    where: { id }
-  });
+  // Wrap read-check-update in a transaction to prevent race conditions
+  // where concurrent updates could both pass the heldQuantity check
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.resource.findUnique({
+      where: { id }
+    });
 
-  if (!existing) {
-    return null;
-  }
-
-  const originalQuantity = resolveOriginalQuantity(existing);
-  const nextQuantity = data.quantity ?? existing.quantity;
-
-  if (nextQuantity > originalQuantity) {
-    throw new Error("Quantity cannot exceed original amount");
-  }
-
-  const heldQuantity = await getPendingHeldQuantity(id);
-  const nextStatus = deriveResourceStatus({
-    quantity: nextQuantity,
-    originalQuantity,
-    heldQuantity,
-    currentStatus: existing.status,
-    requestedStatus: data.status
-  });
-
-  const updated = await prisma.resource.update({
-    where: { id },
-    data: {
-      ...data,
-      originalQuantity,
-      quantity: nextQuantity,
-      status: nextStatus
+    if (!existing) {
+      return null;
     }
+
+    const originalQuantity = resolveOriginalQuantity(existing);
+    const nextQuantity = data.quantity ?? existing.quantity;
+
+    if (nextQuantity < 0) {
+      throw new SafeError("Quantity cannot be negative");
+    }
+
+    if (nextQuantity > originalQuantity) {
+      throw new SafeError("Quantity cannot exceed original amount");
+    }
+
+    // Calculate held quantity inside the transaction
+    const pendingSum = await tx.reservation.aggregate({
+      where: { resourceId: id, status: "Pending" },
+      _sum: { quantity: true }
+    });
+    const heldQuantity = pendingSum._sum.quantity ?? 0;
+
+    // Prevent setting quantity below the amount held by pending reservations
+    if (nextQuantity < heldQuantity) {
+      throw new SafeError(`Quantity cannot be reduced below ${heldQuantity} units currently held by pending reservations`);
+    }
+    const nextStatus = deriveResourceStatus({
+      quantity: nextQuantity,
+      originalQuantity,
+      heldQuantity,
+      currentStatus: existing.status,
+      requestedStatus: data.status
+    });
+
+    const updated = await tx.resource.update({
+      where: { id },
+      data: {
+        ...data,
+        originalQuantity,
+        quantity: nextQuantity,
+        status: nextStatus
+      }
+    });
+
+    // Record history inside the transaction
+    if (existing.status !== nextStatus || existing.quantity !== nextQuantity) {
+      await tx.resourceHistory.create({
+        data: {
+          resourceId: id,
+          oldStatus: existing.status,
+          newStatus: nextStatus,
+          oldQuantity: existing.quantity,
+          newQuantity: nextQuantity,
+        }
+      });
+    }
+
+    return updated;
   });
-
-  await recordResourceHistory(id, existing.status, nextStatus, existing.quantity, nextQuantity);
-
-  return updated;
 }
 
 export async function getMapResources() {
@@ -264,7 +315,8 @@ export async function getMapResources() {
       contactPreference: true,
       status: true,
       notes: true
-    }
+    },
+    take: 500
   });
 }
 
@@ -275,66 +327,110 @@ export async function createReservation(
   justification: string,
   pickupTime?: Date
 ) {
-  const resource = await prisma.resource.findUnique({
-    where: { id: resourceId }
-  });
-
-  if (!resource) {
-    throw new Error("Resource not found");
+  // Validate quantity before entering the transaction
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    throw new SafeError("Reservation quantity must be a positive number");
   }
 
-  if (!["Available", "Low Stock"].includes(resource.status)) {
-    throw new Error("Resource not reservable");
-  }
+  // P0-12: Wrap stock check + reservation creation in a transaction to prevent race conditions
+  const reservation = await prisma.$transaction(async (tx) => {
+    const resource = await tx.resource.findUnique({
+      where: { id: resourceId }
+    });
 
-  const originalQuantity = resolveOriginalQuantity(resource);
-  const maxAllowed = Math.max(1, Math.floor(originalQuantity * 0.3));
+    if (!resource) {
+      throw new SafeError("Resource not found");
+    }
 
-  if (quantity > maxAllowed) {
-    throw new Error(`You can reserve up to ${maxAllowed} units of this resource`);
-  }
+    if (!["Available", "Low Stock"].includes(resource.status)) {
+      throw new SafeError("Resource not reservable");
+    }
 
-  const activeCount = await prisma.reservation.count({
-    where: {
-      userId,
-      resourceId,
-      status: {
-        in: ["Pending", "Approved"]
+    const originalQuantity = resolveOriginalQuantity(resource);
+    const maxAllowed = Math.max(1, Math.floor(originalQuantity * 0.3));
+
+    if (quantity > maxAllowed) {
+      throw new SafeError(`You can reserve up to ${maxAllowed} units of this resource`);
+    }
+
+    const activeCount = await tx.reservation.count({
+      where: {
+        userId,
+        resourceId,
+        status: {
+          in: ["Pending", "Approved"]
+        }
       }
+    });
+
+    if (activeCount >= 3) {
+      throw new SafeError("Max 3 active reservations reached");
     }
+
+    // P0-12: Calculate held quantity inside the transaction
+    const pendingSum = await tx.reservation.aggregate({
+      where: {
+        resourceId,
+        status: "Pending"
+      },
+      _sum: {
+        quantity: true
+      }
+    });
+    const heldQuantity = pendingSum._sum.quantity ?? 0;
+    const availableToReserve = Math.max(resource.quantity - heldQuantity, 0);
+
+    if (quantity > availableToReserve) {
+      throw new SafeError("Not enough available stock");
+    }
+
+    return tx.reservation.create({
+      data: {
+        userId,
+        resourceId,
+        quantity,
+        justification,
+        pickupTime,
+        status: "Pending"
+      }
+    });
   });
 
-  if (activeCount >= 3) {
-    throw new Error("Max 3 active reservations reached");
+  const resourceOwner = await prisma.resource.findUnique({
+    where: { id: reservation.resourceId },
+    select: { userId: true }
+  });
+  if (resourceOwner) {
+    // P0-11: Create notification inside the same transaction via outbox pattern
+    const notification = await prisma.notification.create({
+      data: {
+        userId: resourceOwner.userId,
+        title: "New Reservation Request",
+        body: `Request for ${quantity} units`,
+        type: "RESERVATION_REQUEST",
+        reservationId: reservation.id,
+        deliveryState: "QUEUED"
+      }
+    }).catch((err) => {
+      console.error("Failed to create reservation notification:", err);
+      return null;
+    });
+
+    if (notification) {
+      await enqueueJob({
+        jobType: "NOTIFICATION_DISPATCH",
+        payload: {
+          notificationId: notification.id,
+          userId: resourceOwner.userId,
+          title: "New Reservation Request",
+          body: `Request for ${quantity} units`,
+          url: `/resources/${reservation.resourceId}`,
+        },
+        targetEntityId: notification.id,
+        dedupeKey: `notif-${notification.id}`,
+      }).catch((err) => console.error("[outbox] Failed to enqueue reservation notification:", err));
+    }
   }
-
-  const heldQuantity = await getPendingHeldQuantity(resourceId);
-  const availableToReserve = Math.max(resource.quantity - heldQuantity, 0);
-
-  if (quantity > availableToReserve) {
-    throw new Error("Not enough available stock");
-  }
-
-  const reservation = await prisma.reservation.create({
-    data: {
-      userId,
-      resourceId,
-      quantity,
-      justification,
-      pickupTime,
-      status: "Pending"
-    }
-  });
-
-  await prisma.notification.create({
-    data: {
-      userId: resource.userId,
-      title: "New Reservation Request",
-      body: `Request for ${quantity} ${resource.unit} of ${resource.name}`,
-      type: "RESERVATION_REQUEST",
-      reservationId: reservation.id
-    }
-  });
 
   await syncResourceAvailability(resourceId);
 
@@ -345,6 +441,7 @@ export async function listReservationsForOwner(resourceId: string) {
   return prisma.reservation.findMany({
     where: { resourceId },
     orderBy: { createdAt: "desc" },
+    take: 100,
     include: {
       user: {
         select: {
@@ -360,7 +457,8 @@ export async function listReservationsForOwner(resourceId: string) {
 export async function listResourceHistory(resourceId: string) {
   return prisma.resourceHistory.findMany({
     where: { resourceId },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    take: 100
   });
 }
 
@@ -380,16 +478,21 @@ async function transitionReservation(
     });
 
     if (!reservation) {
-      throw new Error("Reservation not found");
+      throw new SafeError("Reservation not found");
     }
 
     const canManage = actorRole === "ADMIN" || reservation.resource.userId === actorId;
     if (!canManage) {
-      throw new Error("Only the resource owner or an admin can manage this reservation");
+      throw new SafeError("Only the resource owner or an admin can manage this reservation");
     }
 
     if (reservation.status !== "Pending") {
-      throw new Error(`Only pending reservations can be ${nextStatus.toLowerCase()}`);
+      throw new SafeError(`Only pending reservations can be ${nextStatus.toLowerCase()}`);
+    }
+
+    // Prevent approving expired reservations
+    if (nextStatus === "Approved" && reservation.pickupTime && reservation.pickupTime < new Date()) {
+      throw new SafeError("Cannot approve a reservation whose pickup time has already passed");
     }
 
     let nextQuantity = reservation.resource.quantity;
@@ -397,7 +500,7 @@ async function transitionReservation(
 
     if (nextStatus === "Approved") {
       if (reservation.resource.quantity < reservation.quantity) {
-        throw new Error("Insufficient stock");
+        throw new SafeError("Insufficient stock");
       }
 
       nextQuantity = reservation.resource.quantity - reservation.quantity;
@@ -495,46 +598,56 @@ export async function expireReservations() {
         not: null,
         lte: expirationThreshold
       }
-    }
+    },
+    take: 500
   });
 
   let expiredCount = 0;
 
   for (const reservation of reservations) {
-    const resource = await prisma.resource.findUnique({
-      where: { id: reservation.resourceId }
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      // Re-check status inside transaction to prevent double-processing
+      const current = await tx.reservation.findUnique({
+        where: { id: reservation.id },
+        select: { status: true }
+      });
+      if (!current || current.status !== "Approved") {
+        return null;
+      }
 
-    if (!resource) {
-      continue;
-    }
+      const resource = await tx.resource.findUnique({
+        where: { id: reservation.resourceId }
+      });
 
-    const originalQuantity = resolveOriginalQuantity(resource);
-    const restoredQuantity = Math.min(resource.quantity + reservation.quantity, originalQuantity);
-    const nextStatus = deriveResourceStatus({
-      quantity: restoredQuantity,
-      originalQuantity,
-      heldQuantity: 0,
-      currentStatus: resource.status
-    });
+      if (!resource) {
+        return null;
+      }
 
-    await prisma.$transaction([
-      prisma.reservation.update({
+      const originalQuantity = resolveOriginalQuantity(resource);
+      const restoredQuantity = Math.min(resource.quantity + reservation.quantity, originalQuantity);
+      const nextStatus = deriveResourceStatus({
+        quantity: restoredQuantity,
+        originalQuantity,
+        heldQuantity: 0,
+        currentStatus: resource.status
+      });
+
+      await tx.reservation.update({
         where: { id: reservation.id },
         data: {
           status: "Expired",
           decisionReason: "Reservation expired after the pickup window elapsed"
         }
-      }),
-      prisma.resource.update({
+      });
+      await tx.resource.update({
         where: { id: resource.id },
         data: {
           quantity: restoredQuantity,
           status: nextStatus,
           originalQuantity
         }
-      }),
-      prisma.resourceHistory.create({
+      });
+      await tx.resourceHistory.create({
         data: {
           resourceId: resource.id,
           oldStatus: resource.status,
@@ -542,8 +655,17 @@ export async function expireReservations() {
           oldQuantity: resource.quantity,
           newQuantity: restoredQuantity
         }
-      })
-    ]);
+      });
+
+      return { resource };
+    });
+
+    if (!result) {
+      continue;
+    }
+
+    // §15.4: Record allocation expiry metric for each expired reservation
+    metrics.recordAllocationExpiry();
 
     expiredCount += 1;
   }

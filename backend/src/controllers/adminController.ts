@@ -8,6 +8,8 @@ import {
 } from "../services/authService.js";
 import {
   listUnderReviewIncidentReports,
+  linkReportToCrisisEvent,
+  unlinkReportFromCrisisEvent,
   updateIncidentReportStatusByAdmin
 } from "../services/reportService.js";
 import {
@@ -19,6 +21,8 @@ import {
   listFlaggedVolunteers
 } from "../services/reviewService.js";
 import { validateReportListQueryInput } from "../utils/validation.js";
+import { metrics } from "../utils/metrics.js";
+import { logAuditEvent } from "../services/auditService.js";
 
 const roleSchema = z.object({
   role: z.enum(["USER", "VOLUNTEER"])
@@ -29,7 +33,13 @@ const banSchema = z.object({
 });
 
 const reportStatusSchema = z.object({
-  status: z.enum(["PUBLISHED", "UNDER_REVIEW"])
+  status: z.enum(["PUBLISHED", "UNDER_REVIEW", "REJECTED", "CLARIFICATION_REQUESTED", "MERGED"]),
+  reason: z.string().optional()
+});
+
+// AC-04.04: Validation for the unlink report-from-crisis request body (optional reason)
+const unlinkReportSchema = z.object({
+  reason: z.string().optional()
 });
 
 export async function listUsers(
@@ -48,7 +58,19 @@ export async function updateUserRole(
 ) {
   const { role } = roleSchema.parse(request.body);
   const userId = String(request.params.userId);
+  const actorId = request.authUser?.userId;
   const updated = await setUserRoleByAdmin(userId, role);
+  metrics.recordAdminAction();
+  if (actorId) {
+    await logAuditEvent({
+      actorId,
+      actorRole: "ADMIN",
+      action: "USER_ROLE_CHANGED",
+      targetType: "User",
+      targetId: userId,
+      afterJson: JSON.stringify({ role })
+    }).catch((err) => console.error("[audit] Failed to log role change:", err));
+  }
   return response.status(200).json({
     message: "Role updated",
     user: {
@@ -65,7 +87,18 @@ export async function updateUserBanStatus(
 ) {
   const { isBanned } = banSchema.parse(request.body);
   const userId = String(request.params.userId);
+  const actorId = request.authUser?.userId;
   const updated = await setUserBanStatusByAdmin(userId, isBanned);
+  metrics.recordAdminAction();
+  if (actorId) {
+    await logAuditEvent({
+      actorId,
+      actorRole: "ADMIN",
+      action: isBanned ? "USER_BANNED" : "USER_UNBANNED",
+      targetType: "User",
+      targetId: userId
+    }).catch((err) => console.error("[audit] Failed to log ban status change:", err));
+  }
   return response.status(200).json({
     message: isBanned ? "User banned" : "User unbanned",
     user: {
@@ -98,14 +131,34 @@ export async function updateReportStatus(
   response: Response,
   _next: NextFunction
 ) {
-  const { status } = reportStatusSchema.parse(request.body);
+  const { status, reason } = reportStatusSchema.parse(request.body);
   const reportId = String(request.params.reportId);
+  const actorId = request.authUser?.userId;
   const updated = await updateIncidentReportStatusByAdmin(reportId, status);
+  metrics.recordAdminAction();
+  if (actorId) {
+    await logAuditEvent({
+      actorId,
+      actorRole: "ADMIN",
+      action: `REPORT_${status}`,
+      targetType: "IncidentReport",
+      targetId: reportId,
+      afterJson: JSON.stringify({ status, reason })
+    }).catch((err) => console.error("[audit] Failed to log report status change:", err));
+  }
+
+  const messages: Record<string, string> = {
+    PUBLISHED: "Report published successfully",
+    UNDER_REVIEW: "Report kept under review",
+    REJECTED: "Report rejected",
+    CLARIFICATION_REQUESTED: "Clarification requested from reporter",
+    MERGED: "Report merged into existing crisis event"
+  };
 
   return response.status(200).json({
-    message:
-      status === "PUBLISHED" ? "Report published successfully" : "Report kept under review",
-    report: updated
+    message: messages[status] ?? "Report status updated",
+    report: updated,
+    reason
   });
 }
 
@@ -136,6 +189,13 @@ export async function approveReviewHandler(
 ) {
   const reviewId = String(request.params.id);
   await approveReview(reviewId);
+  metrics.recordAdminAction();
+  await logAuditEvent({
+    actorId: request.authUser!.userId,
+    action: "REVIEW_APPROVED",
+    targetType: "Review",
+    targetId: reviewId,
+  });
   return response.status(200).json({ message: "Review approved" });
 }
 
@@ -146,6 +206,13 @@ export async function deleteReviewHandler(
 ) {
   const reviewId = String(request.params.id);
   await deleteReview(reviewId);
+  metrics.recordAdminAction();
+  await logAuditEvent({
+    actorId: request.authUser!.userId,
+    action: "REVIEW_DELETED",
+    targetType: "Review",
+    targetId: reviewId,
+  });
   return response.status(200).json({ message: "Review deleted" });
 }
 
@@ -156,6 +223,13 @@ export async function approveVolunteerHandler(
 ) {
   const volunteerId = String(request.params.id);
   await approveVolunteer(volunteerId);
+  metrics.recordAdminAction();
+  await logAuditEvent({
+    actorId: request.authUser!.userId,
+    action: "VOLUNTEER_APPROVED",
+    targetType: "User",
+    targetId: volunteerId,
+  });
   return response.status(200).json({ message: "Volunteer flag cleared" });
 }
 
@@ -166,5 +240,77 @@ export async function banVolunteerHandler(
 ) {
   const volunteerId = String(request.params.id);
   await banVolunteer(volunteerId);
+  metrics.recordAdminAction();
+  await logAuditEvent({
+    actorId: request.authUser!.userId,
+    action: "VOLUNTEER_BANNED",
+    targetType: "User",
+    targetId: volunteerId,
+  });
   return response.status(200).json({ message: "Volunteer banned" });
+}
+
+// ── AC-04.04: Unlink report from crisis event ────────────────────────────────
+
+export async function unlinkReportFromCrisis(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const reportId = String(request.params.reportId);
+  const actorId = request.authUser?.userId;
+
+  if (!actorId) {
+    return response.status(401).json({ message: "Authentication required" });
+  }
+
+  // Validate the optional reason field if a body is present
+  if (request.body && Object.keys(request.body).length > 0) {
+    unlinkReportSchema.parse(request.body);
+  }
+
+  try {
+    const updated = await unlinkReportFromCrisisEvent(reportId, actorId);
+    metrics.recordAdminAction();
+    return response.status(200).json({
+      message: "Report unlinked from crisis event",
+      report: updated
+    });
+  } catch (error) {
+    console.error("Failed to unlink report:", error);
+    return response.status(404).json({ message: "Failed to unlink report" });
+  }
+}
+
+// ── Link report to crisis event (manual merge) ───────────────────────────────
+
+const linkReportSchema = z.object({
+  crisisEventId: z.string().min(1)
+});
+
+export async function linkReportToCrisisHandler(
+  request: Request,
+  response: Response,
+  _next: NextFunction
+) {
+  const reportId = String(request.params.reportId);
+  const actorId = request.authUser?.userId;
+  const { crisisEventId } = linkReportSchema.parse(request.body);
+
+  if (!actorId) {
+    return response.status(401).json({ message: "Authentication required" });
+  }
+
+  try {
+    const updated = await linkReportToCrisisEvent(reportId, crisisEventId, actorId);
+    metrics.recordAdminAction();
+    return response.status(200).json({
+      message: "Report linked to crisis event",
+      report: updated
+    });
+  } catch (error) {
+    console.error("Failed to link report:", error);
+    const message = error instanceof Error ? error.message : "Failed to link report";
+    return response.status(400).json({ message });
+  }
 }

@@ -38,6 +38,11 @@ import {
 describe("resourceService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Set up $transaction to pass the prismaMock itself as the `tx` object
+    prismaMock.$transaction.mockImplementation(async (callback: any) =>
+      callback(prismaMock)
+    );
   });
 
   it("allows a minimum reservation of one item for small inventories", async () => {
@@ -141,11 +146,16 @@ describe("resourceService", () => {
         pickupTime: new Date("2026-04-20T08:00:00.000Z")
       }
     ]);
+    // findUnique is called inside the transaction to re-check status
+    prismaMock.reservation.findUnique.mockResolvedValue({ status: "Approved" });
     prismaMock.resource.findUnique.mockResolvedValue(resource);
     prismaMock.reservation.update.mockReturnValue({ mutation: "reservation.update" } as never);
     prismaMock.resource.update.mockReturnValue({ mutation: "resource.update" } as never);
     prismaMock.resourceHistory.create.mockReturnValue({ mutation: "resourceHistory.create" } as never);
-    prismaMock.$transaction.mockResolvedValue([]);
+    // Interactive transaction: call the callback with prismaMock as tx
+    prismaMock.$transaction.mockImplementation(async (callback: any) =>
+      callback(prismaMock)
+    );
 
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-23T10:00:00.000Z"));

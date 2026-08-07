@@ -16,13 +16,21 @@ export function NotificationPreferencesPage() {
   const [isActive, setIsActive] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    getNotificationPreferences().then((data) => {
-      setSelectedTypes(data.incidentTypes);
-      setRadiusKm(data.radiusKm);
-      setIsActive(data.isActive);
-    });
+    let cancelled = false;
+    getNotificationPreferences()
+      .then((data) => {
+        if (cancelled) return;
+        setSelectedTypes(data.incidentTypes);
+        setRadiusKm(data.radiusKm);
+        setIsActive(data.isActive);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("Failed to load notification preferences. Please refresh the page.");
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const handleSave = async () => {
@@ -61,6 +69,12 @@ export function NotificationPreferencesPage() {
           </span>
         )}
       </div>
+
+      {loadError && (
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">
+          {loadError}
+        </div>
+      )}
 
       <section className="rounded-xl bg-white p-5 shadow-panel ring-1 ring-slate-200">
         <div className="flex items-center justify-between">

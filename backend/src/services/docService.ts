@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { createFolderSchema, addNoteSchema } from "../utils/validation.js";
+import { SafeError } from "../utils/SafeError.js";
 
 export async function createFolder(ownerId: string, payload: unknown) {
     const parsed = createFolderSchema.parse(payload);
@@ -28,7 +29,8 @@ export async function getUserFolders(ownerId: string, includeDeleted = false) {
         orderBy: [
             { isPinned: 'desc' },
             { updatedAt: 'desc' }
-        ]
+        ],
+        take: 100
     });
 }
 
@@ -44,7 +46,8 @@ export async function listActiveCrises() {
         },
         orderBy: {
             createdAt: 'desc'
-        }
+        },
+        take: 50
     });
 }
 
@@ -52,8 +55,8 @@ export async function getFolderDetails(ownerId: string, folderId: string) {
     const folder = await prisma.secureFolder.findFirst({
         where: { id: folderId, ownerId, isDeleted: false },
         include: {
-            files: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
-            notes: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
+            files: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' }, take: 200 },
+            notes: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' }, take: 200 },
             shareLinks: {
                 where: { isRevoked: false, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
                 orderBy: { createdAt: 'desc' },
@@ -64,13 +67,21 @@ export async function getFolderDetails(ownerId: string, folderId: string) {
         }
     });
 
-    if (!folder) throw new Error("Folder not found or access denied");
+    if (!folder) throw new SafeError("Folder not found or access denied");
     return folder;
 }
 
 export async function addNoteToFolder(authorId: string, folderId: string, payload: unknown) {
     const parsed = addNoteSchema.parse(payload);
     await getFolderDetails(authorId, folderId);
+
+    // Limit notes per folder to prevent abuse
+    const noteCount = await prisma.folderNote.count({
+        where: { folderId, isDeleted: false }
+    });
+    if (noteCount >= 50) {
+        throw new SafeError("Maximum 50 notes per folder reached");
+    }
 
     return prisma.folderNote.create({
         data: {
@@ -114,8 +125,8 @@ export async function getFolderByToken(token: string) {
         include: {
             folder: {
                 include: {
-                    files: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
-                    notes: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
+                    files: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' }, take: 200 },
+                    notes: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' }, take: 200 },
                     owner: { select: { id: true, fullName: true, email: true } }
                 }
             }
@@ -123,23 +134,23 @@ export async function getFolderByToken(token: string) {
     });
 
     if (!link) {
-        console.error(`[SHARE_LINK] Link not found for token: ${token}`);
-        throw new Error("Shared link not found");
+        console.error("[SHARE_LINK] Link not found for provided token");
+        throw new SafeError("Shared link not found");
     }
 
     if (link.isRevoked) {
-        console.error(`[SHARE_LINK] Link revoked for token: ${token}`);
-        throw new Error("Shared link has been revoked");
+        console.error("[SHARE_LINK] Link has been revoked");
+        throw new SafeError("Shared link has been revoked");
     }
 
     if (link.expiresAt && link.expiresAt < new Date()) {
-        console.error(`[SHARE_LINK] Link expired for token: ${token}. Expired at: ${link.expiresAt}`);
-        throw new Error("Shared link has expired");
+        console.error("[SHARE_LINK] Link has expired");
+        throw new SafeError("Shared link has expired");
     }
 
     if (!link.folder || link.folder.isDeleted) {
-        console.error(`[SHARE_LINK] Folder missing or deleted for token: ${token}`);
-        throw new Error("The shared folder no longer exists");
+        console.error("[SHARE_LINK] Folder missing or deleted");
+        throw new SafeError("The shared folder no longer exists");
     }
 
     return link.folder;
@@ -161,7 +172,7 @@ export async function addFileToFolder(ownerId: string, folderId: string, fileDat
     const fileCount = await prisma.folderFile.count({
         where: { folderId, isDeleted: false }
     });
-    if (fileCount >= 20) throw new Error("Maximum 20 files per folder reached");
+    if (fileCount >= 20) throw new SafeError("Maximum 20 files per folder reached");
 
     return prisma.folderFile.create({
         data: {
@@ -209,7 +220,7 @@ export async function togglePinFolder(ownerId: string, folderId: string) {
     const folder = await prisma.secureFolder.findFirst({
         where: { id: folderId, ownerId }
     });
-    if (!folder) throw new Error("Folder not found");
+    if (!folder) throw new SafeError("Folder not found");
 
     return prisma.secureFolder.update({
         where: { id: folderId },

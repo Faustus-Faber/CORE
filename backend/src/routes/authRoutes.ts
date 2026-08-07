@@ -10,12 +10,14 @@ import {
 } from "../controllers/authController.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { requireAuth } from "../middleware/auth.js";
+import { authRateLimiter } from "../middleware/rateLimiter.js";
 
 export const authRoutes = Router();
 
-authRoutes.post("/register", asyncHandler(register));
-authRoutes.post("/login", asyncHandler(login));
+// P1: Rate limit auth endpoints
+authRoutes.post("/register", authRateLimiter, asyncHandler(register));
+authRoutes.post("/login", authRateLimiter, asyncHandler(login));
 authRoutes.post("/logout", asyncHandler(logout));
-authRoutes.post("/forgot-password", asyncHandler(forgotPassword));
-authRoutes.post("/reset-password", asyncHandler(handleResetPassword));
+authRoutes.post("/forgot-password", authRateLimiter, asyncHandler(forgotPassword));
+authRoutes.post("/reset-password", authRateLimiter, asyncHandler(handleResetPassword));
 authRoutes.get("/me", requireAuth, asyncHandler(me));

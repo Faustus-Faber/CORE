@@ -13,11 +13,6 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-const FRAUD_KEYWORDS = [
-  "scam", "fake", "fraud", "not present", "took supplies",
-  "stole", "liar", "dishonest", "corrupt", "bribe"
-];
-
 function daysAgo(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }
@@ -54,15 +49,8 @@ async function checkAndFlagVolunteer(volunteerId: string) {
     }
   }
 
-  if (total >= 3) {
-    const fraudCount = reviews.filter(r =>
-      FRAUD_KEYWORDS.some(kw => r.text.toLowerCase().includes(kw))
-    ).length;
-    const pct = (fraudCount / total) * 100;
-    if (pct >= 40) {
-      reasons.push(`${pct.toFixed(0)}% of reviews contain fraud indicators`);
-    }
-  }
+  // Fraud detection is handled by the AI claim extraction pipeline,
+  // not naive keyword matching. See §7.3 of the refinement plan.
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const recentNeg = reviews.filter(r => !r.wouldWorkAgain && r.createdAt >= thirtyDaysAgo).length;
@@ -458,15 +446,10 @@ async function main() {
     "Refused to help carry heavy supply boxes. Others had to cover their responsibilities.",
     "Was argumentative with coordination team. Disrupted the workflow multiple times.",
     "Arrived unprepared with no equipment despite being informed beforehand.",
-  ];
-
-  const fraudTexts = [
-    "This is a total scam. They collected supplies and never delivered them to victims.",
-    "This volunteer is a fraud. They were not present at the distribution site as claimed.",
-    "They stole medical supplies from the relief center. Multiple witnesses confirm this.",
-    "Completely dishonest person. Took supplies meant for flood victims for personal gain.",
-    "This person is corrupt. They took bribe from vendors to give priority in distribution.",
-    "Liar and fake volunteer. Was never at the rescue site despite claiming to be.",
+    "Disappeared from the relief site for hours without informing anyone. Very irresponsible.",
+    "Failed to follow instructions from the coordination team despite multiple reminders.",
+    "Left the shelter unattended during a critical period. Beneficiaries were left stranded.",
+    "Refused to assist with evening distribution shift citing personal reasons repeatedly.",
   ];
 
   let reviewCount = 0;
@@ -547,12 +530,12 @@ async function main() {
     await createReview(reviewer.id, volunteers.billal.id, pick([1, 1, 2]), negativeTexts[i % negativeTexts.length], contexts[i % contexts.length], 3 + i * 4, false);
   }
 
-  // Sohel — FLAGGED (fraud keywords 67%): 6 reviews, 4 with fraud text
+  // Sohel — FLAGGED (low avg rating, negative reviews): 6 reviews, 4 negative
   for (let i = 0; i < 4; i++) {
     const reviewer = reviewerPool[(i + 3) % reviewerPool.length];
     await createReview(reviewer.id, volunteers.sohel.id, pick([1, 1, 2]),
-      fraudTexts[i % fraudTexts.length], contexts[i % contexts.length], 4 + i * 5, false,
-      true, ["Contains fraud keywords"]);
+      negativeTexts[(i + 4) % negativeTexts.length], contexts[i % contexts.length], 4 + i * 5, false,
+      true, ["Consistently poor performance across multiple deployments"]);
   }
   for (let i = 0; i < 2; i++) {
     const reviewer = reviewerPool[(i + 7) % reviewerPool.length];
@@ -755,7 +738,7 @@ async function main() {
   console.log("");
   console.log(`  Users: ${userData.length} (password: User@12345)`);
   console.log("    farhan@core.local  — demo account");
-  console.log("    babul@core.local   — NEW account (<1 day, fraud flag trigger)");
+  console.log("    babul@core.local   — NEW account (<1 day)");
   console.log("");
   console.log(`  Volunteers: ${volunteerData.length} (password: Volunteer@12345)`);
   console.log("    ayesha.vol@core.local  — Exemplary (4.6★, 8 reviews)");
@@ -764,7 +747,7 @@ async function main() {
   console.log("    farzana.vol@core.local — Excellent nurse (4.5★, 6 reviews)");
   console.log("    masud.vol@core.local   — Good rescuer (4.2★, 5 reviews)");
   console.log("    billal.vol@core.local  — FLAGGED (1.5★ avg, low-rating)");
-  console.log("    sohel.vol@core.local   — FLAGGED (67% fraud keywords)");
+  console.log("    sohel.vol@core.local   — FLAGGED (low avg rating, negative reviews)");
   console.log("    alamgir.vol@core.local — FLAGGED (4 negative-trend in 30d)");
   console.log("    munira.vol@core.local  — Fresh, zero reviews");
   console.log("");

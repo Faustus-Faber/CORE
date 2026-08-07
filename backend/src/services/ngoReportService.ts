@@ -3,6 +3,8 @@ import path from "node:path";
 
 import PDFDocument from "pdfkit";
 import { prisma } from "../lib/prisma.js";
+import { haversineDistanceKm } from "../utils/geo.js";
+import { metrics } from "../utils/metrics.js";
 
 type ManualReportData = {
   assignedVolunteers?: string[];
@@ -14,12 +16,267 @@ type ReportSection = {
   body: () => void;
 };
 
+// ── Editable report sections ──────────────────────────────────────────────────
+
+export type EditableSection = {
+  key: string;
+  title: string;
+  content: string;
+};
+
+export type ReportSections = {
+  executiveSummary: string;
+  incidentDetails: string;
+  timeline: string;
+  resourceUtilization: string;
+  volunteerInvolvement: string;
+  evidenceSummary: string;
+  impactAssessment: string;
+  appendix: string;
+};
+
+/**
+ * Create a draft NGO report with editable sections populated from crisis data.
+ * The admin can edit these sections before generating the final PDF.
+ */
+export async function createDraftReport(crisisId: string, adminId: string) {
+  const crisis = await prisma.crisisEvent.findUnique({
+    where: { id: crisisId },
+    include: {
+      reports: { include: { incidentReport: true } },
+      updates: { orderBy: { createdAt: "asc" }, include: { updater: { select: { fullName: true, role: true } } } },
+      responders: { include: { volunteer: { select: { fullName: true, skills: true, totalVerifiedHours: true } } }, orderBy: { updatedAt: "desc" } },
+    },
+  });
+
+  if (!crisis) throw new Error("Crisis not found");
+  if (!["RESOLVED", "CLOSED"].includes(crisis.status)) {
+    throw new Error("After-action reports can only be generated for resolved or closed crises");
+  }
+
+  const [volunteerTasks, evidence, ocrScans, nearbyResources] = await Promise.all([
+    prisma.volunteerTask.findMany({
+      where: { crisisEventId: crisisId, status: "VERIFIED" },
+      include: { volunteer: { select: { fullName: true, skills: true } } },
+      orderBy: { dateOfTask: "asc" },
+      take: 500,
+    }),
+    prisma.evidencePost.findMany({
+      where: { isVerified: true, visibility: { in: ["REDACTED_PUBLIC", "ORGANIZATION", "SHARE_PACKAGE"] } },
+      take: 12,
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.oCRScan.findMany({
+      where: { crisisEventId: crisisId },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    listNearbyResources(crisis.latitude, crisis.longitude),
+  ]);
+
+  const latestImpactUpdate = [...crisis.updates].reverse().find(
+    (u) => u.affectedArea || u.casualtyCount != null || u.displacedCount != null || u.damageNotes
+  );
+
+  // Build editable sections from crisis data
+  const sections: ReportSections = {
+    executiveSummary: crisis.sitRepText || "No AI situation summary is available for this crisis. Add your summary here.",
+
+    incidentDetails: [
+      `Title: ${crisis.title}`,
+      `Type: ${crisis.incidentType}`,
+      `Severity: ${crisis.severityLevel}`,
+      `Location: ${crisis.locationText}`,
+      `Status: ${crisis.status}`,
+      `Created: ${formatDate(crisis.createdAt)}`,
+      `Reports: ${crisis.reportCount} reports from ${crisis.reporterCount} reporters`,
+    ].join("\n"),
+
+    timeline: crisis.updates.length > 0
+      ? crisis.updates.map((u) =>
+          `[${formatDate(u.createdAt)}] ${u.updateType}${u.newStatus ? ` → ${u.newStatus}` : ""}${u.updateNote ? `: ${u.updateNote}` : ""}${u.updater ? ` (by ${u.updater.fullName})` : ""}`
+        ).join("\n")
+      : "No timeline updates recorded.",
+
+    resourceUtilization: nearbyResources.length > 0
+      ? nearbyResources.map((r) => `- ${r.name}: ${r.quantity} ${r.unit} (${r.status}) at ${r.address}`).join("\n")
+      : "No nearby resources found.",
+
+    volunteerInvolvement: [
+      ...crisis.responders.map((r) => `- ${r.volunteer.fullName}: ${r.status}${r.volunteer.skills.length ? `, skills: ${r.volunteer.skills.join(", ")}` : ""}`),
+      ...volunteerTasks.map((t) => `- ${t.volunteer.fullName}: ${t.title} (${t.hoursSpent}h, ${t.status})`),
+    ].join("\n") || "No volunteer involvement recorded.",
+
+    evidenceSummary: evidence.length > 0
+      ? evidence.map((e) => `- ${e.title}${e.description ? `: ${e.description}` : ""} (${e.mediaType})`).join("\n")
+      : "No verified evidence available.",
+
+    impactAssessment: latestImpactUpdate
+      ? [
+          latestImpactUpdate.affectedArea ? `Affected Area: ${latestImpactUpdate.affectedArea}` : "",
+          latestImpactUpdate.casualtyCount != null ? `Casualties: ${latestImpactUpdate.casualtyCount}` : "",
+          latestImpactUpdate.displacedCount != null ? `Displaced: ${latestImpactUpdate.displacedCount}` : "",
+          latestImpactUpdate.damageNotes ? `Damage Notes: ${latestImpactUpdate.damageNotes}` : "",
+        ].filter(Boolean).join("\n")
+      : "No impact assessment data recorded. Add your assessment here.",
+
+    appendix: ocrScans.length > 0
+      ? ocrScans.map((s) => `- OCR Scan (${s.provider}): ${s.rawText?.substring(0, 200) ?? "No text extracted"}`).join("\n")
+      : "No OCR or document data available.",
+  };
+
+  const report = await prisma.nGOReport.create({
+    data: {
+      crisisEventId: crisisId,
+      generatedById: adminId,
+      title: `After-Action Report: ${crisis.title}`,
+      summary: sections.executiveSummary,
+      sectionsJson: JSON.stringify(sections),
+      fileUrl: null,
+      pdfGenerated: false,
+    },
+    include: {
+      crisisEvent: { select: { title: true } },
+      generatedBy: { select: { fullName: true } },
+    },
+  });
+
+  return report;
+}
+
+/**
+ * Update the editable sections of a draft report.
+ */
+export async function updateReportSections(reportId: string, sections: Partial<ReportSections>) {
+  const report = await prisma.nGOReport.findUnique({ where: { id: reportId } });
+  if (!report) throw new Error("Report not found");
+
+  const existing: ReportSections = report.sectionsJson
+    ? JSON.parse(report.sectionsJson)
+    : { executiveSummary: "", incidentDetails: "", timeline: "", resourceUtilization: "", volunteerInvolvement: "", evidenceSummary: "", impactAssessment: "", appendix: "" };
+
+  const merged = { ...existing, ...sections };
+
+  return prisma.nGOReport.update({
+    where: { id: reportId },
+    data: {
+      sectionsJson: JSON.stringify(merged),
+      summary: merged.executiveSummary,
+    },
+    include: {
+      crisisEvent: { select: { title: true } },
+      generatedBy: { select: { fullName: true } },
+    },
+  });
+}
+
+/**
+ * Generate the final PDF from the (possibly edited) sections.
+ */
+export async function generatePDFFromSections(reportId: string) {
+  const report = await prisma.nGOReport.findUnique({
+    where: { id: reportId },
+    include: { crisisEvent: true, generatedBy: { select: { fullName: true } } },
+  });
+  if (!report) throw new Error("Report not found");
+  if (!report.sectionsJson) throw new Error("Report has no sections data");
+
+  const sections = JSON.parse(report.sectionsJson) as ReportSections;
+  const crisis = report.crisisEvent;
+  const adminName = report.generatedBy?.fullName ?? "Admin";
+
+  const reportsDir = path.resolve(process.cwd(), "uploads", "reports");
+  if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
+
+  const safeId = report.id.replace(/[^a-zA-Z0-9_-]/g, "");
+  const filename = `AAR_${safeId}_${Date.now()}.pdf`;
+  const filePath = path.join(reportsDir, filename);
+  const doc = new PDFDocument({ margin: 50, bufferPages: true });
+  const stream = fs.createWriteStream(filePath);
+  doc.pipe(stream);
+
+  // Cover page
+  doc.fontSize(24).font("Helvetica-Bold").text("CORE Platform", { align: "center" });
+  doc.moveDown(1.5);
+  doc.fontSize(28).text("After-Action Report", { align: "center" });
+  doc.moveDown();
+  doc.fontSize(18).font("Helvetica").text(crisis.title, { align: "center" });
+  doc.moveDown(2);
+  doc.fontSize(12);
+  doc.text(`Event Period: ${formatDate(crisis.createdAt)} - ${formatDate(report.createdAt)}`, { align: "center" });
+  doc.text(`Generated Date: ${formatDate(new Date())}`, { align: "center" });
+  doc.text(`Generated By: ${adminName}`, { align: "center" });
+  doc.moveDown(4);
+  doc.fontSize(10).fillColor("#64748b").text("CONFIDENTIAL - Prepared for NGO, government, and donor coordination.", { align: "center" });
+  doc.fillColor("#000000");
+
+  // Sections
+  const sectionList: { title: string; content: string }[] = [
+    { title: "Executive Summary", content: sections.executiveSummary },
+    { title: "Incident Details", content: sections.incidentDetails },
+    { title: "Timeline of Events", content: sections.timeline },
+    { title: "Resource Utilization", content: sections.resourceUtilization },
+    { title: "Volunteer Involvement", content: sections.volunteerInvolvement },
+    { title: "Visual Evidence Summary", content: sections.evidenceSummary },
+    { title: "Impact Assessment", content: sections.impactAssessment },
+    { title: "Appendix: OCR & Document Data", content: sections.appendix },
+  ];
+
+  for (const section of sectionList) {
+    doc.addPage();
+    doc.font("Helvetica-Bold").fontSize(18).fillColor("#0f172a").text(section.title);
+    doc.moveDown();
+    doc.font("Helvetica").fontSize(11).fillColor("#111827").text(section.content);
+  }
+
+  // Footer with page numbers
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    doc.fontSize(8).fillColor("#94a3b8").text(
+      `Page ${i + 1} of ${range.start + range.count}`,
+      50,
+      doc.page.height - 40,
+      { align: "center", width: doc.page.width - 100 }
+    );
+  }
+
+  doc.end();
+
+  return new Promise((resolve, reject) => {
+    stream.on("finish", async () => {
+      metrics.recordPdfGeneration(Date.now() - Date.now());
+      try {
+        const updated = await prisma.nGOReport.update({
+          where: { id: reportId },
+          data: {
+            fileUrl: `/uploads/reports/${filename}`,
+            pdfGenerated: true,
+          },
+          include: {
+            crisisEvent: { select: { title: true } },
+            generatedBy: { select: { fullName: true } },
+          },
+        });
+        resolve(updated);
+      } catch (err) {
+        fs.promises.unlink(filePath).catch(() => {});
+        reject(err);
+      }
+    });
+    stream.on("error", reject);
+    doc.on("error", reject);
+  });
+}
+
 export async function generateNGOReportPDF(
   crisisId: string,
   adminId: string,
   manualData: ManualReportData = {},
   existingReportId?: string
 ) {
+  const startTime = Date.now();
+
   const data = await aggregateCrisisData(crisisId, manualData);
 
   if (!["RESOLVED", "CLOSED"].includes(data.crisis.status)) {
@@ -36,7 +293,8 @@ export async function generateNGOReportPDF(
     fs.mkdirSync(reportsDir, { recursive: true });
   }
 
-  const filename = `NGO_Report_${crisisId}_${Date.now()}.pdf`;
+  const safeCrisisId = crisisId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const filename = `NGO_Report_${safeCrisisId}_${Date.now()}.pdf`;
   const filePath = path.join(reportsDir, filename);
   const doc = new PDFDocument({ margin: 50, bufferPages: true });
   const stream = fs.createWriteStream(filePath);
@@ -66,34 +324,50 @@ export async function generateNGOReportPDF(
 
   return new Promise((resolve, reject) => {
     stream.on("finish", async () => {
-      const report = existingReportId
-        ? await prisma.nGOReport.update({
-            where: { id: existingReportId },
-            data: {
-              fileUrl: `/uploads/reports/${filename}`,
-              summary: data.crisis.sitRepText
-            },
-            include: {
-              crisisEvent: { select: { title: true } },
-              generatedBy: { select: { fullName: true } }
-            }
-          })
-        : await prisma.nGOReport.create({
-            data: {
-              crisisEventId: crisisId,
-              generatedById: adminId,
-              title: `NGO Report: ${data.crisis.title}`,
-              fileUrl: `/uploads/reports/${filename}`,
-              summary: data.crisis.sitRepText
-            },
-            include: {
-              crisisEvent: { select: { title: true } },
-              generatedBy: { select: { fullName: true } }
-            }
-          });
-      resolve(report);
+      // §15.4: Record PDF generation latency metric
+      metrics.recordPdfGeneration(Date.now() - startTime);
+
+      try {
+        const report = existingReportId
+          ? await prisma.nGOReport.update({
+              where: { id: existingReportId },
+              data: {
+                fileUrl: `/uploads/reports/${filename}`,
+                summary: data.crisis.sitRepText
+              },
+              include: {
+                crisisEvent: { select: { title: true } },
+                generatedBy: { select: { fullName: true } }
+              }
+            })
+          : await prisma.nGOReport.create({
+              data: {
+                crisisEventId: crisisId,
+                generatedById: adminId,
+                title: `NGO Report: ${data.crisis.title}`,
+                fileUrl: `/uploads/reports/${filename}`,
+                summary: data.crisis.sitRepText
+              },
+              include: {
+                crisisEvent: { select: { title: true } },
+                generatedBy: { select: { fullName: true } }
+              }
+            });
+        resolve(report);
+      } catch (dbErr) {
+        // Clean up orphaned PDF file if the database write fails
+        fs.promises.unlink(filePath).catch(() => {});
+        reject(dbErr);
+      }
     });
-    stream.on("error", reject);
+    stream.on("error", (err) => {
+      stream.destroy();
+      reject(err);
+    });
+    doc.on("error", (err) => {
+      stream.destroy();
+      reject(err);
+    });
   });
 }
 
@@ -103,7 +377,7 @@ export async function ensureNGOReportFile(reportId: string) {
     throw new Error("Report not found");
   }
 
-  const filePath = resolveReportPath(report.fileUrl);
+  const filePath = resolveReportPath(report.fileUrl ?? "");
   if (fs.existsSync(filePath)) {
     return report;
   }
@@ -119,6 +393,7 @@ export async function ensureNGOReportFile(reportId: string) {
 export async function listNGOReports(crisisId?: string) {
   return prisma.nGOReport.findMany({
     where: crisisId ? { crisisEventId: crisisId } : {},
+    take: 100,
     include: {
       crisisEvent: { select: { title: true } },
       generatedBy: { select: { fullName: true } }
@@ -184,10 +459,23 @@ async function aggregateCrisisData(crisisId: string, manualData: ManualReportDat
         include: {
           volunteer: { select: { fullName: true, skills: true } }
         },
-        orderBy: { dateOfTask: "asc" }
+        orderBy: { dateOfTask: "asc" },
+        take: 500
       }),
       prisma.evidencePost.findMany({
-        where: { isVerified: true },
+        // P0-15: Only include evidence near the crisis location (within ~20km),
+        // not all verified evidence globally
+        // AC-10.04: Exclude PRIVATE evidence from NGO reports
+        where: {
+          isVerified: true,
+          visibility: { in: ["REDACTED_PUBLIC", "ORGANIZATION", "SHARE_PACKAGE"] },
+          ...(crisis.latitude != null && crisis.longitude != null
+            ? {
+                latitude: { not: null },
+                longitude: { not: null }
+              }
+            : {})
+        },
         take: 12,
         orderBy: { createdAt: "desc" },
         include: {
@@ -197,15 +485,17 @@ async function aggregateCrisisData(crisisId: string, manualData: ManualReportDat
       prisma.secureFolder.findMany({
         where: { crisisId, isDeleted: false },
         include: {
-          files: { where: { isDeleted: false }, orderBy: { createdAt: "desc" } },
-          notes: { where: { isDeleted: false }, orderBy: { createdAt: "desc" } }
+          files: { where: { isDeleted: false }, orderBy: { createdAt: "desc" }, take: 50 },
+          notes: { where: { isDeleted: false }, orderBy: { createdAt: "desc" }, take: 50 }
         },
-        orderBy: { updatedAt: "desc" }
+        orderBy: { updatedAt: "desc" },
+        take: 20
       }),
       prisma.oCRScan.findMany({
         where: { crisisEventId: crisisId },
-        include: { items: { orderBy: { createdAt: "asc" } } },
-        orderBy: { createdAt: "desc" }
+        include: { items: { orderBy: { createdAt: "asc" }, take: 100 } },
+        orderBy: { createdAt: "desc" },
+        take: 20
       }),
       listNearbyResources(crisis.latitude, crisis.longitude)
     ]);
@@ -219,12 +509,23 @@ async function aggregateCrisisData(crisisId: string, manualData: ManualReportDat
       update.damageNotes
     );
 
+  // P0-15: Filter evidence to only include posts within 20km of the crisis
+  const EVIDENCE_RADIUS_KM = 20;
+  const crisisLat = crisis.latitude;
+  const crisisLng = crisis.longitude;
+  const crisisScopedEvidence = (crisisLat != null && crisisLng != null)
+    ? evidence.filter((post) => {
+        if (post.latitude == null || post.longitude == null) return false;
+        return haversineDistanceKm(crisisLat, crisisLng, post.latitude, post.longitude) <= EVIDENCE_RADIUS_KM;
+      })
+    : evidence;
+
   return {
     crisis,
     manualResources: manualData.resources?.filter((resource) => resource.name.trim()) ?? [],
     manualVolunteers,
     volunteerTasks,
-    evidence,
+    evidence: crisisScopedEvidence,
     documentFolders,
     ocrScans,
     nearbyResources,

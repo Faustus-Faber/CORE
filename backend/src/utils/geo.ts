@@ -10,6 +10,16 @@ export function haversineDistanceKm(
   lat2: number,
   lng2: number
 ): number {
+  // Guard against NaN/Infinity inputs — return Infinity so callers can
+  // treat invalid coordinates as "impossibly far away" rather than
+  // propagating NaN through downstream comparisons.
+  if (
+    !Number.isFinite(lat1) || !Number.isFinite(lng1) ||
+    !Number.isFinite(lat2) || !Number.isFinite(lng2)
+  ) {
+    return Infinity;
+  }
+
   const dLat = toRadians(lat2 - lat1);
   const dLng = toRadians(lng2 - lng1);
   const a =

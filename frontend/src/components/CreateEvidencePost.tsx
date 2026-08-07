@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createEvidencePost } from "../services/evidenceService";
 import LocationPicker from "./LocationPicker";
 
@@ -18,9 +18,24 @@ export function CreateEvidencePost({ onPostCreated }: CreateEvidencePostProps) {
   const [error, setError] = useState("");
   const [showMap, setShowMap] = useState(false);
 
+  // Revoke object URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      previewUrls.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [previewUrls]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const selectedFiles = Array.from(e.target.files).slice(0, 5);
+      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB for videos
+      const allFiles = Array.from(e.target.files);
+      const validFiles = allFiles.filter((f) => f.size <= MAX_FILE_SIZE);
+      if (validFiles.length < allFiles.length) {
+        setError("Some files were too large (max 50MB) and were skipped");
+      } else {
+        setError("");
+      }
+      const selectedFiles = validFiles.slice(0, 5);
       setFiles(selectedFiles);
 
       // Clean up old previews
@@ -177,7 +192,7 @@ export function CreateEvidencePost({ onPostCreated }: CreateEvidencePostProps) {
             {previewUrls.map((url, i) => (
               <div key={url} className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg border border-slate-200">
                 {mediaType === "IMAGE" ? (
-                  <img src={url} alt={`Preview ${i}`} className="h-full w-full object-cover" />
+                  <img src={url} alt={`Preview ${i}`} className="h-full w-full object-cover" loading="lazy" decoding="async" />
                 ) : (
                   <video src={url} className="h-full w-full object-cover" />
                 )}

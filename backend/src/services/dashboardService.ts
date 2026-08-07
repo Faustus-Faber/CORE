@@ -9,6 +9,7 @@ import type {
 import { prisma } from "../lib/prisma.js";
 import { env } from "../config/env.js";
 import { haversineDistanceKm } from "../utils/geo.js";
+import { redactCoordinates } from "../utils/geoRedact.js";
 import { severityRanking } from "../utils/incidentMapping.js";
 import { fetchReporters, buildReporterMap } from "../utils/reporterLookup.js";
 import { stripThinkingTagsFromJson } from "../utils/sanitize.js";
@@ -37,6 +38,8 @@ export type DashboardFeedFilter = {
   timeRangeHours?: number;
   sortBy?: "mostRecent" | "highestSeverity" | "mostReports";
   sortOrder?: "asc" | "desc";
+  // FR-01: Organization scope — NGO users only see their org's crises
+  organizationId?: string;
 };
 
 export type CrisisEventCard = {
@@ -109,6 +112,7 @@ export type IncidentDetailResponse = {
   commandCenter: CrisisCommandCenter;
   contributingReports: IncidentReportListItem[];
   nearbyResources: ResourceSummary[];
+  reportPagination?: { page: number; limit: number; total: number; totalPages: number };
 };
 
 function timeAgo(date: Date): string {
@@ -168,6 +172,11 @@ function sortEvents(
 function buildFeedWhere(filters: DashboardFeedFilter): Prisma.CrisisEventWhereInput {
   const where: Prisma.CrisisEventWhereInput = {};
 
+  // FR-01: Organization scope — filter crises by org if specified
+  if (filters.organizationId) {
+    where.organizationId = filters.organizationId;
+  }
+
   if (filters.severity && filters.severity !== "ALL") {
     where.severityLevel = filters.severity;
   }
@@ -198,11 +207,13 @@ function buildFeedWhere(filters: DashboardFeedFilter): Prisma.CrisisEventWhereIn
 }
 
 export async function getDashboardFeed(
-  filters: DashboardFeedFilter
+  filters: DashboardFeedFilter,
+  viewerRole?: string
 ): Promise<CrisisEventCard[]> {
   const events = await prisma.crisisEvent.findMany({
     where: buildFeedWhere(filters),
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    take: 500
   });
 
   const filtered = filters.lat && filters.lng && filters.radiusKm
@@ -226,7 +237,8 @@ export async function getDashboardFeed(
           createdAt: true
         }
       }
-    }
+    },
+    take: 1000
   });
 
   const reportsMap = new Map<string, typeof reportsByEvent>();
@@ -247,6 +259,8 @@ export async function getDashboardFeed(
       ? Math.round(eventReports.reduce((sum, r) => sum + r.incidentReport.credibilityScore, 0) / eventReports.length)
       : 0;
 
+    const coords = redactCoordinates(event.latitude, event.longitude, viewerRole);
+
     return {
       id: event.id,
       title: event.title,
@@ -255,8 +269,8 @@ export async function getDashboardFeed(
       severityLevel: event.severityLevel,
       status: event.status,
       locationText: event.locationText,
-      latitude: event.latitude,
-      longitude: event.longitude,
+      latitude: coords.latitude,
+      longitude: coords.longitude,
       reportCount: event.reportCount,
       reporterCount: event.reporterCount,
       credibilityScore: avgCredibility,
@@ -333,10 +347,10 @@ const similaritySystemPrompt = [
 ].join("\n");
 
 async function computeSimilarity(textA: string, textB: string): Promise<number> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), env.aiRequestTimeoutMs);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), env.aiRequestTimeoutMs);
 
+  try {
     const response = await fetch(`${env.groqBaseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -346,8 +360,8 @@ async function computeSimilarity(textA: string, textB: string): Promise<number> 
       body: JSON.stringify({
         model: env.groqQwenModel,
         temperature: 0,
-        max_tokens: 200,
-        reasoning_effort: "none",
+        max_tokens: 16000,
+        thinking: { type: "disabled" },
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: similaritySystemPrompt },
@@ -359,8 +373,6 @@ async function computeSimilarity(textA: string, textB: string): Promise<number> 
       }),
       signal: controller.signal
     });
-
-    clearTimeout(timeout);
 
     if (!response.ok) return fallbackSimilarity(textA, textB);
 
@@ -375,6 +387,8 @@ async function computeSimilarity(textA: string, textB: string): Promise<number> 
     }
   } catch {
     return fallbackSimilarity(textA, textB);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -387,25 +401,62 @@ async function createNewCrisisEvent(report: {
   latitude: number | null;
   longitude: number | null;
 }): Promise<{ crisisEventId: string; isNew: true }> {
-  const newEvent = await prisma.crisisEvent.create({
-    data: {
-      title: report.incidentTitle,
-      incidentType: report.incidentType,
-      severityLevel: report.severityLevel,
-      locationText: report.locationText,
-      latitude: report.latitude,
-      longitude: report.longitude,
-      status: "REPORTED",
-      reportCount: 1,
-      reporterCount: 1
+  // AC-04.3: Retry on canonical ID collision to prevent duplicate events
+  // under concurrent fusion attempts. The @unique constraint on canonicalId
+  // ensures only one event can claim a given ID; losers retry with the next sequence.
+  const MAX_CREATE_RETRIES = 3;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < MAX_CREATE_RETRIES; attempt++) {
+    try {
+      const newEvent = await prisma.$transaction(async (tx) => {
+        // Generate canonical ID: {TYPE}-{YEAR}-{SEQUENCE}
+        const year = new Date().getFullYear();
+        const prefix = `${report.incidentType}-${year}-`;
+        const lastEvent = await tx.crisisEvent.findFirst({
+          where: { canonicalId: { startsWith: prefix } },
+          orderBy: { canonicalId: "desc" },
+          select: { canonicalId: true },
+        });
+        const seq = lastEvent?.canonicalId
+          ? parseInt(lastEvent.canonicalId.split("-").pop() ?? "0", 10) + 1
+          : 1 + attempt; // advance sequence on retry to avoid same collision
+        const canonicalId = `${prefix}${String(seq).padStart(4, "0")}`;
+
+        const event = await tx.crisisEvent.create({
+          data: {
+            canonicalId,
+            title: report.incidentTitle,
+            incidentType: report.incidentType,
+            severityLevel: report.severityLevel,
+            locationText: report.locationText,
+            latitude: report.latitude,
+            longitude: report.longitude,
+            status: "REPORTED",
+            reportCount: 1,
+            reporterCount: 1
+          }
+        });
+
+        await tx.crisisEventReport.create({
+          data: { crisisEventId: event.id, incidentReportId: report.id }
+        });
+
+        return event;
+      });
+
+      return { crisisEventId: newEvent.id, isNew: true };
+    } catch (err: any) {
+      lastError = err;
+      // Prisma unique constraint violation code is P2002
+      if (err?.code === "P2002") {
+        continue; // retry with next sequence
+      }
+      throw err; // re-throw non-constraint errors
     }
-  });
+  }
 
-  await prisma.crisisEventReport.create({
-    data: { crisisEventId: newEvent.id, incidentReportId: report.id }
-  });
-
-  return { crisisEventId: newEvent.id, isNew: true };
+  throw lastError;
 }
 
 async function linkReportToEvent(
@@ -413,6 +464,7 @@ async function linkReportToEvent(
   reportId: string,
   reporterId: string
 ): Promise<{ crisisEventId: string; isNew: false }> {
+  // AC-04.3: Check for existing link first (idempotent)
   const existingLink = await prisma.crisisEventReport.findFirst({
     where: { incidentReportId: reportId }
   });
@@ -428,18 +480,34 @@ async function linkReportToEvent(
     }
   });
 
-  await prisma.$transaction([
-    prisma.crisisEventReport.create({
-      data: { crisisEventId: eventId, incidentReportId: reportId }
-    }),
-    prisma.crisisEvent.update({
-      where: { id: eventId },
-      data: {
-        reportCount: { increment: 1 },
-        reporterCount: existingReporterLink ? undefined : { increment: 1 }
-      }
-    })
-  ]);
+  // AC-04.3: Wrap link creation in a transaction with a re-check to prevent
+  // concurrent calls from creating duplicate links
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Re-check inside transaction to prevent race condition
+      const raceCheck = await tx.crisisEventReport.findFirst({
+        where: { incidentReportId: reportId }
+      });
+      if (raceCheck) return;
+
+      await tx.crisisEventReport.create({
+        data: { crisisEventId: eventId, incidentReportId: reportId }
+      });
+      await tx.crisisEvent.update({
+        where: { id: eventId },
+        data: {
+          reportCount: { increment: 1 },
+          reporterCount: existingReporterLink ? undefined : { increment: 1 }
+        }
+      });
+    });
+  } catch (err: any) {
+    // If the link was created by a concurrent call, treat as already linked
+    if (err?.code === "P2002") {
+      return { crisisEventId: eventId, isNew: false };
+    }
+    throw err;
+  }
 
   return { crisisEventId: eventId, isNew: false };
 }
@@ -462,27 +530,77 @@ export async function clusterReportIntoCrisisEvent(
     return { crisisEventId: "spam-skipped", isNew: false };
   }
 
+  // P0-09: Deterministic candidate retrieval — pre-filter by incident type and
+  // geographic proximity before making expensive LLM similarity calls.
   const activeEvents = await prisma.crisisEvent.findMany({
     where: { status: { in: ACTIVE_STATUSES } },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    take: 100
   });
 
   if (activeEvents.length === 0) {
     return createNewCrisisEvent(report);
   }
 
+  // Step 1: Deterministic pre-filter — only consider events of the same incident type
+  // or events within 50km of the report location
+  const CANDIDATE_RADIUS_KM = 50;
+  const candidates = activeEvents.filter((event) => {
+    // Same incident type is always a candidate
+    if (event.incidentType === report.incidentType) return true;
+
+    // Within geographic proximity is a candidate
+    if (
+      report.latitude != null && report.longitude != null &&
+      event.latitude != null && event.longitude != null
+    ) {
+      return haversineDistanceKm(
+        report.latitude, report.longitude,
+        event.latitude, event.longitude
+      ) <= CANDIDATE_RADIUS_KM;
+    }
+
+    // Location text overlap is a candidate
+    const locScore = locationSimilarity(
+      report.locationText, event.locationText,
+      report.latitude, report.longitude,
+      event.latitude, event.longitude
+    );
+    return locScore >= 0.3;
+  });
+
+  // If no deterministic candidates, create a new event
+  if (candidates.length === 0) {
+    return createNewCrisisEvent(report);
+  }
+
+  // Step 2: For each candidate, compute similarity (LLM or fallback)
   const candidateText = `${report.incidentTitle} ${report.description} ${report.locationText}`;
   let bestMatch: { eventId: string; score: number } | null = null;
 
-  for (const event of activeEvents) {
-    const eventReports = await prisma.crisisEventReport.findMany({
-      where: { crisisEventId: event.id },
-      include: {
-        incidentReport: {
-          select: { incidentTitle: true, description: true, locationText: true }
-        }
+  // P0-09: Limit LLM calls to at most 5 candidates (sorted by geographic/text proximity)
+  const MAX_LLM_CANDIDATES = 5;
+  const limitedCandidates = candidates.slice(0, MAX_LLM_CANDIDATES);
+
+  // Batch-fetch all reports for candidate events in a single query (avoids N+1)
+  const allEventReports = await prisma.crisisEventReport.findMany({
+    where: { crisisEventId: { in: limitedCandidates.map((e) => e.id) } },
+    include: {
+      incidentReport: {
+        select: { incidentTitle: true, description: true, locationText: true }
       }
-    });
+    },
+    take: 500
+  });
+  const reportsByEvent = new Map<string, typeof allEventReports>();
+  for (const er of allEventReports) {
+    const arr = reportsByEvent.get(er.crisisEventId) ?? [];
+    arr.push(er);
+    reportsByEvent.set(er.crisisEventId, arr);
+  }
+
+  for (const event of limitedCandidates) {
+    const eventReports = reportsByEvent.get(event.id) ?? [];
 
     const eventText = eventReports
       .map((r) => `${r.incidentReport.incidentTitle} ${r.incidentReport.description} ${r.incidentReport.locationText}`)
@@ -546,20 +664,23 @@ function buildResourcesData(resources: ResourceSummary[]) {
   return resources.map((r) => ({
     name: r.name,
     qty: `${r.quantity} ${r.unit}`,
-    location: r.address.split(",")[0] ?? r.address,
+    location: r.address ? (r.address.split(",")[0] ?? r.address) : "Unknown",
     eta: r.status === "Available" ? "Now" : "Limited"
   }));
 }
 
-function buildPulseMapData(events: CrisisEvent[]) {
+function buildPulseMapData(events: CrisisEvent[], viewerRole?: string) {
   return events
     .filter((e) => e.latitude != null && e.longitude != null)
-    .map((e) => ({
-      lat: e.latitude!,
-      lng: e.longitude!,
-      intensity: e.severityLevel.toLowerCase(),
-      label: e.title
-    }));
+    .map((e) => {
+      const coords = redactCoordinates(e.latitude, e.longitude, viewerRole);
+      return {
+        lat: coords.latitude!,
+        lng: coords.longitude!,
+        intensity: e.severityLevel.toLowerCase(),
+        label: e.title
+      };
+    });
 }
 
 function buildMetricsData(events: CrisisEvent[], resourceCount: number) {
@@ -620,6 +741,10 @@ const DEFAULT_ADVISORIES = [
   "Keep emergency contact numbers accessible"
 ];
 
+// Cache for async-generated AI advisories (fire-and-forget)
+const advisoryCache = new Map<string, string[]>();
+const advisoryCacheTime = new Map<string, string>();
+
 const advisorySystemPrompt = [
   "You are a public safety advisor for a community crisis dashboard in Bangladesh.",
   "",
@@ -653,41 +778,45 @@ async function generateAiAdvisories(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), env.aiRequestTimeoutMs);
 
-  const response = await fetch(`${env.groqBaseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.groqApiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: env.groqQwenModel,
-      temperature: 0,
-      max_tokens: 600,
-      reasoning_effort: "none",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: advisorySystemPrompt },
-        {
-          role: "user",
-          content: `Active incidents: ${incidentContext}. Available resources: ${resourceContext}. Generate 5-7 concise safety advisories for the community.`
-        }
-      ]
-    }),
-    signal: controller.signal
-  });
-
-  clearTimeout(timeout);
-
-  if (!response.ok) return [];
-
-  const payload = await response.json();
-  const content = stripThinkingTagsFromJson(payload.choices?.[0]?.message?.content ?? "");
-
   try {
-    const parsed = JSON.parse(content);
-    return Array.isArray(parsed.advisories) ? parsed.advisories.slice(0, 7) : [];
+    const response = await fetch(`${env.groqBaseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.groqApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: env.groqQwenModel,
+        temperature: 0,
+        max_tokens: 16000,
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: advisorySystemPrompt },
+          {
+            role: "user",
+            content: `Active incidents: ${incidentContext}. Available resources: ${resourceContext}. Generate 5-7 concise safety advisories for the community.`
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) return [];
+
+    const payload = await response.json();
+    const content = stripThinkingTagsFromJson(payload.choices?.[0]?.message?.content ?? "");
+
+    try {
+      const parsed = JSON.parse(content);
+      return Array.isArray(parsed.advisories) ? parsed.advisories.slice(0, 7) : [];
+    } catch {
+      return [];
+    }
   } catch {
     return [];
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -706,11 +835,13 @@ const RESOURCE_SELECT = {
 export async function generateSitRep(
   lat?: number,
   lng?: number,
-  radiusKm?: number
+  radiusKm?: number,
+  viewerRole?: string
 ): Promise<SitRepResponse> {
   let events = await prisma.crisisEvent.findMany({
     where: { status: { in: ACTIVE_STATUSES } },
-    orderBy: [{ severityLevel: "desc" }, { createdAt: "desc" }]
+    orderBy: [{ severityLevel: "desc" }, { createdAt: "desc" }],
+    take: 50
   });
 
   if (lat && lng && radiusKm) {
@@ -719,7 +850,8 @@ export async function generateSitRep(
 
   const rawResources = await prisma.resource.findMany({
     where: { status: { in: ["Available", "Low Stock"] } },
-    select: RESOURCE_SELECT
+    select: RESOURCE_SELECT,
+    take: 200
   });
 
   const nearbyResources: ResourceSummary[] = lat && lng
@@ -731,27 +863,91 @@ export async function generateSitRep(
     generatedAt: new Date().toISOString(),
     threatLevel: computeThreatLevel(events),
     metrics: buildMetricsData(events, nearbyResources.length),
-    pulseMap: buildPulseMapData(events),
+    pulseMap: buildPulseMapData(events, viewerRole),
     timeline: buildTimelineData(events),
     warnings: buildWarningsData(events),
     resources: buildResourcesData(nearbyResources),
     advisories: DEFAULT_ADVISORIES
   };
 
-  try {
-    const aiAdvisories = await generateAiAdvisories(events, nearbyResources);
+  // AI advisories are generated asynchronously — don't block the SitRep response.
+  // Fire-and-forget; if they succeed they'll be picked up on the next refresh.
+  void generateAiAdvisories(events, nearbyResources).then((aiAdvisories) => {
     if (aiAdvisories.length > 0) {
-      blueprint.advisories = aiAdvisories;
+      advisoryCache.set("latest", aiAdvisories);
     }
-  } catch {
-    /* keep default advisories */
+  }).catch(() => { /* keep defaults */ });
+
+  // Use cached advisories from a previous async generation if available
+  const cached = advisoryCache.get("latest");
+  if (cached && cached.length > 0) {
+    blueprint.advisories = cached;
   }
 
   return { blueprint };
 }
 
+/**
+ * Fetch AI-generated safety advisories. This calls the AI model synchronously
+ * and may take several seconds. The frontend should call this separately from
+ * the SitRep so the main blueprint loads instantly.
+ */
+export async function getAiAdvisories(
+  lat?: number,
+  lng?: number,
+  radiusKm?: number
+): Promise<{ advisories: string[]; source: "ai" | "cache" | "default" }> {
+  // Return cached advisories if fresh (less than 60 seconds old)
+  const cached = advisoryCache.get("latest");
+  const cacheTime = advisoryCacheTime.get("latest");
+  if (cached && cached.length > 0 && cacheTime) {
+    const age = Date.now() - parseInt(cacheTime, 10);
+    if (age < 15000) {
+      return { advisories: cached, source: "ai" };
+    } else if (age < 60000) {
+      return { advisories: cached, source: "cache" };
+    }
+  }
+
+  let events = await prisma.crisisEvent.findMany({
+    where: { status: { in: ACTIVE_STATUSES } },
+    orderBy: [{ severityLevel: "desc" }, { createdAt: "desc" }],
+    take: 50
+  });
+
+  if (lat && lng && radiusKm) {
+    events = filterByRadius(events, lat, lng, radiusKm);
+  }
+
+  const rawResources = await prisma.resource.findMany({
+    where: { status: { in: ["Available", "Low Stock"] } },
+    select: RESOURCE_SELECT,
+    take: 200
+  });
+
+  const nearbyResources: ResourceSummary[] = lat && lng
+    ? attachDistances(rawResources, lat, lng, radiusKm ?? DEFAULT_NEARBY_RADIUS_KM)
+    : rawResources;
+
+  try {
+    const aiAdvisories = await generateAiAdvisories(events, nearbyResources);
+    if (aiAdvisories.length > 0) {
+      advisoryCache.set("latest", aiAdvisories);
+      advisoryCacheTime.set("latest", Date.now().toString());
+      return { advisories: aiAdvisories, source: "ai" };
+    }
+  } catch {
+    /* fall through to default */
+  }
+
+  return { advisories: DEFAULT_ADVISORIES, source: "default" };
+}
+
 export async function getIncidentDetail(
-  incidentId: string
+  incidentId: string,
+  viewerRole?: string,
+  page = 1,
+  limit = 50
 ): Promise<IncidentDetailResponse | null> {
   const crisisEvent = await prisma.crisisEvent.findUnique({
     where: { id: incidentId }
@@ -759,17 +955,28 @@ export async function getIncidentDetail(
 
   if (!crisisEvent) return null;
 
-  const eventReportLinks = await prisma.crisisEventReport.findMany({
-    where: { crisisEventId: incidentId },
-    include: { incidentReport: true },
-    orderBy: { createdAt: "asc" }
-  });
+  const skip = (Math.max(1, page) - 1) * Math.max(1, Math.min(100, limit));
+
+  const [eventReportLinks, totalReports] = await Promise.all([
+    prisma.crisisEventReport.findMany({
+      where: { crisisEventId: incidentId },
+      include: { incidentReport: true },
+      orderBy: { createdAt: "asc" },
+      skip,
+      take: Math.max(1, Math.min(100, limit))
+    }),
+    prisma.crisisEventReport.count({
+      where: { crisisEventId: incidentId }
+    })
+  ]);
 
   const reports = eventReportLinks.map((link) => link.incidentReport);
   const reporterIds = Array.from(new Set(reports.map((r) => r.reporterId).filter(Boolean)));
   const reporterMap = buildReporterMap(await fetchReporters(reporterIds));
 
-  const contributingReports: IncidentReportListItem[] = reports.map((report) => ({
+  const contributingReports: IncidentReportListItem[] = reports.map((report) => {
+    const reportCoords = redactCoordinates(report.latitude, report.longitude, viewerRole);
+    return {
     id: report.id,
     reporterId: report.reporterId,
     reporterName: reporterMap.get(report.reporterId) ?? "Community Member",
@@ -779,21 +986,23 @@ export async function getIncidentDetail(
     classifiedIncidentType: report.classifiedIncidentType,
     description: report.description,
     locationText: report.locationText,
-    latitude: report.latitude,
-    longitude: report.longitude,
+    latitude: reportCoords.latitude,
+    longitude: reportCoords.longitude,
     mediaFilenames: report.mediaFilenames,
     credibilityScore: report.credibilityScore,
     severityLevel: report.severityLevel,
     status: report.status,
     spamFlagged: report.spamFlagged,
     createdAt: report.createdAt.toISOString()
-  }));
+    };
+  });
 
   let nearbyResources: ResourceSummary[] = [];
 
   if (crisisEvent.latitude != null && crisisEvent.longitude != null) {
     const allResources = await prisma.resource.findMany({
-      where: { status: { in: ["Available", "Low Stock"] } }
+      where: { status: { in: ["Available", "Low Stock"] } },
+      take: 200
     });
 
     nearbyResources = attachDistances(
@@ -806,5 +1015,24 @@ export async function getIncidentDetail(
 
   const commandCenter = await getCrisisCommandCenter(incidentId);
 
-  return { crisisEvent, commandCenter, contributingReports, nearbyResources };
+  // FR-14: Redact crisis event coordinates for non-internal viewers
+  const crisisCoords = redactCoordinates(crisisEvent.latitude, crisisEvent.longitude, viewerRole);
+  const redactedCrisisEvent = {
+    ...crisisEvent,
+    latitude: crisisCoords.latitude,
+    longitude: crisisCoords.longitude
+  };
+
+  return {
+    crisisEvent: redactedCrisisEvent,
+    commandCenter,
+    contributingReports,
+    nearbyResources,
+    reportPagination: {
+      page: Math.max(1, page),
+      limit: Math.max(1, Math.min(100, limit)),
+      total: totalReports,
+      totalPages: Math.ceil(totalReports / Math.max(1, Math.min(100, limit)))
+    }
+  };
 }

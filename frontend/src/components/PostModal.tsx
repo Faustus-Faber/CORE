@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { EvidencePost } from "../services/evidenceService";
 import { AuthUser } from "../types";
 
@@ -14,12 +15,27 @@ interface PostModalProps {
 const apiBaseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace("/api", "") : "http://localhost:4000";
 
 export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFlag }: PostModalProps) {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 p-2 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={post.title}
     >
-      <div 
+      <div
         className="relative max-h-[calc(100dvh-1rem)] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -43,6 +59,8 @@ export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFl
                         src={`${apiBaseUrl}${url}`}
                         alt={`${post.title} - ${idx + 1}`}
                         className="h-full w-full object-contain"
+                        loading="lazy"
+                        decoding="async"
                       />
                     ) : (
                       <video
@@ -65,6 +83,8 @@ export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFl
                     src={`${apiBaseUrl}${post.mediaUrls[0]}`}
                     alt={post.title}
                     className="h-full w-full object-contain"
+                    loading="lazy"
+                    decoding="async"
                   />
                 ) : (
                   <video
@@ -85,6 +105,8 @@ export function PostModal({ post, onClose, user, onLike, onShare, onVerify, onFl
                     src={post.user.avatarUrl}
                     alt={post.user.fullName}
                     className="h-full w-full rounded-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                   />
                 ) : (
                   post.user.fullName.charAt(0)

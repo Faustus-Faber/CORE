@@ -21,7 +21,7 @@ describe("validateRegistrationInput", () => {
     expect(parsed.role).toBe("USER");
   });
 
-  it("requires volunteer metadata when role is VOLUNTEER", () => {
+  it("allows volunteer registration with optional skills (P0-04: gated self-registration)", () => {
     const payload = {
       fullName: "Test Volunteer",
       email: "volunteer@example.com",
@@ -29,11 +29,29 @@ describe("validateRegistrationInput", () => {
       password: "StrongP@ss1",
       confirmPassword: "StrongP@ss1",
       location: "Dhaka",
-      role: "VOLUNTEER"
+      role: "VOLUNTEER",
+      skills: ["First Aid"],
+      availability: "Available"
+    };
+
+    const parsed = validateRegistrationInput(payload);
+    expect(parsed.role).toBe("VOLUNTEER");
+    expect(parsed.skills).toEqual(["First Aid"]);
+  });
+
+  it("rejects admin self-registration", () => {
+    const payload = {
+      fullName: "Test Admin",
+      email: "admin@example.com",
+      phone: "+8801912345678",
+      password: "StrongP@ss1",
+      confirmPassword: "StrongP@ss1",
+      location: "Dhaka",
+      role: "ADMIN"
     };
 
     expect(() => validateRegistrationInput(payload)).toThrow(
-      "Volunteer skills and availability are required"
+      "Admin role cannot be self-registered"
     );
   });
 

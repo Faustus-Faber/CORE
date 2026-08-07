@@ -19,9 +19,13 @@ const voiceReportResponseSchema = z.object({
 const groqTranscriptionResponseSchema = z
   .object({
     text: z.string(),
-    language: z.string().optional()
+    language: z.string().optional(),
+    duration: z.number().optional()
   })
   .passthrough();
+
+// P1: Maximum allowed voice note duration (5 minutes)
+const MAX_VOICE_DURATION_SECONDS = 300;
 
 const groqTranslationResponseSchema = z.object({ text: z.string() }).passthrough();
 
@@ -57,9 +61,9 @@ async function extractErrorMessage(response: Response) {
 }
 
 async function postGroqAudio(path: GroqAudioEndpoint, body: FormData, signal: AbortSignal) {
-  const response = await fetch(`${env.groqBaseUrl}${path}`, {
+  const response = await fetch(`${env.groqWhisperBaseUrl}${path}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${env.groqApiKey}` },
+    headers: { Authorization: `Bearer ${env.groqWhisperApiKey}` },
     body,
     signal
   });
@@ -89,6 +93,13 @@ export async function submitVoiceReport(file: VoiceInputFile): Promise<VoiceRepo
     );
     const transcription = groqTranscriptionResponseSchema.parse(transcriptionPayload);
     const detectedLanguage = transcription.language ?? "unknown";
+
+    // P1: Validate audio duration — reject excessively long voice notes
+    if (transcription.duration != null && transcription.duration > MAX_VOICE_DURATION_SECONDS) {
+      throw new Error(
+        `Voice note duration (${transcription.duration.toFixed(1)}s) exceeds maximum allowed (${MAX_VOICE_DURATION_SECONDS}s)`
+      );
+    }
 
     let translatedDescription = transcription.text.trim();
 

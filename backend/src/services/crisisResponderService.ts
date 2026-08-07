@@ -2,6 +2,8 @@ import type { CrisisEventStatus, CrisisResponderStatus } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
 import { refreshSituationSummary } from "./crisisUpdateService.js";
+import { getTrustTier } from "./trustTierService.js";
+import { SafeError } from "../utils/SafeError.js";
 
 const ACTIVE_RESPONDER_STATUSES: CrisisResponderStatus[] = [
   "RESPONDING",
@@ -26,6 +28,9 @@ export type CrisisResponderSummary = {
   skills: string[];
   location: string;
   status: CrisisResponderStatus;
+  trustTier: string;
+  observationCount: number;
+  resourceNeedCount: number;
   optedInAt: string;
   lastStatusAt: string;
   updatedAt: string;
@@ -44,8 +49,10 @@ function toSummary(
       avatarUrl: string | null;
       skills: string[];
       location: string;
+      trustTier: string;
     };
-  }
+  },
+  counts: { observationCount: number; resourceNeedCount: number }
 ): CrisisResponderSummary {
   return {
     id: record.id,
@@ -55,6 +62,9 @@ function toSummary(
     skills: record.volunteer.skills,
     location: record.volunteer.location,
     status: record.status,
+    trustTier: record.volunteer.trustTier,
+    observationCount: counts.observationCount,
+    resourceNeedCount: counts.resourceNeedCount,
     optedInAt: record.optedInAt.toISOString(),
     lastStatusAt: record.lastStatusAt.toISOString(),
     updatedAt: record.updatedAt.toISOString()
@@ -70,7 +80,12 @@ async function assertCrisisExists(
   });
 
   if (!crisis) {
-    throw new Error("Crisis event not found");
+    throw new SafeError("Crisis event not found");
+  }
+
+  // P1-6: Prevent responder updates on resolved or closed crises
+  if (crisis.status === "RESOLVED" || crisis.status === "CLOSED") {
+    throw new SafeError("Cannot update responder status on a resolved or closed crisis");
   }
 
   return crisis;
@@ -83,11 +98,11 @@ async function assertVolunteer(volunteerId: string): Promise<void> {
   });
 
   if (!volunteer || volunteer.role !== "VOLUNTEER") {
-    throw new Error("Volunteer account required");
+    throw new SafeError("Volunteer account required");
   }
 
   if (volunteer.isBanned) {
-    throw new Error("Volunteer account is banned");
+    throw new SafeError("Volunteer account is banned");
   }
 }
 
@@ -97,7 +112,7 @@ function assertStatusTransition(
 ) {
   if (previousStatus === nextStatus) return;
   if (!STATUS_FLOW[previousStatus].includes(nextStatus)) {
-    throw new Error(
+    throw new SafeError(
       `Invalid responder status transition: ${previousStatus} -> ${nextStatus}`
     );
   }
@@ -128,6 +143,27 @@ export async function upsertCrisisResponderStatus(
     assertVolunteer(volunteerId)
   ]);
 
+  // Trust tier check: only Tier 1 (Trainee) or higher can opt into crises.
+  // Tier 0 (Reporter) must earn 30 points or get vouched first.
+  const tier = await getTrustTier(volunteerId);
+
+  // Check if the volunteer is suspended — suspended volunteers cannot opt in at all
+  const profile = await prisma.responderProfile.findUnique({
+    where: { userId: volunteerId },
+    select: { approvalStatus: true }
+  });
+  if (profile?.approvalStatus === "SUSPENDED") {
+    throw new SafeError(
+      "Your responder account is suspended. Contact an administrator."
+    );
+  }
+
+  if (tier === "REPORTER") {
+    throw new SafeError(
+      "You need to be a Trainee or higher to opt into crises. Earn 30 points through verified reports and tasks, or get vouched by an approved responder."
+    );
+  }
+
   const responder = await prisma.$transaction(async (tx) => {
     const existing = await tx.crisisResponder.findUnique({
       where: {
@@ -142,7 +178,8 @@ export async function upsertCrisisResponderStatus(
             fullName: true,
             avatarUrl: true,
             skills: true,
-            location: true
+            location: true,
+            trustTier: true
           }
         }
       }
@@ -165,7 +202,8 @@ export async function upsertCrisisResponderStatus(
               fullName: true,
               avatarUrl: true,
               skills: true,
-              location: true
+              location: true,
+              trustTier: true
             }
           }
         }
@@ -208,7 +246,8 @@ export async function upsertCrisisResponderStatus(
             fullName: true,
             avatarUrl: true,
             skills: true,
-            location: true
+            location: true,
+            trustTier: true
           }
         }
       }
@@ -236,14 +275,32 @@ export async function upsertCrisisResponderStatus(
 
   await refreshSituationSummary(crisisEventId);
 
-  return toSummary(responder);
+  // Get contribution counts for this responder
+  const [observationCount, resourceNeedCount] = await Promise.all([
+    prisma.crisisEventUpdate.count({
+      where: { crisisEventId, updaterId: volunteerId, updateType: "FIELD_OBSERVATION" }
+    }),
+    prisma.crisisEventUpdate.count({
+      where: { crisisEventId, updaterId: volunteerId, updateType: "RESOURCE_NEED" }
+    }),
+  ]);
+
+  return toSummary(responder, { observationCount, resourceNeedCount });
 }
 
 export async function listCrisisResponders(
   crisisEventId: string,
   includeUnavailable: boolean
 ): Promise<CrisisResponderSummary[]> {
-  await assertCrisisExists(crisisEventId);
+  // Only verify the crisis exists — do NOT block listing for RESOLVED/CLOSED crises.
+  // The status restriction in assertCrisisExists is for updates only.
+  const crisis = await prisma.crisisEvent.findUnique({
+    where: { id: crisisEventId },
+    select: { id: true }
+  });
+  if (!crisis) {
+    throw new SafeError("Crisis event not found");
+  }
 
   const responders = await prisma.crisisResponder.findMany({
     where: {
@@ -256,14 +313,39 @@ export async function listCrisisResponders(
           fullName: true,
           avatarUrl: true,
           skills: true,
-          location: true
+          location: true,
+          trustTier: true
         }
       }
     },
-    orderBy: [{ lastStatusAt: "desc" }]
+    orderBy: [{ lastStatusAt: "desc" }],
+    take: 200
   });
 
-  return responders.map(toSummary);
+  // Get contribution counts for all responders in this crisis
+  const volunteerIds = responders.map((r) => r.volunteerId);
+  const [observations, resourceNeeds] = await Promise.all([
+    prisma.crisisEventUpdate.groupBy({
+      by: ["updaterId"],
+      where: { crisisEventId, updaterId: { in: volunteerIds }, updateType: "FIELD_OBSERVATION" },
+      _count: { id: true },
+    }),
+    prisma.crisisEventUpdate.groupBy({
+      by: ["updaterId"],
+      where: { crisisEventId, updaterId: { in: volunteerIds }, updateType: "RESOURCE_NEED" },
+      _count: { id: true },
+    }),
+  ]);
+
+  const obsMap = new Map(observations.map((o) => [o.updaterId, o._count.id]));
+  const needMap = new Map(resourceNeeds.map((r) => [r.updaterId, r._count.id]));
+
+  return responders.map((r) =>
+    toSummary(r, {
+      observationCount: obsMap.get(r.volunteerId) ?? 0,
+      resourceNeedCount: needMap.get(r.volunteerId) ?? 0,
+    })
+  );
 }
 
 export async function getMyResponderStatus(
@@ -297,4 +379,27 @@ export async function isVolunteerResponderForCrisis(
   });
 
   return Boolean(responder);
+}
+
+/**
+ * Check if a volunteer is opted into a crisis as a TRAINEE (Tier 1).
+ * Trainees can submit FIELD_OBSERVATION and RESOURCE_NEED updates only.
+ */
+export async function isTraineeResponder(
+  volunteerId: string,
+  crisisEventId: string
+): Promise<boolean> {
+  const [responder, tier] = await Promise.all([
+    prisma.crisisResponder.findFirst({
+      where: {
+        volunteerId,
+        crisisEventId,
+        status: { in: ACTIVE_RESPONDER_STATUSES }
+      },
+      select: { id: true }
+    }),
+    getTrustTier(volunteerId)
+  ]);
+
+  return Boolean(responder) && tier === "TRAINEE";
 }

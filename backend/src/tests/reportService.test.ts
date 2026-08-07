@@ -7,7 +7,7 @@ import {
 } from "../services/reportService.js";
 
 describe("createIncidentReport", () => {
-  it("uses voice translation for classification when voice note is present", async () => {
+  it("persists report with safe defaults and returns 202-compatible response", async () => {
     const submitVoiceReport = vi.fn().mockResolvedValue({
       status: "success",
       filename: "voice.webm",
@@ -37,7 +37,8 @@ describe("createIncidentReport", () => {
           originalname: "voice.webm",
           mimetype: "audio/webm",
           size: 1300
-        }
+        },
+        aiConsent: true
       },
       {
         submitVoiceReport,
@@ -46,13 +47,18 @@ describe("createIncidentReport", () => {
       }
     );
 
+    // FR-02: Report is persisted immediately with safe defaults
     expect(submitVoiceReport).toHaveBeenCalledOnce();
-    expect(classifyIncidentText).toHaveBeenCalledWith(
-      "Severe flood near the north market.",
-      undefined,
-      undefined
-    );
+    expect(createReportRecord).toHaveBeenCalledOnce();
+    expect(output.id).toBe("r1");
+    expect(output.status).toBe("UNDER_REVIEW");
     expect(output.spamFlagged).toBe(false);
+    expect(output.severityLevel).toBe("MEDIUM");
+    expect(output.credibilityScore).toBe(50);
+    // AI classification should NOT be called synchronously
+    expect(classifyIncidentText).not.toHaveBeenCalled();
+    // Async context should be provided for fire-and-forget processing
+    expect((output as any)._async).toBeDefined();
   });
 
   it("skips voice API call when no voice note is provided", async () => {
@@ -66,7 +72,7 @@ describe("createIncidentReport", () => {
     });
     const createReportRecord = vi.fn().mockResolvedValue({ id: "r2" });
 
-    await createIncidentReport(
+    const output = await createIncidentReport(
       {
         reporterId: "507f1f77bcf86cd799439011",
         incidentTitle: "Help needed",
@@ -83,40 +89,7 @@ describe("createIncidentReport", () => {
     );
 
     expect(submitVoiceReport).not.toHaveBeenCalled();
-    expect(classifyIncidentText).toHaveBeenCalledWith(
-      "Power lines have fallen near school.",
-      undefined,
-      undefined
-    );
-  });
-
-  it("marks report as spam if score below threshold", async () => {
-    const classifyIncidentText = vi.fn().mockResolvedValue({
-      credibility_score: 22,
-      severity_level: "LOW",
-      incident_type: "OTHER",
-      incident_title: "Noise report",
-      spam_flagged: false
-    });
-    const createReportRecord = vi.fn().mockResolvedValue({ id: "r3" });
-
-    const output = await createIncidentReport(
-      {
-        reporterId: "507f1f77bcf86cd799439011",
-        incidentTitle: "Random",
-        description: "Unverified noise near market.",
-        incidentType: "OTHER",
-        locationText: "Dhaka",
-        mediaFiles: []
-      },
-      {
-        submitVoiceReport: vi.fn(),
-        classifyIncidentText,
-        createReportRecord
-      }
-    );
-
-    expect(output.spamFlagged).toBe(true);
+    expect(output.id).toBe("r2");
     expect(output.status).toBe("UNDER_REVIEW");
   });
 });
@@ -188,10 +161,40 @@ describe("listIncidentReports", () => {
     }
   ];
 
-  const listReports = vi.fn().mockImplementation(({ viewerId, scope }: { viewerId: string; scope: string }) => {
-    if (scope === "mine") return Promise.resolve(sampleReports.filter((r) => r.reporterId === viewerId));
-    if (scope === "community") return Promise.resolve(sampleReports.filter((r) => r.status === "PUBLISHED" && !r.spamFlagged));
-    return Promise.resolve(sampleReports.filter((r) => r.status === "UNDER_REVIEW"));
+  const listReports = vi.fn().mockImplementation(({ viewerId, scope, search, sortBy, order, skip, take }: { viewerId: string; scope: string; search?: string; sortBy?: string; order?: string; skip?: number; take?: number }) => {
+    let results: typeof sampleReports;
+    if (scope === "mine") results = sampleReports.filter((r) => r.reporterId === viewerId);
+    else if (scope === "community") results = sampleReports.filter((r) => r.status === "PUBLISHED" && !r.spamFlagged);
+    else results = sampleReports.filter((r) => r.status === "UNDER_REVIEW");
+
+    // Simulate DB-level search
+    if (search && search.trim()) {
+      const needle = search.trim().toLowerCase();
+      results = results.filter((r) =>
+        [r.incidentTitle, r.classifiedIncidentTitle, r.locationText, r.description]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle)
+      );
+    }
+
+    // Simulate DB-level sort
+    if (sortBy === "createdAt") {
+      results = [...results].sort((a, b) => {
+        const cmp = a.createdAt.getTime() - b.createdAt.getTime();
+        return order === "asc" ? cmp : -cmp;
+      });
+    } else if (sortBy === "credibility") {
+      results = [...results].sort((a, b) => {
+        const cmp = a.credibilityScore - b.credibilityScore;
+        return order === "asc" ? cmp : -cmp;
+      });
+    }
+
+    // Simulate DB-level pagination
+    const s = skip ?? 0;
+    const t = take ?? 50;
+    return Promise.resolve(results.slice(s, s + t));
   });
   const listUsers = vi.fn().mockResolvedValue([
     { id: "u1", fullName: "Alice Rahman" },
@@ -274,7 +277,7 @@ describe("listIncidentReports", () => {
 
 describe("listUnderReviewIncidentReports", () => {
   it("returns only under-review reports with search and sorting", async () => {
-    const listReports = vi.fn().mockResolvedValue([
+    const underReviewReports = [
       {
         id: "r1",
         reporterId: "u1",
@@ -317,7 +320,22 @@ describe("listUnderReviewIncidentReports", () => {
         createdAt: new Date("2026-03-05T12:00:00.000Z"),
         updatedAt: new Date("2026-03-05T12:00:00.000Z")
       }
-    ]);
+    ];
+    const listReports = vi.fn().mockImplementation(({ search, skip, take }: { search?: string; skip?: number; take?: number }) => {
+      let results = [...underReviewReports];
+      if (search && search.trim()) {
+        const needle = search.trim().toLowerCase();
+        results = results.filter((r) =>
+          [r.incidentTitle, r.classifiedIncidentTitle, r.locationText, r.description]
+            .join(" ")
+            .toLowerCase()
+            .includes(needle)
+        );
+      }
+      const s = skip ?? 0;
+      const t = take ?? 50;
+      return Promise.resolve(results.slice(s, s + t));
+    });
     const listUsers = vi
       .fn()
       .mockResolvedValue([{ id: "u2", fullName: "Rafi Alam" }]);

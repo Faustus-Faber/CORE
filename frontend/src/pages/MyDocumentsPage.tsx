@@ -8,6 +8,7 @@ export function MyDocumentsPage() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [showTrash, setShowTrash] = useState(false);
+    const [fetchError, setFetchError] = useState('');
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -18,16 +19,18 @@ export function MyDocumentsPage() {
 
     const fetchFolders = async (trash = false) => {
         setLoading(true);
+        setFetchError('');
         try {
             const data = await docService.getFolders(trash);
             setFolders(data);
-            
+
             if (!trash) {
                 const crises = await docService.getActiveCrises();
                 setActiveCrises(crises);
             }
         } catch (err) {
             console.error("Failed to fetch folders", err);
+            setFetchError(err instanceof Error ? err.message : "Failed to load folders");
         } finally {
             setLoading(false);
         }
@@ -175,6 +178,11 @@ export function MyDocumentsPage() {
             </div>
 
             {/* FOLDER GRID */}
+            {fetchError && (
+                <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {fetchError}
+                </div>
+            )}
             {loading ? (
                 <div className="flex flex-col items-center justify-center py-20">
                     <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent mb-4"></div>

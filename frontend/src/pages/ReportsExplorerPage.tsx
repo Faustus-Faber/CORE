@@ -146,6 +146,7 @@ function ReportCard({ report }: { report: IncidentReportListItem }) {
               alt=""
               className="h-14 w-14 flex-shrink-0 rounded-lg object-cover ring-1 ring-slate-200"
               loading="lazy"
+              decoding="async"
             />
           )}
           <CredibilityWheel score={report.credibilityScore} />
@@ -184,6 +185,7 @@ export function ReportsExplorerPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchReports = async () => {
       setIsLoading(true);
       setError("");
@@ -194,19 +196,22 @@ export function ReportsExplorerPage() {
             ? await listCommunityReports(appliedFilters)
             : await listMyReports(appliedFilters);
 
-        setReports(response.reports);
+        if (!cancelled) setReports(response.reports);
       } catch (requestError) {
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Failed to load reports"
-        );
+        if (!cancelled) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Failed to load reports"
+          );
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     void fetchReports();
+    return () => { cancelled = true; };
   }, [appliedFilters, scope]);
 
   const handleApplyFilters = (event: FormEvent) => {

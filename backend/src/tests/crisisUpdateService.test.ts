@@ -58,7 +58,8 @@ const eventRecord = {
   locationText: "Dhaka",
   status: "REPORTED",
   latitude: 23.8103,
-  longitude: 90.4125
+  longitude: 90.4125,
+  version: 1
 };
 
 describe("crisisUpdateService", () => {
@@ -186,6 +187,9 @@ describe("crisisUpdateService", () => {
       resourceNeeds: ["rescue boat", "dry food"]
     });
 
+    // Flush microtask queue to allow async side effects (Promise.resolve().then(...)) to complete
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     expect(prismaMock.crisisEventUpdate.create).toHaveBeenCalledWith({
       data: {
         crisisEventId,
@@ -219,7 +223,8 @@ describe("crisisUpdateService", () => {
       where: { id: crisisEventId },
       data: {
         status: "VERIFIED",
-        severityLevel: "HIGH"
+        severityLevel: "HIGH",
+        version: { increment: 1 }
       }
     });
     expect(dispatchCrisisUpdateNotificationsMock).toHaveBeenCalledWith(

@@ -17,6 +17,9 @@ const prismaMock = vi.hoisted(() => ({
   },
   crisisEventUpdate: {
     create: vi.fn()
+  },
+  responderProfile: {
+    findUnique: vi.fn()
   }
 }));
 
@@ -54,6 +57,10 @@ describe("crisisResponderService", () => {
     prismaMock.user.findUnique.mockResolvedValue({
       role: "VOLUNTEER",
       isBanned: false
+    });
+    // Mock responder profile as APPROVED so the approval check passes
+    prismaMock.responderProfile.findUnique.mockResolvedValue({
+      approvalStatus: "APPROVED"
     });
   });
 
@@ -141,7 +148,8 @@ describe("crisisResponderService", () => {
           }
         }
       },
-      orderBy: [{ lastStatusAt: "desc" }]
+      orderBy: [{ lastStatusAt: "desc" }],
+      take: 200
     });
   });
 });

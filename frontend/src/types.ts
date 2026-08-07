@@ -1,5 +1,30 @@
 export type Role = "USER" | "VOLUNTEER" | "ADMIN";
 
+// Trust tier system — progressive trust levels for volunteers
+export type TrustTier = "REPORTER" | "TRAINEE" | "RESPONDER" | "VETERAN" | "ADMIN";
+
+export type TrustTierInfo = {
+  tier: TrustTier;
+  points: number;
+  approvedObservationCount: number;
+  verifiedReportCount: number;
+  hasVouch: boolean;
+  nextTier: TrustTier | null;
+  pointsNeeded: number | null;
+  observationsNeeded: number | null;
+  reportsNeeded: number | null;
+};
+
+export type Vouch = {
+  id: string;
+  vouchedById: string;
+  vouchedByName: string;
+  vouchedForId: string;
+  vouchedForName: string;
+  reason: string;
+  createdAt: string;
+};
+
 export type InteractionContext =
   | "RESCUE_OPERATION"
   | "MEDICAL_AID"
@@ -55,6 +80,7 @@ export type AuthUser = {
   distance?: number;
   totalPoints?: number;
   totalVerifiedHours?: number;
+  trustTier?: TrustTier;
   badges?: Badge[];
 };
 
@@ -103,6 +129,7 @@ export type EmergencyReportSubmissionInput = {
   uploadedAudioFile?: File | null;
   recordedAudioBlob?: Blob | null;
   recordedAudioFilename?: string;
+  aiConsent?: boolean;
 };
 
 export type EmergencyReportSummary = {
@@ -199,6 +226,9 @@ export type CrisisResponder = {
   skills: string[];
   location: string;
   status: CrisisResponderStatus;
+  trustTier: string;
+  observationCount: number;
+  resourceNeedCount: number;
   optedInAt: string;
   lastStatusAt: string;
   updatedAt: string;
@@ -242,7 +272,7 @@ export type LeaderboardEntry = {
   totalPoints: number;
   totalVerifiedHours: number;
   badgeCount: number;
-  badges: Pick<Badge, "badgeType" | "awardedAt">[];
+  trustTier: TrustTier;
   avgRating: number | null;
   reviewCount: number;
 };
@@ -514,6 +544,7 @@ export type CrisisUpdateEntry = {
   crisisEventId: string;
   updaterId: string;
   updaterName: string;
+  updaterTrustTier: string | null;
   previousStatus: string;
   newStatus: string;
   updateType: CrisisUpdateType;
@@ -570,4 +601,44 @@ export type NotificationEntry = {
 export type NotificationInboxResponse = {
   notifications: NotificationEntry[];
   unreadCount: number;
+};
+
+// ── Crisis Chat ──────────────────────────────────────────────────────────────
+
+export type CrisisMessage = {
+  id: string;
+  crisisEventId: string;
+  senderId: string;
+  senderName: string;
+  senderTrustTier: string;
+  senderRole: string;
+  content: string;
+  isPinned: boolean;
+  isDeleted: boolean;
+  createdAt: string;
+};
+
+export type CrisisMessageListResponse = {
+  messages: CrisisMessage[];
+  total: number;
+};
+
+// ── Admin Trust Tier Oversight ──────────────────────────────────────────────
+
+export type TrustTierVolunteer = {
+  id: string;
+  fullName: string;
+  email: string;
+  trustTier: string;
+  totalPoints: number;
+  totalVerifiedHours: number;
+  isFlagged: boolean;
+  isBanned: boolean;
+  responderStatus: "APPLICANT" | "UNDER_REVIEW" | "APPROVED" | "SUSPENDED" | "REJECTED" | null;
+  verifiedReportCount: number;
+  approvedObservationCount: number;
+  vouchesGivenCount: number;
+  vouchesReceivedCount: number;
+  messageCount: number;
+  createdAt: string;
 };

@@ -3,6 +3,7 @@ import { randomBytes, createHash } from "node:crypto";
 
 import { prisma } from "../lib/prisma.js";
 import { comparePassword, hashPassword } from "../utils/password.js";
+import { SafeError } from "../utils/SafeError.js";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -18,12 +19,17 @@ function sanitizeUser(user: User) {
     email: user.email,
     phone: user.phone,
     location: user.location,
+    latitude: user.latitude,
+    longitude: user.longitude,
     role: user.role,
     avatarUrl: user.avatarUrl,
     skills: user.skills,
     availability: user.availability,
     certifications: user.certifications,
     dispatchOptIn: user.dispatchOptIn,
+    sessionVersion: user.sessionVersion,
+    trustTier: user.trustTier,
+    totalPoints: user.totalPoints,
     createdAt: user.createdAt
   };
 }
@@ -42,7 +48,7 @@ export async function registerUser(payload: unknown) {
   });
 
   if (duplicate) {
-    throw new Error("An account with that email or phone already exists");
+    throw new SafeError("An account with that email or phone already exists");
   }
 
   const passwordHash = await hashPassword(parsed.password);
@@ -54,12 +60,36 @@ export async function registerUser(payload: unknown) {
       phone: parsed.phone,
       passwordHash,
       location: parsed.location,
-      role: parsed.role,
+      latitude: parsed.latitude ?? null,
+      longitude: parsed.longitude ?? null,
+      // P0-06/FR-01: Consented location metadata
+      locationAccuracy: parsed.locationAccuracy ?? null,
+      locationSource: parsed.locationSource ?? null,
+      locationCapturedAt: parsed.locationCapturedAt ? new Date(parsed.locationCapturedAt) : null,
+      locationConsentVersion: parsed.locationConsentVersion ?? null,
+      // P0-04: All self-registered users get USER role.
+      // Admins can promote to VOLUNTEER after reviewing skills/availability.
+      role: "USER",
       skills: parsed.skills ?? [],
       availability: parsed.availability,
       certifications: parsed.certifications
     }
   });
+
+  // FR-01: If the user registered with skills/availability, create a responder
+  // profile in the APPLICANT state so coordinators can review and approve them.
+  const wantsResponder = (parsed.skills?.length ?? 0) > 0 || Boolean(parsed.availability?.trim());
+  if (wantsResponder) {
+    await prisma.responderProfile.create({
+      data: {
+        userId: user.id,
+        approvalStatus: "APPLICANT",
+        approvedSkills: parsed.skills ?? [],
+        certifications: parsed.certifications ? [parsed.certifications] : [],
+        availabilityStatus: parsed.availability ? "AVAILABLE" : null,
+      }
+    });
+  }
 
   await sendWelcomeEmail(user.email, user.fullName);
 
@@ -76,18 +106,25 @@ export async function loginUser(payload: unknown) {
     }
   });
 
+  // Always perform a bcrypt comparison to prevent timing-based account
+  // enumeration. When the user doesn't exist, compare against a dummy hash
+  // so the response time is similar to a real login attempt.
+  const DUMMY_HASH = "$2a$12$abcdefghijklmnopqrstuvNOPQRSTUVWXYZ0123456789O0";
+
   if (!user) {
-    throw new Error("Invalid credentials");
+    await comparePassword(parsed.password, DUMMY_HASH);
+    throw new SafeError("Invalid credentials");
   }
 
   if (user.isBanned) {
-    throw new Error("Account is blocked. Contact support.");
+    await comparePassword(parsed.password, DUMMY_HASH);
+    throw new SafeError("Account is blocked. Contact support.");
   }
 
   const isPasswordValid = await comparePassword(parsed.password, user.passwordHash);
 
   if (!isPasswordValid) {
-    throw new Error("Invalid credentials");
+    throw new SafeError("Invalid credentials");
   }
 
   return {
@@ -137,7 +174,7 @@ export async function resetPassword(payload: unknown) {
   });
 
   if (!user) {
-    throw new Error("Invalid or expired reset token");
+    throw new SafeError("Invalid or expired reset token");
   }
 
   await prisma.user.update({
@@ -145,7 +182,8 @@ export async function resetPassword(payload: unknown) {
     data: {
       passwordHash: await hashPassword(parsed.password),
       resetTokenHash: null,
-      resetTokenExpiry: null
+      resetTokenExpiry: null,
+      sessionVersion: { increment: 1 }
     }
   });
 }
@@ -154,7 +192,7 @@ export async function getCurrentUser(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
 
   if (!user) {
-    throw new Error("User not found");
+    throw new SafeError("User not found");
   }
 
   return sanitizeUser(user);
@@ -163,6 +201,7 @@ export async function getCurrentUser(userId: string) {
 export async function listUsersForAdmin() {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
+    take: 200,
     select: {
       id: true,
       fullName: true,
@@ -180,18 +219,46 @@ export async function listUsersForAdmin() {
 
 export async function setUserRoleByAdmin(userId: string, role: Role) {
   if (role === "ADMIN") {
-    throw new Error("Cannot promote via endpoint to admin");
+    throw new SafeError("Cannot promote via endpoint to admin");
   }
 
-  return prisma.user.update({
+  // P0-04: Validate volunteer prerequisites before promotion
+  if (role === "VOLUNTEER") {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { skills: true, availability: true }
+    });
+
+    if (!user) {
+      throw new SafeError("User not found");
+    }
+
+    if (!user.skills?.length || !user.availability?.trim()) {
+      throw new SafeError("Cannot promote to volunteer: skills and availability are required");
+    }
+  }
+
+  const updated = await prisma.user.update({
     where: { id: userId },
-    data: { role }
+    data: { role, sessionVersion: { increment: 1 } }
   });
+
+  // P0-03: Invalidate the auth status cache so the role change takes effect immediately
+  const { invalidateUserStatusCache } = await import("../middleware/auth.js");
+  invalidateUserStatusCache(userId);
+
+  return updated;
 }
 
 export async function setUserBanStatusByAdmin(userId: string, isBanned: boolean) {
-  return prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id: userId },
-    data: { isBanned }
+    data: { isBanned, sessionVersion: { increment: 1 } }
   });
+
+  // P0-03: Invalidate the auth status cache so the ban takes effect immediately
+  const { invalidateUserStatusCache } = await import("../middleware/auth.js");
+  invalidateUserStatusCache(userId);
+
+  return updated;
 }

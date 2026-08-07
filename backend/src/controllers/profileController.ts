@@ -56,6 +56,7 @@ export async function getMyDispatchLogs(request: Request, response: Response) {
   const logs = await prisma.dispatchAlertLog.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
+    take: 50,
     include: { crisisEvent: { select: { title: true, severityLevel: true } } }
   });
 

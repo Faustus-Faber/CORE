@@ -83,7 +83,21 @@ export function AdminReportModerationPage() {
   };
 
   useEffect(() => {
-    void loadReports();
+    let cancelled = false;
+    const doFetch = async () => {
+      setIsLoading(true);
+      setError("");
+      try {
+        const response = await listAdminUnpublishedReports(appliedFilters);
+        if (!cancelled) setReports(response.reports);
+      } catch (loadError) {
+        if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Could not load reports");
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    void doFetch();
+    return () => { cancelled = true; };
   }, [appliedFilters]);
 
   const handleApplyFilters = (event: FormEvent) => {
@@ -135,10 +149,48 @@ export function AdminReportModerationPage() {
     }
   };
 
+  const handleReject = async (reportId: string) => {
+    const reason = window.prompt("Enter a reason for rejecting this report (optional):");
+    if (reason === null) return;
+    setError("");
+    setMessage("");
+    setIsUpdating(reportId);
+    try {
+      await updateReportStatusByAdmin(reportId, "REJECTED", reason || undefined);
+      setMessage("Report rejected.");
+      await loadReports();
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error ? updateError.message : "Could not reject report"
+      );
+    } finally {
+      setIsUpdating(null);
+    }
+  };
+
+  const handleClarification = async (reportId: string) => {
+    const reason = window.prompt("What clarification is needed from the reporter?");
+    if (reason === null || !reason.trim()) return;
+    setError("");
+    setMessage("");
+    setIsUpdating(reportId);
+    try {
+      await updateReportStatusByAdmin(reportId, "CLARIFICATION_REQUESTED", reason.trim());
+      setMessage("Clarification requested from reporter.");
+      await loadReports();
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error ? updateError.message : "Could not request clarification"
+      );
+    } finally {
+      setIsUpdating(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <section className="rounded-xl bg-white p-6 shadow-panel ring-1 ring-slate-200">
-        <h1 className="text-3xl font-bold text-ink">Report Moderation</h1>
+        <h1 className="text-3xl font-bold text-ink">Verification Queue</h1>
         <p className="mt-2 text-slate-700">
           Review unpublished incidents and publish valid reports to the community feed.
         </p>
@@ -305,14 +357,30 @@ export function AdminReportModerationPage() {
                   </p>
                 </div>
 
-                <div className="mt-3">
+                <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={isUpdating === report.id}
                     onClick={() => void handlePublish(report.id)}
                     className="rounded-md bg-moss px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                   >
-                    {isUpdating === report.id ? "Publishing..." : "Publish Report"}
+                    {isUpdating === report.id ? "Processing..." : "Publish Report"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isUpdating === report.id}
+                    onClick={() => void handleClarification(report.id)}
+                    className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-60"
+                  >
+                    Request Clarification
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isUpdating === report.id}
+                    onClick={() => void handleReject(report.id)}
+                    className="rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-60"
+                  >
+                    Reject Report
                   </button>
                 </div>
               </article>

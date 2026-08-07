@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { 
   listEvidencePosts, 
@@ -24,6 +24,8 @@ export function EvidenceGalleryPage() {
   const [selectedPost, setSelectedPost] = useState<EvidencePost | null>(null);
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("newest");
+  const pendingLikesRef = useRef<Set<string>>(new Set());
+  const [pendingAction, setPendingAction] = useState("");
 
   const fetchPosts = async () => {
     setLoading(true);
@@ -42,9 +44,14 @@ export function EvidenceGalleryPage() {
   }, [filter, sort]);
 
   const handleLike = async (postId: string) => {
+    // Prevent rapid double-clicks from causing desync
+    if (pendingLikesRef.current.has(postId)) return;
+
     // Optimistic Update
     const postToLike = posts.find(p => p.id === postId);
     if (!postToLike || !user) return;
+
+    pendingLikesRef.current.add(postId);
 
     const wasLiked = postToLike.likes.some(l => l.userId === user.id);
     const updatedPosts = posts.map(post => {
@@ -74,7 +81,7 @@ export function EvidenceGalleryPage() {
       console.error("Failed to like", err);
       setPosts(current => current.map(post => {
         if (post.id === postId) {
-          const oldLikes = wasLiked 
+          const oldLikes = wasLiked
             ? [...post.likes, { userId: user.id }]
             : post.likes.filter(l => l.userId !== user.id);
           return {
@@ -85,6 +92,8 @@ export function EvidenceGalleryPage() {
         }
         return post;
       }));
+    } finally {
+      pendingLikesRef.current.delete(postId);
     }
   };
 
@@ -114,17 +123,25 @@ export function EvidenceGalleryPage() {
 
   const handleDelete = async (postId: string) => {
     if (!window.confirm("Are you sure you want to delete this post?")) return;
+    const actionKey = `delete-${postId}`;
+    if (pendingAction) return;
+    setPendingAction(actionKey);
     try {
       await deleteEvidencePost(postId);
       setPosts(current => current.filter(p => p.id !== postId));
     } catch (err) {
       alert("Failed to delete post");
+    } finally {
+      setPendingAction("");
     }
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPost) return;
+    const actionKey = `update-${editingPost.id}`;
+    if (pendingAction) return;
+    setPendingAction(actionKey);
     try {
       const updated = await updateEvidencePost(editingPost.id, {
         title: editingPost.title,
@@ -143,6 +160,8 @@ export function EvidenceGalleryPage() {
       setEditingPost(null);
     } catch (err) {
       alert("Failed to update post");
+    } finally {
+      setPendingAction("");
     }
   };
 
@@ -175,11 +194,16 @@ export function EvidenceGalleryPage() {
   const handleFlag = async (postId: string) => {
     const reason = window.prompt("Why are you reporting this post? (e.g., Fake evidence, inappropriate content)");
     if (!reason) return;
+    const actionKey = `flag-${postId}`;
+    if (pendingAction) return;
+    setPendingAction(actionKey);
     try {
       await flagEvidencePost(postId, reason);
       alert("Post has been reported for review.");
     } catch (err) {
       alert("Failed to report post");
+    } finally {
+      setPendingAction("");
     }
   };
 
@@ -246,6 +270,7 @@ export function EvidenceGalleryPage() {
             <div className="flex gap-2">
               <button
                 type="submit"
+                disabled={!!pendingAction}
                 className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700"
               >
                 Save Changes

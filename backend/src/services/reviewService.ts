@@ -1,23 +1,13 @@
 import { prisma } from "../lib/prisma.js";
 import { createReviewSchema } from "../utils/validation.js";
 import { haversineDistanceKm } from "../utils/geo.js";
+import { SafeError } from "../utils/SafeError.js";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const REVIEW_ELIGIBILITY_RADIUS_KM = 15;
 
-const FRAUD_KEYWORDS = [
-  "scam",
-  "fake",
-  "fraud",
-  "not present",
-  "took supplies",
-  "stole",
-  "liar",
-  "dishonest",
-  "corrupt",
-  "bribe"
-];
+// P2: Removed naive keyword fraud detection — replaced by rating-based flagging
 
 const REVIEWABLE_RESPONDER_STATUSES = [
   "RESPONDING",
@@ -198,35 +188,35 @@ async function assertReviewEligibility(
   ]);
 
   if (!reviewer) {
-    throw new Error("Reviewer not found");
+    throw new SafeError("Reviewer not found");
   }
 
   if (reviewer.role !== "USER") {
-    throw new Error("Only users can submit volunteer reviews");
+    throw new SafeError("Only users can submit volunteer reviews");
   }
 
   if (reviewer.isBanned) {
-    throw new Error("Reviewer account is blocked");
+    throw new SafeError("Reviewer account is blocked");
   }
 
   if (!volunteer || volunteer.role !== "VOLUNTEER") {
-    throw new Error("Volunteer not found");
+    throw new SafeError("Volunteer not found");
   }
 
   if (!crisis) {
-    throw new Error("Crisis event not found");
+    throw new SafeError("Crisis event not found");
   }
 
   if (!responderRecord) {
-    throw new Error("This volunteer is not an active responder for the selected crisis");
+    throw new SafeError("This volunteer is not an active responder for the selected crisis");
   }
 
   if (!ensureCoordinates(crisis.latitude, crisis.longitude)) {
-    throw new Error("This crisis does not have a verifiable location for review eligibility");
+    throw new SafeError("This crisis does not have a verifiable location for review eligibility");
   }
 
   if (!ensureCoordinates(reviewer.latitude, reviewer.longitude)) {
-    throw new Error("Please enable your location to submit a crisis-scoped review");
+    throw new SafeError("Please enable your location to submit a crisis-scoped review");
   }
 
   const reviewerDistance = haversineDistanceKm(
@@ -237,7 +227,7 @@ async function assertReviewEligibility(
   );
 
   if (reviewerDistance > REVIEW_ELIGIBILITY_RADIUS_KM) {
-    throw new Error("Only users near this crisis can review responders");
+    throw new SafeError("Only users near this crisis can review responders");
   }
 
   const hasInteraction = await hasReviewerCrisisInteraction(
@@ -248,7 +238,7 @@ async function assertReviewEligibility(
   );
 
   if (!hasInteraction) {
-    throw new Error(
+    throw new SafeError(
       "You must have a verified interaction with this crisis to review responders"
     );
   }
@@ -267,18 +257,10 @@ export async function submitReview(reviewerId: string, payload: unknown) {
   } = parsed;
 
   if (reviewerId === volunteerId) {
-    throw new Error("You cannot review yourself");
+    throw new SafeError("You cannot review yourself");
   }
 
   await assertReviewEligibility(reviewerId, volunteerId, crisisEventId);
-
-  const existing = await prisma.review.findFirst({
-    where: { reviewerId, volunteerId, crisisEventId }
-  });
-
-  if (existing) {
-    throw new Error("You have already reviewed this responder for this crisis");
-  }
 
   const reviewer = await prisma.user.findUnique({
     where: { id: reviewerId },
@@ -286,7 +268,7 @@ export async function submitReview(reviewerId: string, payload: unknown) {
   });
 
   if (!reviewer) {
-    throw new Error("Reviewer not found");
+    throw new SafeError("Reviewer not found");
   }
 
   const now = Date.now();
@@ -311,32 +293,37 @@ export async function submitReview(reviewerId: string, payload: unknown) {
     flagReasons.push("3+ reviews submitted in 24 hours");
   }
 
-  const lowerText = text.toLowerCase();
-  const detectedKeywords = FRAUD_KEYWORDS.filter((keyword) =>
-    lowerText.includes(keyword)
-  );
-  if (detectedKeywords.length > 0) {
-    flagReasons.push(`Contains fraud keywords: ${detectedKeywords.join(", ")}`);
-  }
+  // P2: Removed naive keyword fraud detection
 
   const isFlagged = flagReasons.length > 0;
 
-  const review = await prisma.review.create({
-    data: {
-      reviewerId,
-      volunteerId,
-      rating,
-      text,
-      interactionContext,
-      interactionDate: new Date(interactionDate),
-      wouldWorkAgain,
-      crisisEventId,
-      isFlagged,
-      flagReasons
-    },
-    include: {
-      reviewer: { select: { fullName: true, avatarUrl: true } }
+  // Use a transaction to atomically check for existing review and create
+  const review = await prisma.$transaction(async (tx) => {
+    const existing = await tx.review.findFirst({
+      where: { reviewerId, volunteerId, crisisEventId }
+    });
+
+    if (existing) {
+      throw new SafeError("You have already reviewed this responder for this crisis");
     }
+
+    return tx.review.create({
+      data: {
+        reviewerId,
+        volunteerId,
+        rating,
+        text,
+        interactionContext,
+        interactionDate: new Date(interactionDate),
+        wouldWorkAgain,
+        crisisEventId,
+        isFlagged,
+        flagReasons
+      },
+      include: {
+        reviewer: { select: { fullName: true, avatarUrl: true } }
+      }
+    });
   });
 
   await checkAndFlagVolunteer(volunteerId);
@@ -351,7 +338,9 @@ async function checkAndFlagVolunteer(volunteerId: string) {
       text: true,
       wouldWorkAgain: true,
       createdAt: true
-    }
+    },
+    take: 500,
+    orderBy: { createdAt: "desc" }
   });
 
   const volunteerFlagReasons: string[] = [];
@@ -367,19 +356,7 @@ async function checkAndFlagVolunteer(volunteerId: string) {
     }
   }
 
-  if (totalReviews >= 3) {
-    const reviewsWithFraudKeywords = reviews.filter((review) =>
-      FRAUD_KEYWORDS.some((keyword) =>
-        review.text.toLowerCase().includes(keyword)
-      )
-    ).length;
-    const fraudPercentage = (reviewsWithFraudKeywords / totalReviews) * 100;
-    if (fraudPercentage >= 40) {
-      volunteerFlagReasons.push(
-        `${fraudPercentage.toFixed(0)}% of reviews contain fraud indicators`
-      );
-    }
-  }
+  // P2: Removed naive keyword fraud detection from volunteer flagging
 
   const thirtyDaysAgo = new Date(Date.now() - THIRTY_DAYS_MS);
   const recentNegativeReviews = reviews.filter(
@@ -442,7 +419,8 @@ export async function listEligibleReviewCrises(
         }
       }
     },
-    orderBy: { lastStatusAt: "desc" }
+    orderBy: { lastStatusAt: "desc" },
+    take: 100
   });
 
   const eligible: EligibleReviewCrisis[] = [];
@@ -501,7 +479,8 @@ export async function getVolunteerReviews(volunteerId: string) {
     include: {
       reviewer: { select: { fullName: true, avatarUrl: true } }
     },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    take: 100
   });
 
   const averageRating =
@@ -515,23 +494,35 @@ export async function getVolunteerReviews(volunteerId: string) {
 export async function listFlaggedReviews() {
   await ensureLegacyReviewDataConsistency();
 
+  // P0-18: Never return credential fields (email, phone, passwordHash, resetTokenHash, etc.)
   return prisma.review.findMany({
     where: { isFlagged: true },
+    take: 100,
     include: {
-      reviewer: { select: { id: true, fullName: true, email: true } },
-      volunteer: { select: { id: true, fullName: true, email: true } }
+      reviewer: { select: { id: true, fullName: true } },
+      volunteer: { select: { id: true, fullName: true } }
     },
     orderBy: { createdAt: "desc" }
   });
 }
 
 export async function listFlaggedVolunteers() {
+  // P0-18: Explicit safe select — never return passwordHash, resetTokenHash, email, phone
   return prisma.user.findMany({
     where: {
       role: "VOLUNTEER",
       isFlagged: true
     },
-    include: {
+    take: 100,
+    select: {
+      id: true,
+      fullName: true,
+      location: true,
+      role: true,
+      isFlagged: true,
+      isBanned: true,
+      volunteerFlagReasons: true,
+      createdAt: true,
       reviewsReceived: {
         select: {
           rating: true,
@@ -553,7 +544,7 @@ export async function approveReview(reviewId: string) {
   });
 
   if (!review) {
-    throw new Error("Review not found");
+    throw new SafeError("Review not found");
   }
 
   await prisma.review.update({
@@ -575,7 +566,7 @@ export async function deleteReview(reviewId: string) {
   });
 
   if (!review) {
-    throw new Error("Review not found");
+    throw new SafeError("Review not found");
   }
 
   await prisma.review.delete({
@@ -591,11 +582,11 @@ export async function approveVolunteer(volunteerId: string) {
   });
 
   if (!volunteer) {
-    throw new Error("Volunteer not found");
+    throw new SafeError("Volunteer not found");
   }
 
   if (volunteer.role !== "VOLUNTEER") {
-    throw new Error("User is not a volunteer");
+    throw new SafeError("User is not a volunteer");
   }
 
   await prisma.user.update({
@@ -613,15 +604,19 @@ export async function banVolunteer(volunteerId: string) {
   });
 
   if (!volunteer) {
-    throw new Error("Volunteer not found");
+    throw new SafeError("Volunteer not found");
   }
 
   if (volunteer.role !== "VOLUNTEER") {
-    throw new Error("User is not a volunteer");
+    throw new SafeError("User is not a volunteer");
   }
 
   await prisma.user.update({
     where: { id: volunteerId },
     data: { isBanned: true }
   });
+
+  // P0-03: Invalidate the auth status cache so the ban takes effect immediately
+  const { invalidateUserStatusCache } = await import("../middleware/auth.js");
+  invalidateUserStatusCache(volunteerId);
 }

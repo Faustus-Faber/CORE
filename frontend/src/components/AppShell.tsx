@@ -23,10 +23,6 @@ function buildReportMenuItems(role: Role): NavItem[] {
     { to: "/report-incident", label: "Submit Incident" },
     { to: "/reports/explore", label: "Browse Reports" }
   ];
-  if (role === "ADMIN") {
-    items.push({ to: "/reports/review", label: "Review Unpublished" });
-    items.push({ to: "/reports/generate", label: "Generate Reports" });
-  }
   return items;
 }
 
@@ -40,10 +36,20 @@ function buildResourceMenuItems(): NavItem[] {
 
 function buildCommunityMenuItems(): NavItem[] {
   return [
-    { to: "/gallery", label: "Gallery" },
-    { to: "/volunteers", label: "Volunteers" },
-    { to: "/leaderboard", label: "Leaderboard" }
+    { to: "/volunteers", label: "Responders" },
+    { to: "/leaderboard", label: "Impact Board" }
   ];
+}
+
+function buildCrisisMenuItems(role: Role): NavItem[] {
+  const items: NavItem[] = [
+    { to: "/operations", label: "Operations Workspace" },
+    { to: "/after-action-reports", label: "After-Action Reports" }
+  ];
+  if (role === "ADMIN") {
+    items.splice(1, 0, { to: "/verification-queue", label: "Verification Queue" });
+  }
+  return items;
 }
 
 function buildUserMenuItems(role: Role): NavItem[] {
@@ -51,8 +57,6 @@ function buildUserMenuItems(role: Role): NavItem[] {
     { to: "/profile", label: "Profile" },
     { to: "/notifications", label: "Notifications" },
     { to: "/notifications/preferences", label: "Notification Settings" },
-    { to: "/docs", label: "My Documents" },
-    { to: "/ocr", label: "OCR Tool" }
   ];
   if (role === "VOLUNTEER") {
     items.push({ to: "/tasks", label: "My Timesheet" });
@@ -64,14 +68,20 @@ function buildUserMenuItems(role: Role): NavItem[] {
 }
 
 function useClickOutside(ref: React.RefObject<HTMLElement | null>, handler: () => void) {
+  // Store the handler in a ref so the effect doesn't re-run when the parent
+  // re-renders with a new inline function reference. This prevents the event
+  // listener from being unnecessarily removed and re-added on every render.
+  const handlerRef = useRef(handler);
+  handlerRef.current = handler;
+
   useEffect(() => {
     const listener = (e: MouseEvent) => {
       if (!ref.current || ref.current.contains(e.target as Node)) return;
-      handler();
+      handlerRef.current();
     };
     document.addEventListener("mousedown", listener);
     return () => document.removeEventListener("mousedown", listener);
-  }, [ref, handler]);
+  }, [ref]);
 }
 
 function Dropdown({
@@ -107,7 +117,7 @@ function Dropdown({
         </svg>
       </button>
       {open && (
-        <div className="absolute left-0 z-50 mt-1 w-52 origin-top-left animate-[fadeIn_100ms_ease-out] rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+        <div className="absolute left-0 z-[2000] mt-1 w-52 origin-top-left animate-[fadeIn_100ms_ease-out] rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
           {items.map(item => (
             <NavLink
               key={item.to}
@@ -173,7 +183,7 @@ function UserMenu({
         </svg>
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right animate-[fadeIn_100ms_ease-out] rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+        <div className="absolute right-0 z-[2000] mt-2 w-56 origin-top-right animate-[fadeIn_100ms_ease-out] rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
           <div className="border-b border-slate-100 px-3 py-2.5">
             <p className="text-sm font-semibold text-ink">{userName}</p>
             <p className="text-xs text-slate-500">{userRole}</p>
@@ -251,6 +261,7 @@ function DispatchBell({ initialOptIn }: { initialOptIn: boolean }) {
       onClick={() => void toggle()}
       disabled={isLoading}
       title={optIn ? "Dispatch Alerts: Enabled" : "Dispatch Alerts: Disabled"}
+      aria-label={optIn ? "Dispatch alerts: enabled. Click to disable." : "Dispatch alerts: disabled. Click to enable."}
       className={`relative rounded-lg p-2 transition disabled:opacity-50 ${
         optIn ? "text-amber-500 hover:bg-amber-50" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
       }`}
@@ -308,22 +319,35 @@ export function AppShell() {
   const reportMenuItems = user ? buildReportMenuItems(role) : [];
   const resourceMenuItems = user ? buildResourceMenuItems() : [];
   const communityMenuItems = user ? buildCommunityMenuItems() : [];
+  const crisisMenuItems = user ? buildCrisisMenuItems(role) : [];
   const userMenuItems = user ? buildUserMenuItems(role) : [];
 
   const isReportRoute = location.pathname.startsWith("/report") || location.pathname.startsWith("/reports");
   const isResourceRoute = location.pathname.startsWith("/resources") || location.pathname.startsWith("/browse-resources");
   const isCommunityRoute = communityMenuItems.some(item => location.pathname.startsWith(item.to));
+  const isFullWidth = location.pathname.startsWith("/operations") || location.pathname.startsWith("/map");
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     const poll = () => {
-      getNotifications(1, 1).then((data) => setUnreadCount(data.unreadCount));
+      getNotifications(1, 1)
+        .then((data) => {
+          if (!cancelled) setUnreadCount(data.unreadCount);
+        })
+        .catch((err) => {
+          // Don't spam console on every failed poll, but log once per failure
+          console.error("Notification poll failed:", err instanceof Error ? err.message : String(err));
+        });
     };
     poll();
     const interval = setInterval(poll, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [user]);
 
   const handleLogout = async () => {
@@ -355,7 +379,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-lg">
+      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur-lg">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-3 py-2.5 sm:gap-6 sm:px-4">
           <Link to="/" className="shrink-0 text-xl font-black tracking-tight text-ink">
             CORE
@@ -402,6 +426,7 @@ export function AppShell() {
                 <Dropdown label="Reports" items={reportMenuItems} isActive={isReportRoute} />
                 <Dropdown label="Resources" items={resourceMenuItems} isActive={isResourceRoute} />
                 <Dropdown label="Community" items={communityMenuItems} isActive={isCommunityRoute} />
+                <Dropdown label="Crisis Ops" items={crisisMenuItems} isActive={location.pathname.startsWith("/operations") || location.pathname.startsWith("/verification") || location.pathname.startsWith("/after-action")} />
                 <span className="mx-1 h-5 w-px bg-slate-200" />
                 {role === "VOLUNTEER" && (
                   <DispatchBell initialOptIn={user.dispatchOptIn ?? false} />
@@ -487,6 +512,7 @@ export function AppShell() {
             <MobileSection title="Reports" items={reportMenuItems} onNavigate={closeMobile} navLinkClass={mobileNavLinkClass} />
             <MobileSection title="Resources" items={resourceMenuItems} onNavigate={closeMobile} navLinkClass={mobileNavLinkClass} />
             <MobileSection title="Community" items={communityMenuItems} onNavigate={closeMobile} navLinkClass={mobileNavLinkClass} />
+            <MobileSection title="Crisis Ops" items={crisisMenuItems} onNavigate={closeMobile} navLinkClass={mobileNavLinkClass} />
             <MobileSection title="Account" items={userMenuItems} onNavigate={closeMobile} navLinkClass={mobileNavLinkClass} />
 
             <div className="mt-3 border-t border-slate-100 pt-3">

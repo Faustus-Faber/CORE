@@ -54,15 +54,27 @@ export async function createUpdate(
   const crisisEventId = paramAsString(request.params.id);
   const validated = toValidatedInput(request.body);
 
-  const { entry, applied } = await submitCrisisUpdate(
-    crisisEventId,
-    userId,
-    request.authUser!.role,
-    validated
-  );
+  // FR-07: Pass expectedVersion from the request body for optimistic concurrency
+  const expectedVersion =
+    typeof request.body.expectedVersion === "number" ? request.body.expectedVersion : undefined;
 
-  const status = applied ? 201 : 202;
-  return response.status(status).json({ entry, applied });
+  try {
+    const { entry, applied } = await submitCrisisUpdate(
+      crisisEventId,
+      userId,
+      request.authUser!.role,
+      validated,
+      expectedVersion
+    );
+
+    const status = applied ? 201 : 202;
+    return response.status(status).json({ entry, applied });
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Conflict:")) {
+      return response.status(409).json({ message: error.message });
+    }
+    throw error;
+  }
 }
 
 export async function listUpdates(
@@ -71,7 +83,8 @@ export async function listUpdates(
   _next: NextFunction
 ) {
   const crisisEventId = paramAsString(request.params.id);
-  const entries = await getCrisisUpdates(crisisEventId);
+  // P1-7: Pass viewer role so pending/dismissed updates are filtered for non-admins
+  const entries = await getCrisisUpdates(crisisEventId, request.authUser?.role);
   return response.status(200).json({ entries });
 }
 
@@ -99,15 +112,19 @@ export async function revertStatus(
   const crisisEventId = paramAsString(request.params.id);
   const { targetStatus, note } = request.body;
 
-  if (typeof targetStatus !== "string" || typeof note !== "string") {
-    return response.status(400).json({ message: "targetStatus and note are required" });
+  const VALID_STATUSES = ["REPORTED", "VERIFIED", "UNDER_INVESTIGATION", "RESPONSE_IN_PROGRESS", "CONTAINED", "RESOLVED", "CLOSED"];
+  if (typeof targetStatus !== "string" || !VALID_STATUSES.includes(targetStatus)) {
+    return response.status(400).json({ message: "Invalid targetStatus" });
+  }
+  if (typeof note !== "string" || note.length === 0) {
+    return response.status(400).json({ message: "note is required" });
   }
 
   try {
     await revertCrisisStatus(crisisEventId, targetStatus, userId, note);
     return response.status(200).json({ message: "Status reverted" });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to revert status";
-    return response.status(400).json({ message });
+    console.error("Failed to revert status:", error);
+    return response.status(400).json({ message: "Failed to revert status" });
   }
 }

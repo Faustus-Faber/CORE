@@ -93,6 +93,8 @@ export const FileSection: React.FC<FileSectionProps> = ({
                                             src={`${API_BASE}${file.fileUrl}`}
                                             alt={file.fileName}
                                             className="w-full h-full object-cover hover:scale-105 transition-transform duration-300 cursor-pointer"
+                                            loading="lazy"
+                                            decoding="async"
                                             onClick={() => {
                                                 setSelectedMedia(`${API_BASE}${file.fileUrl}`);
                                                 setSelectedMediaType('image');
@@ -152,11 +154,11 @@ export const FileSection: React.FC<FileSectionProps> = ({
 
                                     <div className="mt-auto flex flex-col gap-2 border-t border-slate-50 pt-2 sm:flex-row sm:items-end sm:justify-between">
                                         <div className="min-w-0 flex flex-col gap-0.5">
-                                            <p className="text-[9px] text-slate-400">{(file.sizeBytes / 1024 / 1024).toFixed(1)} MB</p>
+                                            <p className="text-[9px] text-slate-400">{file.sizeBytes != null ? (file.sizeBytes / 1024 / 1024).toFixed(1) : '—'} MB</p>
                                             <p className="text-[9px] text-slate-400">UID: {file.uploaderId}</p>
-                                            <p className="text-[9px] text-slate-400" title="UTC">🕒 {new Date(file.createdAt).toISOString().replace('T', ' ').substring(0, 16)} UTC</p>
-                                            {file.gpsLat && (
-                                                <p className="text-[9px] text-blue-500 font-medium">📍 GPS: {file.gpsLat.toFixed(4)}, {file.gpsLng?.toFixed(4)}</p>
+                                            <p className="text-[9px] text-slate-400" title="UTC">🕒 {file.createdAt ? new Date(file.createdAt).toISOString().replace('T', ' ').substring(0, 16) : '—'} UTC</p>
+                                            {file.gpsLat != null && file.gpsLng != null && (
+                                                <p className="text-[9px] text-blue-500 font-medium">📍 GPS: {file.gpsLat.toFixed(4)}, {file.gpsLng.toFixed(4)}</p>
                                             )}
                                         </div>
                                         {!isReadOnly && (
@@ -206,6 +208,8 @@ export const FileSection: React.FC<FileSectionProps> = ({
                                                             src={`${API_BASE}${file.fileUrl}`}
                                                             alt=""
                                                             className="w-full h-full object-cover cursor-pointer"
+                                                            loading="lazy"
+                                                            decoding="async"
                                                             onClick={() => {
                                                                 setSelectedMedia(`${API_BASE}${file.fileUrl}`);
                                                                 setSelectedMediaType('image');
@@ -250,8 +254,8 @@ export const FileSection: React.FC<FileSectionProps> = ({
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-slate-500 text-xs">{(file.sizeBytes / 1024 / 1024).toFixed(1)} MB</td>
-                                        <td className="px-4 py-3 text-slate-500 text-xs">{new Date(file.createdAt).toLocaleDateString()}</td>
+                                        <td className="px-4 py-3 text-slate-500 text-xs">{file.sizeBytes != null ? (file.sizeBytes / 1024 / 1024).toFixed(1) : '—'} MB</td>
+                                        <td className="px-4 py-3 text-slate-500 text-xs">{file.createdAt ? new Date(file.createdAt).toLocaleDateString() : '—'}</td>
                                         {!isReadOnly && (
                                             <td className="px-4 py-3 text-right">
                                                 {file.fileType.startsWith('image/') && handleScanFile && (

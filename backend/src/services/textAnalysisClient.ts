@@ -90,8 +90,8 @@ export async function classifyIncidentText(
       body: JSON.stringify({
         model: env.groqQwenModel,
         temperature: 0,
-        max_tokens: 400,
-        reasoning_effort: "none",
+        max_tokens: 16000,
+        thinking: { type: "disabled" },
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: classifierSystemPrompt },
@@ -106,7 +106,12 @@ export async function classifyIncidentText(
     }
 
     const payload = groqChatCompletionSchema.parse(await response.json());
-    const content = stripThinkingTagsFromJson(payload.choices[0]?.message.content ?? "");
+    const msg = payload.choices[0]?.message;
+    // Fallback: reasoning models may put output in `reasoning` when content is null
+    const rawContent = (msg?.content && msg.content.length > 0)
+      ? msg.content
+      : (msg as { reasoning?: string })?.reasoning ?? "";
+    const content = stripThinkingTagsFromJson(rawContent);
 
     try {
       return textAnalysisResultSchema.parse(JSON.parse(content));

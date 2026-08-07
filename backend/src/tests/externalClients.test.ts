@@ -1,5 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Mock the env module so tests control the config values
+vi.mock("../config/env.js", () => ({
+  env: {
+    groqApiKey: "test-key",
+    groqBaseUrl: "https://opencode.ai/zen/go/v1",
+    groqWhisperModel: "whisper-large-v3",
+    groqQwenModel: "deepseek-v4-flash",
+    groqVisionModel: "mimo-v2.5",
+    aiRequestTimeoutMs: 20000,
+    brevoApiKey: "",
+    brevoFromEmail: "core@example.com",
+    brevoFromName: "CORE",
+    resendApiKey: "",
+    resendFromEmail: "core@resend.dev",
+    corsOrigins: ["http://localhost:5173"],
+    jwtSecret: "test-secret",
+    port: 5000,
+    ocrProvider: "ocrspace",
+    ocrSpaceApiKey: ""
+  }
+}));
+
 import {
   classifyIncidentText,
   type TextAnalysisResult
@@ -19,15 +41,10 @@ function mockJsonResponse(data: unknown, ok = true, status = 200) {
 
 describe("external API clients", () => {
   beforeEach(() => {
-    vi.resetModules();
-    vi.stubEnv("GROQ_API_KEY", "test-groq-key");
-    vi.stubEnv("GROQ_BASE_URL", "https://api.groq.com/openai/v1");
-    vi.stubEnv("GROQ_WHISPER_MODEL", "whisper-large-v3");
-    vi.stubEnv("GROQ_QWEN_MODEL", "qwen/qwen3-32b");
+    vi.stubGlobal("fetch", vi.fn());
   });
 
   afterEach(() => {
-    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
@@ -52,7 +69,7 @@ describe("external API clients", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const request = fetchMock.mock.calls[0];
-    expect(request?.[0]).toBe("https://api.groq.com/openai/v1/audio/transcriptions");
+    expect(request?.[0]).toBe("https://opencode.ai/zen/go/v1/audio/transcriptions");
     const options = request?.[1] as {
       body?: FormData;
       headers?: Record<string, string>;
@@ -102,7 +119,7 @@ describe("external API clients", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      "https://api.groq.com/openai/v1/audio/translations"
+      "https://opencode.ai/zen/go/v1/audio/translations"
     );
     expect(output.translated_description).toBe(
       "A fire has broken out near the market."
@@ -135,7 +152,7 @@ describe("external API clients", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const request = fetchMock.mock.calls[0];
-    expect(request?.[0]).toBe("https://api.groq.com/openai/v1/chat/completions");
+    expect(request?.[0]).toBe("https://opencode.ai/zen/go/v1/chat/completions");
 
     const options = request?.[1] as {
       method?: string;
@@ -146,7 +163,7 @@ describe("external API clients", () => {
     expect(options.method).toBe("POST");
     expect(options.headers?.["Content-Type"]).toBe("application/json");
     expect(options.headers?.Authorization).toMatch(/^Bearer\s+\S+/);
-    expect(options.body).toContain("\"model\":\"qwen/qwen3-32b\"");
+    expect(options.body).toContain("\"model\":\"deepseek-v4-flash\"");
 
     expect(output).toEqual({
       credibility_score: 78,

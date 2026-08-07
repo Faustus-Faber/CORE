@@ -38,11 +38,12 @@ export interface EvidencePost {
   };
 }
 
-export async function listEvidencePosts(params?: { filter?: string; sort?: string }): Promise<EvidencePost[]> {
+export async function listEvidencePosts(params?: { filter?: string; sort?: string; crisisEventId?: string }): Promise<EvidencePost[]> {
   const query = new URLSearchParams();
   if (params?.filter) query.append("filter", params.filter);
   if (params?.sort) query.append("sort", params.sort);
-  
+  if (params?.crisisEventId) query.append("crisisEventId", params.crisisEventId);
+
   const queryString = query.toString();
   return request(`/evidence${queryString ? `?${queryString}` : ""}`);
 }

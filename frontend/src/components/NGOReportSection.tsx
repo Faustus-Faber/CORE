@@ -8,7 +8,7 @@ import {
 } from "../services/api";
 import { AuthUser } from "../types";
 
-const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "http://localhost:5000/api").replace("/api", "");
+const API_ORIGIN = (import.meta.env.VITE_API_URL ?? "/api").replace("/api", "") || "";
 
 type NGOReportSectionProps = {
   crisisEventId: string;
@@ -26,6 +26,7 @@ export function NGOReportSection({ crisisEventId, status, isAdmin }: NGOReportSe
   const [generating, setGenerating] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   // Form state
   const [allVolunteers, setAllVolunteers] = useState<AuthUser[]>([]);
@@ -36,11 +37,12 @@ export function NGOReportSection({ crisisEventId, status, isAdmin }: NGOReportSe
 
   const fetchReports = async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const data = await listNGOReports(crisisEventId);
       setReports(data);
     } catch (err) {
-      console.error("Failed to load reports", err);
+      setLoadError(err instanceof Error ? err.message : "Failed to load reports");
     } finally {
       setLoading(false);
     }
@@ -99,7 +101,8 @@ export function NGOReportSection({ crisisEventId, status, isAdmin }: NGOReportSe
       // Open in new tab for preview
       window.open(resolveReportUrl(newReport), "_blank");
     } catch (err) {
-      alert("Failed to generate report");
+      const message = err instanceof Error ? err.message : "Failed to generate report";
+      setLoadError(message);
     } finally {
       setGenerating(false);
     }
@@ -129,6 +132,10 @@ export function NGOReportSection({ crisisEventId, status, isAdmin }: NGOReportSe
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</p>
+      )}
 
       {showForm && (
         <div className="mt-4 border-t border-slate-100 pt-4 space-y-6">

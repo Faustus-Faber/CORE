@@ -29,6 +29,7 @@ export function ReportIncidentPage() {
   const [recordedAudioFilename, setRecordedAudioFilename] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [aiConsent, setAiConsent] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -160,7 +161,8 @@ export function ReportIncidentPage() {
         mediaFiles,
         uploadedAudioFile,
         recordedAudioBlob,
-        recordedAudioFilename
+        recordedAudioFilename,
+        aiConsent
       });
 
       navigate("/reports/explore?view=mine", {
@@ -306,9 +308,23 @@ export function ReportIncidentPage() {
               type="file"
               multiple
               accept="image/*,video/*"
-              onChange={(event) =>
-                setMediaFiles(Array.from(event.target.files ?? []))
-              }
+              onChange={(event) => {
+                const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB (matches backend limit)
+                const MAX_FILES = 5;
+                const allFiles = Array.from(event.target.files ?? []);
+                const oversized = allFiles.filter(f => f.size > MAX_FILE_SIZE);
+                const validFiles = allFiles
+                  .filter(f => f.size <= MAX_FILE_SIZE)
+                  .slice(0, MAX_FILES);
+                if (oversized.length > 0) {
+                  setError(`Some files were too large (max 20MB each) and were removed.`);
+                } else if (allFiles.length > MAX_FILES) {
+                  setError(`Maximum ${MAX_FILES} files allowed. Only the first ${MAX_FILES} were kept.`);
+                } else {
+                  setError("");
+                }
+                setMediaFiles(validFiles);
+              }}
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-ink"
             />
             {mediaFiles.length > 0 && (
@@ -394,6 +410,21 @@ export function ReportIncidentPage() {
             <p className="text-sm font-semibold text-red-700">{error}</p>
           </div>
         )}
+
+        <label className="flex items-start gap-3 rounded-xl bg-white p-4 ring-1 ring-slate-200 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={aiConsent}
+            onChange={(e) => setAiConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-tide focus:ring-tide"
+          />
+          <span className="text-sm text-slate-600">
+            <span className="font-semibold text-slate-700">Allow AI processing</span> —
+            permits transcription and classification of your report and any voice note
+            using external AI services. Without consent, voice notes are stored but not
+            transcribed automatically.
+          </span>
+        </label>
 
         <button
           type="submit"

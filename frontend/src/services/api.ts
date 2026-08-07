@@ -16,14 +16,19 @@ import type {
   ReportDetailResponse,
   LeaderboardEntry,
   TimesheetSummary,
+  TrustTierInfo,
+  Vouch,
   VolunteerTask,
+  CrisisMessage,
+  CrisisMessageListResponse,
+  TrustTierVolunteer,
   Role,
   SitRepResponse,
   Review
 } from "../types";
 import { buildEmergencyReportFormData } from "./reportPayload";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
+const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 export type ReportListQuery = {
   search?: string;
@@ -58,19 +63,36 @@ export async function request<T>(endpoint: string, options: { method?: HttpMetho
   return httpClient<T>(endpoint, options.method ?? "GET", options.body);
 }
 
-async function httpClient<T>(endpoint: string, method: HttpMethod = "GET", body?: unknown): Promise<T> {
+async function httpClient<T>(endpoint: string, method: HttpMethod = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
   const isFormData = body instanceof FormData;
+
+  const headers: Record<string, string> = isFormData ? {} : { "Content-Type": "application/json" };
+
+  // Add CSRF header for state-changing requests (double-submit cookie pattern).
+  // The backend sets a non-httpOnly "csrf_token" cookie; we read it and send
+  // it back as the x-csrf-token header for the server to compare.
+  if (["POST", "PATCH", "PUT", "DELETE"].includes(method)) {
+    const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    const csrfToken = csrfMatch?.[1];
+    if (csrfToken) headers["x-csrf-token"] = csrfToken;
+  }
 
   const init: RequestInit = {
     method,
-    headers: isFormData ? undefined : { "Content-Type": "application/json" },
+    headers,
     body: serializeBody(body, isFormData)
   };
 
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...init,
-    credentials: "include"
+    credentials: "include",
+    signal
   });
+
+  // 401: session expired — notify the app to redirect to login
+  if (response.status === 401 && !endpoint.startsWith("/auth/")) {
+    window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+  }
 
   const data = (await response.json().catch(() => ({}))) as ErrorResponse;
 
@@ -215,12 +237,12 @@ export async function createEmergencyReport(payload: EmergencyReportSubmissionIn
   return httpClient<{ message: string; report: EmergencyReportSummary }>("/reports", "POST", formData);
 }
 
-export async function listCommunityReports(query: ReportListQuery = {}) {
-  return httpClient<{ reports: IncidentReportListItem[] }>(`/reports${toReportQueryString(query)}`);
+export async function listCommunityReports(query: ReportListQuery = {}, signal?: AbortSignal) {
+  return httpClient<{ reports: IncidentReportListItem[] }>(`/reports${toReportQueryString(query)}`, "GET", undefined, signal);
 }
 
-export async function listMyReports(query: ReportListQuery = {}) {
-  return httpClient<{ reports: IncidentReportListItem[] }>(`/reports/mine${toReportQueryString(query)}`);
+export async function listMyReports(query: ReportListQuery = {}, signal?: AbortSignal) {
+  return httpClient<{ reports: IncidentReportListItem[] }>(`/reports/mine${toReportQueryString(query)}`, "GET", undefined, signal);
 }
 
 export async function getReportDetail(reportId: string) {
@@ -231,15 +253,50 @@ export async function getMapReports() {
   return httpClient<MapIncident[]>("/reports/map");
 }
 
+// AC-05.04: Crisis event list — same data source as map, for accessible list alternative
+export type CrisisEventListItem = {
+  id: string;
+  canonicalId: string | null;
+  title: string;
+  type: string;
+  severity: string;
+  status: string;
+  location: string;
+  sitRep: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  reportCount: number;
+  reporterCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function listCrisisEvents(filters?: {
+  incidentType?: string;
+  severity?: string;
+  search?: string;
+}) {
+  const params = new URLSearchParams();
+  if (filters?.incidentType) params.set("incidentType", filters.incidentType);
+  if (filters?.severity) params.set("severity", filters.severity);
+  if (filters?.search) params.set("search", filters.search);
+  const qs = params.toString();
+  return httpClient<CrisisEventListItem[]>(`/reports/crisis-events${qs ? `?${qs}` : ""}`);
+}
+
 export async function listAdminUnpublishedReports(query: ReportListQuery = {}) {
   return httpClient<{ reports: IncidentReportListItem[] }>(`/admin/reports/unpublished${toReportQueryString(query)}`);
 }
 
-export async function updateReportStatusByAdmin(reportId: string, status: "PUBLISHED" | "UNDER_REVIEW") {
+export async function updateReportStatusByAdmin(
+  reportId: string,
+  status: "PUBLISHED" | "UNDER_REVIEW" | "REJECTED" | "CLARIFICATION_REQUESTED" | "MERGED",
+  reason?: string
+) {
   return httpClient<{ message: string; report: { id: string; status: string; spamFlagged: boolean } }>(
     `/admin/reports/${reportId}/status`,
     "PATCH",
-    { status }
+    { status, reason }
   );
 }
 
@@ -330,27 +387,27 @@ export async function getEligibleReviewCrises(volunteerId: string) {
 }
 
 export async function getFlaggedReviews() {
-  return httpClient<{ reviews: Review[] }>("/reviews/flagged");
+  return httpClient<{ reviews: Review[] }>("/admin/reviews/flagged");
 }
 
 export async function getFlaggedVolunteers() {
-  return httpClient<{ volunteers: FlaggedVolunteer[] }>("/reviews/flagged-volunteers");
+  return httpClient<{ volunteers: FlaggedVolunteer[] }>("/admin/volunteers/flagged");
 }
 
 export async function approveReview(reviewId: string) {
-  return httpClient<MessageResponse>(`/reviews/${reviewId}/approve`, "PATCH");
+  return httpClient<MessageResponse>(`/admin/reviews/${reviewId}/approve`, "PATCH");
 }
 
 export async function deleteReview(reviewId: string) {
-  return httpClient<MessageResponse>(`/reviews/${reviewId}`, "DELETE");
+  return httpClient<MessageResponse>(`/admin/reviews/${reviewId}`, "DELETE");
 }
 
 export async function approveVolunteer(volunteerId: string) {
-  return httpClient<MessageResponse>(`/reviews/volunteer/${volunteerId}/approve`, "PATCH");
+  return httpClient<MessageResponse>(`/admin/volunteers/${volunteerId}/approve`, "PATCH");
 }
 
 export async function banVolunteer(volunteerId: string) {
-  return httpClient<MessageResponse>(`/reviews/volunteer/${volunteerId}/ban`, "POST");
+  return httpClient<MessageResponse>(`/admin/volunteers/${volunteerId}/ban`, "POST");
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
@@ -394,6 +451,16 @@ export async function getSitRep(lat?: number, lng?: number, radiusKm?: number) {
   return httpClient<SitRepResponse>(`/dashboard/sitrep${buildQueryString(params)}`);
 }
 
+export async function getAiAdvisories(lat?: number, lng?: number, radiusKm?: number) {
+  const params = new URLSearchParams();
+
+  if (lat != null) params.set("lat", String(lat));
+  if (lng != null) params.set("lng", String(lng));
+  if (radiusKm != null) params.set("radius", String(radiusKm));
+
+  return httpClient<{ advisories: string[]; source: "ai" | "cache" | "default" }>(`/dashboard/advisories${buildQueryString(params)}`);
+}
+
 export async function getIncidentDetail(incidentId: string) {
   return httpClient<{ incident: IncidentDetailResponse }>(`/dashboard/incidents/${incidentId}`);
 }
@@ -424,6 +491,13 @@ export type ResourceSummary = {
   contactPreference: string;
   status: string;
   notes?: string;
+  photos?: string[];
+  user?: {
+    id: string;
+    fullName: string;
+    phone?: string;
+    email?: string;
+  };
 };
 
 export type ResourceDetail = ResourceSummary & {
@@ -484,7 +558,8 @@ export type ResourceHistoryEntry = {
 };
 
 export async function getAllResources() {
-  return httpClient<ResourceSummary[]>("/resources/all");
+  const data = await httpClient<{ resources: ResourceSummary[]; pagination: unknown }>("/resources/all");
+  return data.resources;
 }
 
 export async function addResource(payload: AddResourcePayload) {
@@ -576,11 +651,48 @@ export async function dismissFlaggedUpdate(updateId: string) {
   return httpClient<MessageResponse>(`/crises/updates/${updateId}/dismiss`, "PATCH");
 }
 
+export async function approveFlaggedUpdateApi(updateId: string) {
+  return httpClient<{ message: string; pointsAwarded: number }>(`/crises/updates/${updateId}/approve`, "PATCH");
+}
+
 export async function revertCrisisStatus(crisisEventId: string, targetStatus: string, note: string) {
   return httpClient<MessageResponse>(`/crises/${crisisEventId}/revert`, "PATCH", {
     targetStatus,
     note
   });
+}
+
+// ── Conflict resolution (admin) ─────────────────────────────────────────────
+export type ConflictResolutionEntry = {
+  id: string;
+  crisisEventId: string;
+  crisisTitle: string;
+  recommendation: string;
+  reasoning: string | null;
+  recommendedUpdateId: string | null;
+  updateIds: string[];
+  resolved: boolean;
+  createdAt: string;
+};
+
+export async function getUnresolvedConflicts(crisisEventId?: string) {
+  const query = crisisEventId ? `?crisisEventId=${crisisEventId}` : "";
+  return httpClient<{ conflicts: ConflictResolutionEntry[] }>(`/crises/conflicts${query}`);
+}
+
+export async function resolveConflict(conflictId: string, acceptedUpdateId: string) {
+  return httpClient<MessageResponse>(`/crises/conflicts/${conflictId}/resolve`, "PATCH", {
+    acceptedUpdateId
+  });
+}
+
+// ── Responder approval (admin, suspend/reinstate only) ──────────────────────
+export async function suspendResponder(userId: string) {
+  return httpClient<{ message: string }>(`/admin/responders/${userId}/suspend`, "PATCH");
+}
+
+export async function reinstateResponder(userId: string) {
+  return httpClient<{ message: string }>(`/admin/responders/${userId}/reinstate`, "PATCH");
 }
 
 export async function getCrisisResponders(crisisEventId: string) {
@@ -598,6 +710,61 @@ export async function updateMyCrisisResponderStatus(
     "PATCH",
     { status }
   );
+}
+
+// ── Trust Tier System ───────────────────────────────────────────────────────
+
+export async function getTrustTierInfoApi() {
+  return httpClient<TrustTierInfo>(`/profile/trust-tier`);
+}
+
+export async function createVouchApi(payload: {
+  vouchedForId: string;
+  reason: string;
+  crisisEventId?: string | null;
+}) {
+  return httpClient<{ message: string; vouch: Vouch }>(`/vouch`, "POST", payload);
+}
+
+export async function getVouchesReceivedApi() {
+  return httpClient<{ vouches: Vouch[] }>(`/vouch/received`);
+}
+
+export async function getVouchesGivenApi() {
+  return httpClient<{ vouches: Vouch[] }>(`/vouch/given`);
+}
+
+// ── Crisis Chat ─────────────────────────────────────────────────────────────
+
+export async function getCrisisMessagesApi(crisisEventId: string, page = 1, limit = 50) {
+  return httpClient<CrisisMessageListResponse>(
+    `/crises/${crisisEventId}/messages?page=${page}&limit=${limit}`
+  );
+}
+
+export async function sendCrisisMessageApi(crisisEventId: string, content: string) {
+  return httpClient<{ message: string; data: CrisisMessage }>(
+    `/crises/${crisisEventId}/messages`,
+    "POST",
+    { content }
+  );
+}
+
+export async function deleteCrisisMessageApi(messageId: string) {
+  return httpClient<{ message: string }>(`/crises/messages/${messageId}`, "DELETE");
+}
+
+export async function togglePinCrisisMessageApi(messageId: string) {
+  return httpClient<{ message: string; isPinned: boolean }>(
+    `/crises/messages/${messageId}/pin`,
+    "PATCH"
+  );
+}
+
+export function openCrisisChatStream(crisisEventId: string): EventSource {
+  return new EventSource(`${API_BASE}/crises/${crisisEventId}/messages/stream`, {
+    withCredentials: true
+  });
 }
 
 // ── Notifications (Module 3.5) ───────────────────────────────────────────────
@@ -653,13 +820,28 @@ export type NGOReportResource = {
   amount: string;
 };
 
+export type ReportSections = {
+  executiveSummary: string;
+  incidentDetails: string;
+  timeline: string;
+  resourceUtilization: string;
+  volunteerInvolvement: string;
+  evidenceSummary: string;
+  impactAssessment: string;
+  appendix: string;
+};
+
 export type NGOReport = {
   id: string;
   crisisEventId: string;
   generatedById: string;
   title: string;
-  fileUrl: string;
+  fileUrl: string | null;
+  summary: string | null;
+  sectionsJson: string | null;
+  pdfGenerated: boolean;
   createdAt: string;
+  updatedAt: string;
   crisisEvent?: { title: string };
   generatedBy?: { fullName: string };
 };
@@ -677,6 +859,21 @@ export async function generateNGOReport(
   } = {}
 ) {
   return httpClient<NGOReport>(`/ngo-reports/${crisisId}`, "POST", payload);
+}
+
+// Create a draft after-action report with editable sections
+export async function createDraftReport(crisisId: string) {
+  return httpClient<NGOReport>(`/ngo-reports/crises/${crisisId}/draft`, "POST");
+}
+
+// Update editable sections of a report
+export async function updateReportSections(reportId: string, sections: Partial<ReportSections>) {
+  return httpClient<NGOReport>(`/ngo-reports/${reportId}/sections`, "PATCH", sections);
+}
+
+// Generate the final PDF from edited sections
+export async function generateReportPDF(reportId: string) {
+  return httpClient<NGOReport>(`/ngo-reports/${reportId}/generate-pdf`, "POST");
 }
 
 export type OCRItem = {
@@ -718,9 +915,11 @@ export async function uploadOCRImage(payload: {
   folderId?: string | null;
   crisisEventId?: string | null;
   incidentReportId?: string | null;
+  aiConsent?: boolean;
 }) {
   const formData = new FormData();
   formData.append("image", payload.image);
+  formData.append("aiConsent", String(payload.aiConsent ?? false));
   if (payload.folderId) formData.append("folderId", payload.folderId);
   if (payload.crisisEventId) formData.append("crisisEventId", payload.crisisEventId);
   if (payload.incidentReportId) formData.append("incidentReportId", payload.incidentReportId);
@@ -809,4 +1008,166 @@ export async function verifyTaskApi(taskId: string, decision: "VERIFIED" | "REJE
 
 export async function getCrisesForDropdownApi() {
   return httpClient<{ crises: { id: string; title: string; status: string; incidentType: string }[] }>("/timesheet/crises");
+}
+
+// ── Admin: Trust Tier Oversight ─────────────────────────────────────────────
+
+export async function getTrustTierVolunteersApi() {
+  return httpClient<{ volunteers: TrustTierVolunteer[] }>("/admin/trust-tiers");
+}
+
+// ── Copilot ──────────────────────────────────────────────────────────────────
+
+export async function askCopilotApi(crisisEventId: string, question: string) {
+  return httpClient<{
+    crisisEventId: string;
+    question: string;
+    answer: string;
+    sourcesUsed: Array<{ type: string; id: string; label?: string }>;
+    assumptions: string[];
+    degraded?: boolean;
+  }>("/copilot/query", "POST", { crisisEventId, question });
+}
+
+export type CopilotDraft = {
+  id: string;
+  crisisEventId: string;
+  draftType: string;
+  payload: string;
+  status: string;
+  reasoning: string;
+  versionAtCreation: number;
+  expiresAt: string;
+  proposedById: string;
+  confirmedById: string | null;
+  confirmedAt: string | null;
+  createdAt: string;
+  sourceIds?: string[];
+  crisisEvent?: { id: string; title: string; version: number };
+  proposedBy?: { id: string; fullName: string };
+  confirmedBy?: { id: string; fullName: string } | null;
+};
+
+export async function listCopilotDraftsApi(crisisEventId: string, status?: string) {
+  const query = status ? `?status=${status}` : "";
+  return httpClient<{ drafts: CopilotDraft[] }>(`/copilot/drafts/${crisisEventId}${query}`);
+}
+
+export async function createCopilotDraftApi(input: {
+  crisisEventId: string;
+  draftType: string;
+  reasoning: string;
+  payload: Record<string, unknown>;
+}) {
+  return httpClient<{ draft: CopilotDraft }>("/copilot/drafts", "POST", input);
+}
+
+export async function confirmCopilotDraftApi(draftId: string) {
+  return httpClient<{ draft: CopilotDraft; executionResult: unknown }>(`/copilot/drafts/${draftId}/confirm`, "POST");
+}
+
+export async function rejectCopilotDraftApi(draftId: string, reason?: string) {
+  return httpClient<{ draft: CopilotDraft }>(`/copilot/drafts/${draftId}/reject`, "POST", { reason: reason ?? "" });
+}
+
+// ── Claims ───────────────────────────────────────────────────────────────────
+
+export type ClaimSummary = {
+  total: number;
+  byState: Record<string, number>;
+};
+
+export type ClaimContradiction = {
+  id: string;
+  reason: string;
+  fromClaim: { id: string; subject: string; value: string };
+  toClaim: { id: string; subject: string; value: string };
+};
+
+export type ClaimItem = {
+  id: string;
+  claimType: string;
+  subject: string;
+  value: string;
+  unit?: string;
+  evidenceState: string;
+  sourceText?: string;
+  supportCount: number;
+  conflictCount: number;
+  needsHumanDecision: boolean;
+  incidentReport?: { incidentTitle: string } | null;
+};
+
+export type ClaimsResponse = {
+  claims: ClaimItem[];
+  summary: ClaimSummary;
+  contradictions: ClaimContradiction[];
+};
+
+export async function getClaimsForCrisis(crisisEventId: string) {
+  return httpClient<ClaimsResponse>(`/claims/crisis/${crisisEventId}`);
+}
+
+export async function decideClaimApi(claimId: string, decision: string, note?: string) {
+  return httpClient<{ message: string }>(`/claims/${claimId}/decide`, "PATCH", { decision, reason: note ?? "" });
+}
+
+// ── Needs ────────────────────────────────────────────────────────────────────
+// needRoutes are mounted at /needs in the backend.
+
+export async function getNeedsApi(crisisEventId: string) {
+  return httpClient<{ needs: unknown[] }>(`/needs/crisis/${crisisEventId}`);
+}
+
+export async function getNeedsGapApi(crisisEventId: string) {
+  return httpClient<{ gaps: unknown[] }>(`/needs/gap/${crisisEventId}`);
+}
+
+export async function createNeedApi(input: {
+  crisisEventId: string;
+  needType: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  urgency: string;
+}) {
+  return httpClient<{ need: unknown }>("/needs", "POST", input);
+}
+
+// ── Generic API fetch (for pages that use raw fetch) ──────────────────────────
+
+export async function apiFetch(endpoint: string, init?: RequestInit): Promise<Response> {
+  const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) };
+  // Add CSRF header for state-changing requests (double-submit cookie pattern)
+  if (init?.method && ["POST", "PATCH", "PUT", "DELETE"].includes(init.method)) {
+    const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    const csrfToken = csrfMatch?.[1];
+    if (csrfToken) headers["x-csrf-token"] = csrfToken;
+  }
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...init,
+    headers,
+    credentials: "include",
+  });
+
+  // 401: session expired — notify the app to redirect to login
+  if (response.status === 401 && !endpoint.startsWith("/auth/")) {
+    window.dispatchEvent(new CustomEvent("auth:unauthorized"));
+  }
+
+  return response;
+}
+
+export type VelocityMetricsResponse = {
+  claimsLastHour: number;
+  claimsPrevHour: number;
+  velocitySurgePercent: number;
+  escalationRiskScore: number;
+  riskLevel: "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
+  predictiveSummary: string;
+};
+
+export async function getCrisisVelocityApi(crisisEventId: string): Promise<VelocityMetricsResponse> {
+  return httpClient<VelocityMetricsResponse>(`/briefs/crisis/${crisisEventId}/velocity`);
 }

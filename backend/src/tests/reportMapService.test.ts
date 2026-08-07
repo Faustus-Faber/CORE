@@ -21,6 +21,7 @@ describe("getMapIncidentReports", () => {
     prismaMock.crisisEvent.findMany.mockResolvedValue([
       {
         id: "crisis-1",
+        canonicalId: "FLOOD-2026-0001",
         title: "Flood at Mirpur",
         incidentType: "FLOOD",
         severityLevel: "HIGH",
@@ -44,6 +45,7 @@ describe("getMapIncidentReports", () => {
       },
       select: {
         id: true,
+        canonicalId: true,
         title: true,
         incidentType: true,
         severityLevel: true,
@@ -52,7 +54,8 @@ describe("getMapIncidentReports", () => {
         latitude: true,
         longitude: true,
         createdAt: true
-      }
+      },
+      take: 500
     });
     expect(incidents[0].id).toBe("crisis-1");
   });

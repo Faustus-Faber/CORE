@@ -1,21 +1,24 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import type { IncidentType } from "@prisma/client";
+import { mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import type { NextFunction, Request, Response } from "express";
 
-import { publishCriticalIncident } from "../lib/criticalIncidentStream.js";
-import { dispatchNotifications } from "../services/notificationService.js";
 import {
   createIncidentReport,
   listIncidentReports,
-  getIncidentReportById
+  getIncidentReportById,
+  getMapIncidentReports,
+  listCrisisEventsForListView,
+  processReportAsync
 } from "../services/reportService.js";
+import { getReportEvidenceSummary } from "../services/claimService.js";
+import { redactCoordinates } from "../utils/geoRedact.js";
 import {
   validateReportListQueryInput,
   validateReportSubmissionInput
 } from "../utils/validation.js";
+import { metrics } from "../utils/metrics.js";
 
 const objectIdHexPattern = /^[a-fA-F0-9]{24}$/;
 
@@ -68,35 +71,12 @@ async function persistMediaFiles(files: Express.Multer.File[]) {
   );
 }
 
-async function tryDispatchNotifications(report: {
-  id: string;
-  classifiedIncidentType: string;
-  severityLevel: string;
-  classifiedIncidentTitle: string;
-  spamFlagged: boolean;
-}, incidentType: string, description: string, latitude: number | null, longitude: number | null) {
-  if (report.spamFlagged) return;
-
-  try {
-    await dispatchNotifications(
-      report.id,
-      incidentType,
-      report.severityLevel,
-      report.classifiedIncidentTitle,
-      description,
-      latitude,
-      longitude
-    );
-  } catch (error) {
-    console.error("Failed to dispatch notifications:", error);
-  }
-}
-
 export async function createReport(
   request: Request,
   response: Response,
   _next: NextFunction
 ) {
+  const requestStart = Date.now();
   const reporterId = request.authUser?.userId;
   if (!reporterId) {
     return response.status(401).json({ message: "Authentication required" });
@@ -125,46 +105,62 @@ export async function createReport(
 
   const latitude = request.body.latitude ? parseFloat(request.body.latitude) : null;
   const longitude = request.body.longitude ? parseFloat(request.body.longitude) : null;
+  const validLatitude = (latitude != null && Number.isFinite(latitude)) ? latitude : null;
+  const validLongitude = (longitude != null && Number.isFinite(longitude)) ? longitude : null;
 
-  const report = await createIncidentReport({
-    reporterId,
-    incidentTitle: payload.incidentTitle,
-    description: payload.description,
-    incidentType: payload.incidentType,
-    locationText: payload.locationText,
-    latitude,
-    longitude,
-    mediaFiles: storedMediaFiles,
-    voiceFile: voiceFile
-      ? {
-          buffer: voiceFile.buffer,
-          originalname: voiceFile.originalname,
-          mimetype: voiceFile.mimetype,
-          size: voiceFile.size
-        }
-      : undefined
-  });
+  let report;
+  try {
+    report = await createIncidentReport({
+      reporterId,
+      incidentTitle: payload.incidentTitle,
+      description: payload.description,
+      incidentType: payload.incidentType,
+      locationText: payload.locationText,
+      latitude: validLatitude,
+      longitude: validLongitude,
+      mediaFiles: storedMediaFiles,
+      voiceFile: voiceFile
+        ? {
+            buffer: voiceFile.buffer,
+            originalname: voiceFile.originalname,
+            mimetype: voiceFile.mimetype,
+            size: voiceFile.size
+          }
+        : undefined,
+      aiConsent: String(request.body.aiConsent) === "true"
+    });
+  } catch (err) {
+    // P1-2: Clean up orphaned uploads if report creation fails
+    await Promise.allSettled(
+      storedMediaFiles.map((f) => unlink(path.join(process.cwd(), f.originalname)).catch(() => {}))
+    );
+    throw err;
+  }
 
-  await tryDispatchNotifications(
-    report,
-    payload.incidentType as IncidentType,
-    payload.description,
-    latitude,
-    longitude
-  );
+  // FR-02: Return 202 Accepted — the report is persisted and queued for
+  // AI classification, clustering, and notification dispatch asynchronously.
+  const asyncContext = (report as any)._async;
+  const { _async, ...clientReport } = report as any;
 
-  if (report.severityLevel === "CRITICAL") {
-    publishCriticalIncident({
-      incidentId: report.id,
-      latitude,
-      longitude,
-      occurredAt: new Date().toISOString()
+  // Fire-and-forget: AI classification, clustering, and notifications
+  if (asyncContext) {
+    processReportAsync(asyncContext.reportId, {
+      description: asyncContext.description,
+      trimmedTitle: asyncContext.trimmedTitle,
+      trimmedLocation: asyncContext.trimmedLocation,
+      userSelectedIncidentType: asyncContext.userSelectedIncidentType,
+      input: asyncContext.input
+    }).catch((err) => {
+      console.error("[async] processReportAsync failed for report", asyncContext.reportId, err);
     });
   }
 
-  return response.status(201).json({
-    message: "Incident report submitted successfully",
-    report
+  // §15.4: Record report acknowledgement latency (request start → 202 response)
+  metrics.recordReportAck(Date.now() - requestStart);
+
+  return response.status(202).json({
+    message: "Incident report accepted and queued for processing",
+    report: clientReport
   });
 }
 
@@ -210,8 +206,11 @@ export async function getReportDetail(
   }
 
   try {
-    const report = await getIncidentReportById(reportId, viewerId);
-    return response.status(200).json({ report });
+    const report = await getIncidentReportById(reportId, viewerId, request.authUser!.role);
+    // Fetch the real evidence summary from the claims layer — this replaces
+    // the opaque credibilityScore as the primary confidence signal in the UI.
+    const evidenceSummary = await getReportEvidenceSummary(reportId);
+    return response.status(200).json({ report, evidenceSummary });
   } catch {
     return response.status(404).json({ message: "Report not found" });
   }
@@ -242,8 +241,6 @@ export async function listReports(
   return response.status(200).json({ reports });
 }
 
-import { getMapIncidentReports } from "../services/reportService.js";
-
 export async function getMapReports(
   request: Request,
   response: Response
@@ -255,17 +252,66 @@ export async function getMapReports(
   }
 
   const reports = await getMapIncidentReports(viewerId);
+  const viewerRole = request.authUser?.role;
+  const isInternal = viewerRole === "ADMIN" || viewerRole === "VOLUNTEER";
+
+  // FR-14: Public map view uses canonical IDs only; internal viewers see the DB id
+  return response.status(200).json(
+    reports.map((r) => {
+      const coords = redactCoordinates(r.latitude, r.longitude, viewerRole);
+      return {
+        id: isInternal ? r.id : `event-${r.id.slice(-8)}`,
+        canonicalId: (r as any).canonicalId ?? null,
+        title: r.title,
+        type: r.incidentType,
+        severity: r.severityLevel,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        description: r.sitRepText || r.locationText,
+        createdAt: r.createdAt
+      };
+    })
+  );
+}
+
+/**
+ * AC-05.04: Crisis event list view — same data source as the map,
+ * providing an accessible list alternative to the map visualization.
+ */
+export async function listCrisisEvents(
+  request: Request,
+  response: Response
+) {
+  const viewerRole = request.authUser?.role;
+  const { incidentType, severity, search } = request.query;
+
+  const events = await listCrisisEventsForListView({
+    incidentType: incidentType ? String(incidentType) : undefined,
+    severity: severity ? String(severity) : undefined,
+    search: search ? String(search) : undefined,
+  });
+
+  const isInternal = viewerRole === "ADMIN" || viewerRole === "VOLUNTEER";
 
   return response.status(200).json(
-    reports.map((r) => ({
-      id: r.id,
-      title: r.title,
-      type: r.incidentType,
-      severity: r.severityLevel,
-      latitude: r.latitude,
-      longitude: r.longitude,
-      description: r.sitRepText || r.locationText,
-      createdAt: r.createdAt
-    }))
+    events.map((e) => {
+      const coords = redactCoordinates(e.latitude, e.longitude, viewerRole);
+      return {
+        id: isInternal ? e.id : `event-${e.id.slice(-8)}`,
+        canonicalId: e.canonicalId,
+        title: e.title,
+        type: e.incidentType,
+        severity: e.severityLevel,
+        status: e.status,
+        location: e.locationText,
+        sitRep: e.sitRepText,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        reportCount: e.reportCount,
+        reporterCount: e.reporterCount,
+        createdAt: e.createdAt,
+        updatedAt: e.updatedAt,
+      };
+    })
   );
 }

@@ -14,6 +14,7 @@ export function LoginPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (isSubmitting) return;
     setError("");
     setIsSubmitting(true);
 
@@ -27,6 +28,7 @@ export function LoginPage() {
       }
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "Login failed");
+      setPassword("");
     } finally {
       setIsSubmitting(false);
     }

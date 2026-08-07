@@ -1,4 +1,5 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, rmSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import request from "supertest";
@@ -8,16 +9,42 @@ import { signAuthToken } from "../utils/jwt.js";
 
 const createIncidentReportMock = vi.fn();
 const listIncidentReportsMock = vi.fn();
+const processReportAsyncMock = vi.fn().mockResolvedValue(undefined);
+const getIncidentReportByIdMock = vi.fn();
+const getMapIncidentReportsMock = vi.fn().mockResolvedValue([]);
 
 vi.mock("../services/reportService.js", () => {
   return {
     createIncidentReport: createIncidentReportMock,
-    listIncidentReports: listIncidentReportsMock
+    listIncidentReports: listIncidentReportsMock,
+    processReportAsync: processReportAsyncMock,
+    getIncidentReportById: getIncidentReportByIdMock,
+    getMapIncidentReports: getMapIncidentReportsMock
   };
 });
 
+// Mock auth middleware to bypass DB lookup — tests use token claims directly
+vi.mock("../middleware/auth.js", () => ({
+  requireAuth: (req: any, res: any, next: any) => {
+    const bearer = req.headers.authorization;
+    const token = bearer && bearer.startsWith("Bearer ") ? bearer.replace("Bearer ", "") : undefined;
+    if (!token) return res.status(401).json({ message: "Authentication required" });
+    try {
+      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
+      req.authUser = { userId: payload.userId, role: payload.role };
+      next();
+    } catch {
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+  },
+  invalidateUserStatusCache: vi.fn()
+}));
+
 const { app } = await import("../app.js");
-const uploadsDirectory = resolve(process.cwd(), "uploads", "reports");
+
+// P0-19: Use a temporary directory outside the project for test uploads
+// instead of deleting the real uploads/reports directory
+const testUploadsDir = mkdtempSync(resolve(tmpdir(), "core-test-uploads-"));
 
 function buildAuthToken() {
   return signAuthToken(
@@ -30,8 +57,9 @@ describe("report routes", () => {
   beforeEach(() => {
     createIncidentReportMock.mockReset();
     listIncidentReportsMock.mockReset();
-    if (existsSync(uploadsDirectory)) {
-      rmSync(uploadsDirectory, { recursive: true, force: true });
+    // P0-19: Clean the temp directory, not the real project uploads directory
+    if (existsSync(testUploadsDir)) {
+      rmSync(testUploadsDir, { recursive: true, force: true });
     }
   });
 
@@ -46,7 +74,7 @@ describe("report routes", () => {
     expect(response.status).toBe(401);
   });
 
-  it("returns 400 for invalid report payload", async () => {
+  it("returns 422 for invalid report payload", async () => {
     const response = await request(app)
       .post("/api/reports")
       .set("Authorization", `Bearer ${buildAuthToken()}`)
@@ -57,10 +85,10 @@ describe("report routes", () => {
         locationText: ""
       });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(422);
   });
 
-  it("returns 201 for valid report payload", async () => {
+  it("returns 202 for valid report payload", async () => {
     createIncidentReportMock.mockResolvedValue({
       id: "r100",
       incidentTitle: "Flood near bridge",
@@ -83,7 +111,7 @@ describe("report routes", () => {
         locationText: "Dhaka"
       });
 
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(202);
     expect(response.body.report.id).toBe("r100");
     expect(createIncidentReportMock).toHaveBeenCalledOnce();
   });
@@ -110,9 +138,9 @@ describe("report routes", () => {
         incidentType: "FLOOD",
         locationText: "Dhaka"
       })
-      .attach("media", Buffer.from("fake-image"), "evidence.jpg");
+      .attach("media", Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52]), "evidence.png");
 
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(202);
     expect(createIncidentReportMock).toHaveBeenCalledOnce();
 
     const payload = createIncidentReportMock.mock.calls[0]?.[0] as {
@@ -120,7 +148,7 @@ describe("report routes", () => {
     };
     expect(payload.mediaFiles).toHaveLength(1);
     expect(payload.mediaFiles[0].originalname).toMatch(
-      /^\/uploads\/reports\/.+\.jpg$/i
+      /^\/uploads\/reports\/.+\.png$/i
     );
 
     const savedFilePath = resolve(
@@ -162,12 +190,12 @@ describe("report routes", () => {
     );
   });
 
-  it("returns 400 for invalid list query parameters", async () => {
+  it("returns 422 for invalid list query parameters", async () => {
     const response = await request(app)
       .get("/api/reports?sortBy=unsupported")
       .set("Authorization", `Bearer ${buildAuthToken()}`);
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(422);
   });
 
   it("lists current user submissions from /mine", async () => {

@@ -9,9 +9,36 @@ const updateIncidentReportStatusByAdminMock = vi.fn();
 vi.mock("../services/reportService.js", () => {
   return {
     listUnderReviewIncidentReports: listUnderReviewIncidentReportsMock,
-    updateIncidentReportStatusByAdmin: updateIncidentReportStatusByAdminMock
+    updateIncidentReportStatusByAdmin: updateIncidentReportStatusByAdminMock,
+    createIncidentReport: vi.fn(),
+    listIncidentReports: vi.fn(),
+    processReportAsync: vi.fn().mockResolvedValue(undefined),
+    getIncidentReportById: vi.fn(),
+    getMapIncidentReports: vi.fn().mockResolvedValue([])
   };
 });
+
+// Mock auth middleware to bypass DB lookup — tests use token claims directly
+vi.mock("../middleware/auth.js", () => ({
+  requireAuth: (req: any, res: any, next: any) => {
+    const bearer = req.headers.authorization;
+    const token = bearer && bearer.startsWith("Bearer ") ? bearer.replace("Bearer ", "") : undefined;
+    if (!token) return res.status(401).json({ message: "Authentication required" });
+    try {
+      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
+      req.authUser = { userId: payload.userId, role: payload.role };
+      next();
+    } catch {
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+  },
+  invalidateUserStatusCache: vi.fn()
+}));
+
+// Mock audit service to avoid DB access during tests
+vi.mock("../services/auditService.js", () => ({
+  logAuditEvent: vi.fn().mockResolvedValue(undefined)
+}));
 
 const { app } = await import("../app.js");
 
@@ -95,6 +122,6 @@ describe("admin report moderation routes", () => {
       .set("Authorization", `Bearer ${buildToken("ADMIN")}`)
       .send({ status: "ARCHIVED" });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(422);
   });
 });

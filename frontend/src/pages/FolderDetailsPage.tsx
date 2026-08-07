@@ -26,7 +26,7 @@ export function FolderDetailsPage() {
     const [scanningFileId, setScanningFileId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const API_BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:5000/api").replace("/api", "");
+    const API_BASE = (import.meta.env.VITE_API_URL ?? "/api").replace("/api", "") || "";
     
     // Media Popup State
     const [selectedMedia, setSelectedMedia] = useState<string | null>(null);
@@ -40,15 +40,22 @@ export function FolderDetailsPage() {
     // Sharing State
     const [expiration, setExpiration] = useState('24');
     const [shareUrl, setShareUrl] = useState<string | null>(null);
+    const [loadError, setLoadError] = useState('');
 
     useEffect(() => {
-        if (folderId) docService.getFolderDetails(folderId).then((data) => {
+        if (!folderId) return;
+        let cancelled = false;
+        docService.getFolderDetails(folderId).then((data) => {
+            if (cancelled) return;
             setFolder(data);
             if (data.shareLinks && data.shareLinks.length > 0) {
                 const baseUrl = window.location.origin;
                 setShareUrl(`${baseUrl}/shared/${data.shareLinks[0].token}`);
             }
+        }).catch((err) => {
+            if (!cancelled) setLoadError(err instanceof Error ? err.message : "Failed to load folder");
         });
+        return () => { cancelled = true; };
     }, [folderId]);
 
     const handleAddNote = async (e: React.FormEvent) => {
@@ -109,7 +116,11 @@ export function FolderDetailsPage() {
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !folderId) return;
-        if (file.size > 20 * 1024 * 1024) return alert('File must be smaller than 20MB');
+        if (file.size > 20 * 1024 * 1024) {
+            alert('File must be smaller than 20MB');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
 
         setUploading(true);
         try {
@@ -159,6 +170,7 @@ export function FolderDetailsPage() {
         }
     };
 
+    if (loadError) return <div className="p-10 text-red-600">{loadError}</div>;
     if (!folder) return <div className="p-10 text-slate-500">Loading folder data...</div>;
 
     return (

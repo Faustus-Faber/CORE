@@ -128,7 +128,7 @@ export function ReviewForm({ volunteerId, eligibleCrises, onSuccess }: Props) {
         }
     };
 
-    const maxDate = new Date().toISOString().split("T")[0];
+    const maxDate = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0];
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">

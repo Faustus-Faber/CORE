@@ -10,11 +10,23 @@ import type {
 
 import { prisma } from "../lib/prisma.js";
 import { generateText } from "../services/aiService.js";
+import { SafeError } from "../utils/SafeError.js";
 import {
   dispatchCrisisUpdateNotifications,
   promptAdminsForNgoReport
 } from "./notificationService.js";
 import { triggerDispatchAlertsForCrisis } from "./dispatchAlertService.js";
+import { isTraineeResponder } from "./crisisResponderService.js";
+import {
+  assertCanSubmitUpdateType,
+  shouldFlagUpdate,
+  checkAndPromoteTrustTier,
+} from "./trustTierService.js";
+import type { TrustTier } from "@prisma/client";
+
+// P1-10: In-memory cache for situation reports keyed by crisisEventId:version.
+// Avoids redundant LLM calls when the crisis version hasn't changed.
+const sitRepCache = new Map<string, string>();
 
 const STATUS_ORDER = [
   "REPORTED",
@@ -67,6 +79,7 @@ export type CrisisUpdateEntry = {
   crisisEventId: string;
   updaterId: string;
   updaterName: string;
+  updaterTrustTier: string | null;
   previousStatus: string;
   newStatus: string;
   updateType: CrisisUpdateType;
@@ -107,6 +120,8 @@ type TimelineRecord = Prisma.CrisisEventUpdateGetPayload<{
     updater: {
       select: {
         fullName: true;
+        trustTier: true;
+        role: true;
       };
     };
   };
@@ -229,6 +244,7 @@ function mapUpdateEntry(entry: TimelineRecord): CrisisUpdateEntry {
     crisisEventId: entry.crisisEventId,
     updaterId: entry.updaterId,
     updaterName: entry.updater.fullName,
+    updaterTrustTier: entry.updater.role === "ADMIN" ? "ADMIN" : entry.updater.trustTier,
     previousStatus: entry.previousStatus,
     newStatus: entry.newStatus,
     updateType,
@@ -256,20 +272,30 @@ async function loadTimelineEntries(
   sortOrder: "asc" | "desc" = "asc",
   acceptedOnly = false
 ): Promise<TimelineRecord[]> {
-  return prisma.crisisEventUpdate.findMany({
-    where: {
-      crisisEventId,
-      ...(acceptedOnly ? { isFlagged: false, dismissedAt: null } : {})
-    },
+  // Fetch all entries for the crisis without filtering on isFlagged/dismissedAt
+  // at the MongoDB level. Seeded records may not have these fields explicitly
+  // stored (MongoDB omits unset fields), so a query like { isFlagged: false }
+  // would incorrectly exclude them. Filter in memory instead.
+  const entries = await prisma.crisisEventUpdate.findMany({
+    where: { crisisEventId },
     orderBy: { createdAt: sortOrder },
+    take: 200,
     include: {
       updater: {
         select: {
-          fullName: true
+          fullName: true,
+          trustTier: true,
+          role: true
         }
       }
     }
   });
+
+  if (!acceptedOnly) return entries;
+
+  return entries.filter(
+    (entry) => !entry.isFlagged && entry.dismissedAt === null
+  );
 }
 
 async function assertCanSubmitCrisisUpdate(
@@ -277,36 +303,27 @@ async function assertCanSubmitCrisisUpdate(
   userId: string,
   updateType: CrisisUpdateType,
   targetStatus: CrisisEventStatus
-): Promise<"ADMIN" | "VOLUNTEER"> {
-  const actor = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { role: true, isBanned: true }
+): Promise<{ actorRole: "ADMIN" | "VOLUNTEER"; tier: TrustTier }> {
+  // Trust tier check (replaces old responder approval logic)
+  const { actorRole, tier } = await assertCanSubmitUpdateType(userId, updateType, targetStatus);
+
+  if (actorRole === "ADMIN") {
+    return { actorRole: "ADMIN", tier };
+  }
+
+  // P1-6: Prevent volunteers from updating resolved or closed crises
+  const crisis = await prisma.crisisEvent.findUnique({
+    where: { id: crisisEventId },
+    select: { status: true }
   });
-
-  if (!actor || actor.isBanned) {
-    throw new Error("Account is not allowed to publish field intelligence");
+  if (!crisis) {
+    throw new SafeError("Crisis event not found");
+  }
+  if (FINAL_STATUSES.includes(crisis.status)) {
+    throw new SafeError("Cannot submit updates on a resolved or closed crisis");
   }
 
-  if (updateType === "RESPONDER_STATUS") {
-    throw new Error("Responder timeline entries are generated automatically");
-  }
-
-  if (actor.role === "ADMIN") {
-    return "ADMIN";
-  }
-
-  if (actor.role !== "VOLUNTEER") {
-    throw new Error("Only admins or active crisis responders can publish field intelligence");
-  }
-
-  if (updateType === "ADMIN_CORRECTION") {
-    throw new Error("Only admins can publish correction notes");
-  }
-
-  if (targetStatus === "CLOSED") {
-    throw new Error("Only admins can close a crisis");
-  }
-
+  // Volunteers must be opted into the crisis as an active responder
   const responder = await prisma.crisisResponder.findFirst({
     where: {
       crisisEventId,
@@ -317,10 +334,10 @@ async function assertCanSubmitCrisisUpdate(
   });
 
   if (!responder) {
-    throw new Error("Opt in to this crisis before publishing field intelligence");
+    throw new SafeError("Opt in to this crisis before publishing field intelligence");
   }
 
-  return "VOLUNTEER";
+  return { actorRole: "VOLUNTEER", tier };
 }
 
 function assertUpdateStructure(
@@ -331,7 +348,7 @@ function assertUpdateStructure(
   const statusChanged = input.status !== currentStatus;
 
   if (input.updateType === "STATUS_CHANGE" && !statusChanged) {
-    throw new Error("Choose a new status for a status change");
+    throw new SafeError("Choose a new status for a status change");
   }
 
   if (
@@ -339,23 +356,23 @@ function assertUpdateStructure(
     input.updateType !== "CLOSURE_NOTE" &&
     statusChanged
   ) {
-    throw new Error("Only status changes or closure notes can change the crisis status");
+    throw new SafeError("Only status changes or closure notes can change the crisis status");
   }
 
   if (input.updateType === "ADMIN_CORRECTION" && input.status !== currentStatus) {
-    throw new Error("Correction notes cannot change the crisis status");
+    throw new SafeError("Correction notes cannot change the crisis status");
   }
 
   if (input.updateType === "CLOSURE_NOTE" && !input.closureChecklist) {
-    throw new Error("Closure checklist is required for closure notes");
+    throw new SafeError("Closure checklist is required for closure notes");
   }
 
   if (FINAL_STATUSES.includes(input.status) && !isClosureChecklistComplete(input.closureChecklist)) {
-    throw new Error("Closure checklist must confirm safety, accountability, and urgent needs");
+    throw new SafeError("Closure checklist must confirm safety, accountability, and urgent needs");
   }
 
   if (input.status === "CLOSED" && actorRole !== "ADMIN") {
-    throw new Error("Only admins can close a crisis");
+    throw new SafeError("Only admins can close a crisis");
   }
 }
 
@@ -435,17 +452,17 @@ Severity: ${crisisEvent.severityLevel}
 Location: ${crisisEvent.locationText}
 Current Status: ${crisisEvent.status}
 
-Verified Command Timeline:
+Verified Command Timeline (each entry includes its source):
 ${updates.map((entry) => buildTimelineContext(entry)).join("\n")}
 
 Output format (strict Markdown):
 - Line 1: a single **bold** one-sentence headline describing the current state (under 25 words).
 - Blank line.
-- A short paragraph (2 to 3 sentences) summarising the latest verified situation.
+- A short paragraph (2 to 3 sentences) summarising the latest verified situation. Cite sources inline using [Source: <role/entry-type> <time>] notation.
 - Blank line.
-- 3 to 5 bullet points starting with "- " describing current field intelligence, responder posture, access constraints, or outstanding needs.
+- 3 to 5 bullet points starting with "- " describing current field intelligence, responder posture, access constraints, or outstanding needs. Each bullet must end with a source attribution in [Source: ...] format.
 - Do not use headings, numbered lists, code fences, links, or any preamble.
-- Total length between 120 and 220 words.
+- Total length between 120 and 250 words.
 
 Return only the Markdown content.`;
 
@@ -460,6 +477,17 @@ export async function refreshSituationSummary(crisisEventId: string): Promise<vo
   const updated = await prisma.crisisEvent.findUnique({ where: { id: crisisEventId } });
   if (!updated) return;
 
+  // P1-10: Skip regeneration if we already have a cached sitRep for this version
+  const cacheKey = `${crisisEventId}:${updated.version}`;
+  const cached = sitRepCache.get(cacheKey);
+  if (cached) {
+    await prisma.crisisEvent.update({
+      where: { id: crisisEventId },
+      data: { sitRepText: cached }
+    });
+    return;
+  }
+
   const sitRepText = await generateSituationSummary(crisisEventId, {
     title: updated.title,
     incidentType: updated.incidentType,
@@ -469,6 +497,13 @@ export async function refreshSituationSummary(crisisEventId: string): Promise<vo
   });
 
   if (sitRepText) {
+    sitRepCache.set(cacheKey, sitRepText);
+    // Clean up old cache entries for this crisis (keep only the latest version)
+    for (const key of sitRepCache.keys()) {
+      if (key.startsWith(`${crisisEventId}:`) && key !== cacheKey) {
+        sitRepCache.delete(key);
+      }
+    }
     await prisma.crisisEvent.update({
       where: { id: crisisEventId },
       data: { sitRepText }
@@ -500,21 +535,71 @@ async function publishUpdateSideEffects(
   }
 }
 
+// ── Conflict detection: simultaneous conflicting status changes ─────────────
+const CONFLICT_WINDOW_MINUTES = 5;
+
+/**
+ * Check if another volunteer submitted a STATUS_CHANGE with a different target
+ * status within the last CONFLICT_WINDOW_MINUTES minutes. If found, flag those
+ * existing updates as PENDING_REVIEW so the admin can resolve the conflict.
+ *
+ * Returns true if a conflict was found (the new update should also be flagged).
+ */
+async function checkSimultaneousConflict(
+  crisisEventId: string,
+  currentVolunteerId: string,
+  newTargetStatus: CrisisEventStatus
+): Promise<boolean> {
+  const cutoff = new Date(Date.now() - CONFLICT_WINDOW_MINUTES * 60 * 1000);
+
+  const recentConflicting = await prisma.crisisEventUpdate.findMany({
+    where: {
+      crisisEventId,
+      updaterId: { not: currentVolunteerId },
+      updateType: "STATUS_CHANGE",
+      newStatus: { not: newTargetStatus },
+      createdAt: { gte: cutoff },
+      isFlagged: false,
+      dismissedAt: null
+    },
+    select: { id: true }
+  });
+
+  if (recentConflicting.length === 0) return false;
+
+  // Flag the existing conflicting updates for admin review
+  await prisma.crisisEventUpdate.updateMany({
+    where: { id: { in: recentConflicting.map((u) => u.id) } },
+    data: { isFlagged: true }
+  });
+
+  return true;
+}
+
 export async function submitCrisisUpdate(
   crisisEventId: string,
   userId: string,
   _userRole: string,
-  input: ValidatedCrisisUpdateInput
+  input: ValidatedCrisisUpdateInput,
+  expectedVersion?: number
 ): Promise<{ entry: CrisisUpdateEntry; applied: boolean }> {
   const crisisEvent = await prisma.crisisEvent.findUnique({
     where: { id: crisisEventId }
   });
 
   if (!crisisEvent) {
-    throw new Error("Crisis event not found");
+    throw new SafeError("Crisis event not found");
   }
 
-  const actorRole = await assertCanSubmitCrisisUpdate(
+  // FR-07: Optimistic concurrency — reject if the client's expected version
+  // doesn't match the current version (another update was applied in the meantime)
+  if (expectedVersion != null && crisisEvent.version !== expectedVersion) {
+    throw new SafeError(
+      `Conflict: crisis event version mismatch (expected ${expectedVersion}, current ${crisisEvent.version}). Please refresh and retry.`
+    );
+  }
+
+  const { actorRole, tier } = await assertCanSubmitCrisisUpdate(
     crisisEventId,
     userId,
     input.updateType,
@@ -525,12 +610,47 @@ export async function submitCrisisUpdate(
 
   const previousStatus = crisisEvent.status;
   const statusChanged = input.status !== previousStatus;
-  const isFlagged = actorRole !== "ADMIN" && statusChanged && isConflictingTransition(previousStatus, input.status);
+  const isConflictingStatus = actorRole !== "ADMIN" && statusChanged && isConflictingTransition(previousStatus, input.status);
+
+  // ── Conflict detection: check for simultaneous conflicting status changes ──
+  // If another volunteer submitted a STATUS_CHANGE with a different target
+  // status within the last 5 minutes, flag BOTH updates for admin review.
+  let hasSimultaneousConflict = false;
+  if (actorRole === "VOLUNTEER" && statusChanged) {
+    hasSimultaneousConflict = await checkSimultaneousConflict(crisisEventId, userId, input.status);
+  }
+
+  // Trust tier-based flagging: trainees' first N observations are flagged,
+  // then auto-approved (trust earned through track record).
+  // Responders/Veterans are not flagged (unless conflict detection triggers).
+  const shouldFlagTrainee = await shouldFlagUpdate(userId, input.updateType, tier);
+
+  const isFlagged = isConflictingStatus || hasSimultaneousConflict || shouldFlagTrainee;
   const verificationStatus =
-    actorRole === "ADMIN" ? "ADMIN_CONFIRMED" : "RESPONDER_CONFIRMED";
+    actorRole === "ADMIN"
+      ? "ADMIN_CONFIRMED"
+      : shouldFlagTrainee
+        ? "SELF_REPORTED"
+        : "RESPONDER_CONFIRMED";
   const reviewState: CrisisUpdateReviewState = isFlagged ? "PENDING_REVIEW" : "ACTIVE";
 
+  // Validate update note length to prevent abuse and storage bloat
+  if (input.updateNote && input.updateNote.length > 5000) {
+    throw new SafeError("Update note must be 5000 characters or less");
+  }
+
   const entry = await prisma.$transaction(async (tx) => {
+    // FR-07: Re-check version inside the transaction to prevent race conditions
+    const current = await tx.crisisEvent.findUnique({
+      where: { id: crisisEventId },
+      select: { version: true }
+    });
+    if (current && expectedVersion != null && current.version !== expectedVersion) {
+      throw new SafeError(
+        `Conflict: crisis event version mismatch (expected ${expectedVersion}, current ${current.version}). Please refresh and retry.`
+      );
+    }
+
     const created = await tx.crisisEventUpdate.create({
       data: {
         crisisEventId,
@@ -555,7 +675,9 @@ export async function submitCrisisUpdate(
       include: {
         updater: {
           select: {
-            fullName: true
+            fullName: true,
+            trustTier: true,
+            role: true
           }
         }
       }
@@ -566,9 +688,36 @@ export async function submitCrisisUpdate(
         where: { id: crisisEventId },
         data: {
           ...(statusChanged ? { status: input.status } : {}),
-          ...(input.newSeverity ? { severityLevel: input.newSeverity } : {})
+          ...(input.newSeverity ? { severityLevel: input.newSeverity } : {}),
+          // FR-07: Increment version on each applied update
+          version: { increment: 1 }
         }
       });
+    }
+
+    // If this is a RESOURCE_NEED update, create Need records
+    // from the resource needs tags so they appear in the workspace and can be assigned.
+    // This runs for both active and flagged (trainee) updates — resource needs are
+    // always actionable even if the update itself is pending review.
+    if (input.updateType === "RESOURCE_NEED") {
+      // Use structured resourceNeeds if provided, otherwise fall back to parsing the update note
+      const needTags = (input.resourceNeeds && input.resourceNeeds.length > 0)
+        ? input.resourceNeeds
+        : (input.updateNote?.trim() ? [input.updateNote.trim()] : []);
+
+      for (const needTag of needTags) {
+        await tx.need.create({
+          data: {
+            crisisEventId,
+            needType: needTag,
+            description: input.updateNote?.trim() || `Resource need reported by ${created.updater.fullName}`,
+            quantity: 1,
+            unit: "units",
+            urgency: "HIGH",
+            isMet: false
+          }
+        });
+      }
     }
 
     return created;
@@ -576,22 +725,54 @@ export async function submitCrisisUpdate(
 
   const mappedEntry = mapUpdateEntry(entry);
 
+  // P0-11: Side effects are fire-and-forget — the primary transaction has already committed.
+  // Failures in notifications, AI summaries, or dispatch alerts do NOT cause the client
+  // to receive an error (which would lead to retries and duplicate timeline entries).
   if (reviewState === "ACTIVE") {
-    await refreshSituationSummary(crisisEventId);
-    await publishUpdateSideEffects(
-      crisisEventId,
-      buildNotificationLabel(input.updateType, input.status, statusChanged),
-      input.updateNote
-    );
+    // Run side effects asynchronously without blocking the response
+    Promise.resolve().then(async () => {
+      try {
+        await refreshSituationSummary(crisisEventId);
+      } catch (err) {
+        console.error("[side-effect] Failed to refresh situation summary:", err);
+      }
 
-    const currentSeverity = input.newSeverity ?? crisisEvent.severityLevel;
-    if (
-      statusChanged &&
-      input.status === "VERIFIED" &&
-      (currentSeverity === "CRITICAL" || currentSeverity === "HIGH")
-    ) {
-      triggerDispatchAlertsForCrisis(crisisEventId).catch(console.error);
-    }
+      try {
+        await publishUpdateSideEffects(
+          crisisEventId,
+          buildNotificationLabel(input.updateType, input.status, statusChanged),
+          input.updateNote
+        );
+      } catch (err) {
+        console.error("[side-effect] Failed to publish update side effects:", err);
+      }
+
+      const currentSeverity = input.newSeverity ?? crisisEvent.severityLevel;
+      if (
+        statusChanged &&
+        input.status === "VERIFIED" &&
+        (currentSeverity === "CRITICAL" || currentSeverity === "HIGH")
+      ) {
+        try {
+          await triggerDispatchAlertsForCrisis(crisisEventId);
+        } catch (err) {
+          console.error("[side-effect] Failed to trigger dispatch alerts:", err);
+        }
+      }
+    }).catch(() => {});
+  }
+
+  // If this update was flagged due to a simultaneous conflict, run AI analysis
+  // to compare the conflicting updates against the timeline and recommend
+  // which one is more likely correct. The recommendation is stored for admin review.
+  if (hasSimultaneousConflict) {
+    Promise.resolve().then(async () => {
+      try {
+        await generateConflictResolution(crisisEventId, entry.id, userId);
+      } catch (err) {
+        console.error("[side-effect] Failed to generate AI conflict resolution:", err);
+      }
+    }).catch(() => {});
   }
 
   return {
@@ -604,9 +785,13 @@ export async function submitCrisisUpdate(
 }
 
 export async function getCrisisUpdates(
-  crisisEventId: string
+  crisisEventId: string,
+  viewerRole?: string
 ): Promise<CrisisUpdateEntry[]> {
-  const updates = await loadTimelineEntries(crisisEventId, "asc");
+  // P1-7: Exclude pending/dismissed field updates from public timelines
+  // Admins see everything; other roles only see ACTIVE (non-flagged, non-dismissed) entries
+  const acceptedOnly = viewerRole !== "ADMIN";
+  const updates = await loadTimelineEntries(crisisEventId, "asc", acceptedOnly);
   return updates.map(mapUpdateEntry);
 }
 
@@ -617,7 +802,8 @@ export async function getCrisisCommandCenter(
     loadTimelineEntries(crisisEventId, "desc", true),
     prisma.crisisResponder.findMany({
       where: { crisisEventId },
-      select: { status: true }
+      select: { status: true },
+      take: 500
     })
   ]);
 
@@ -691,6 +877,67 @@ export async function dismissFlaggedUpdate(
   });
 }
 
+/**
+ * Admin approves a flagged update (typically from a trainee).
+ * Unflags the update and awards points to the volunteer who submitted it.
+ * Points: FIELD_OBSERVATION = +10, RESOURCE_NEED = +5, other = +5
+ */
+export async function approveFlaggedUpdate(
+  updateId: string,
+  adminId: string
+): Promise<{ pointsAwarded: number }> {
+  const update = await prisma.crisisEventUpdate.findUnique({
+    where: { id: updateId },
+    select: { id: true, updaterId: true, updateType: true, isFlagged: true }
+  });
+
+  if (!update) throw new SafeError("Update not found");
+  if (!update.isFlagged) throw new SafeError("Update is not flagged");
+
+  // Award points based on update type
+  const POINTS_MAP: Record<string, number> = {
+    FIELD_OBSERVATION: 10,
+    RESOURCE_NEED: 5,
+    STATUS_CHANGE: 15,
+    ACCESS_UPDATE: 5,
+    IMPACT_UPDATE: 10,
+    CLOSURE_NOTE: 20,
+    ADMIN_CORRECTION: 0
+  };
+  const pointsAwarded = (update.updateType && POINTS_MAP[update.updateType]) ?? 5;
+
+  await prisma.$transaction(async (tx) => {
+    // Unflag the update
+    await tx.crisisEventUpdate.update({
+      where: { id: updateId },
+      data: {
+        isFlagged: false,
+        dismissedById: adminId,
+        dismissedAt: new Date(),
+        verificationStatus: "ADMIN_CONFIRMED"
+      }
+    });
+
+    // Award points to the volunteer
+    await tx.user.update({
+      where: { id: update.updaterId },
+      data: { totalPoints: { increment: pointsAwarded } }
+    });
+  });
+
+  // Check for trust tier promotion and badges (non-critical, fire-and-forget)
+  try {
+    const { checkAndAwardBadges } = await import("./timesheetService.js");
+    const { checkAndPromoteTrustTier } = await import("./trustTierService.js");
+    await checkAndAwardBadges(update.updaterId);
+    await checkAndPromoteTrustTier(update.updaterId);
+  } catch (err) {
+    console.error("[approve-flagged] Trust tier promotion/badge check failed:", err);
+  }
+
+  return { pointsAwarded };
+}
+
 export async function revertCrisisStatus(
   crisisEventId: string,
   targetStatus: string,
@@ -698,26 +945,29 @@ export async function revertCrisisStatus(
   note: string
 ): Promise<void> {
   if (!isValidCrisisStatus(targetStatus)) {
-    throw new Error("Invalid target status");
+    throw new SafeError("Invalid target status");
   }
 
-  const crisisEvent = await prisma.crisisEvent.findUnique({
-    where: { id: crisisEventId },
-    select: { status: true }
-  });
+  // Read the current status inside the transaction to ensure the
+  // previousStatus recorded in the audit trail is accurate.
+  await prisma.$transaction(async (tx) => {
+    const crisisEvent = await tx.crisisEvent.findUnique({
+      where: { id: crisisEventId },
+      select: { status: true }
+    });
 
-  if (!crisisEvent) {
-    throw new Error("Crisis event not found");
-  }
+    if (!crisisEvent) {
+      throw new SafeError("Crisis event not found");
+    }
 
-  const previousStatus = crisisEvent.status;
+    const previousStatus = crisisEvent.status;
 
-  await prisma.$transaction([
-    prisma.crisisEvent.update({
+    await tx.crisisEvent.update({
       where: { id: crisisEventId },
       data: { status: targetStatus }
-    }),
-    prisma.crisisEventUpdate.create({
+    });
+
+    await tx.crisisEventUpdate.create({
       data: {
         crisisEventId,
         updaterId: adminId,
@@ -728,8 +978,8 @@ export async function revertCrisisStatus(
         verificationStatus: "ADMIN_CONFIRMED",
         isFlagged: false
       }
-    })
-  ]);
+    });
+  });
 
   await refreshSituationSummary(crisisEventId);
   await publishUpdateSideEffects(
@@ -738,3 +988,256 @@ export async function revertCrisisStatus(
     note.trim()
   );
 }
+
+// ── AI-assisted conflict resolution ─────────────────────────────────────────
+
+/**
+ * When two volunteers submit conflicting status changes within 5 minutes,
+ * AI analyzes both updates against the existing timeline and volunteer
+ * reputation to recommend which is more likely correct.
+ *
+ * The recommendation is stored in a ConflictResolution record for the admin
+ * to review when making their final decision.
+ */
+async function generateConflictResolution(
+  crisisEventId: string,
+  newUpdateId: string,
+  newUpdateAuthorId: string
+): Promise<void> {
+  const cutoff = new Date(Date.now() - CONFLICT_WINDOW_MINUTES * 60 * 1000);
+
+  // Fetch all flagged updates in the conflict window (including the new one)
+  const conflictingUpdates = await prisma.crisisEventUpdate.findMany({
+    where: {
+      crisisEventId,
+      isFlagged: true,
+      dismissedAt: null,
+      createdAt: { gte: cutoff }
+    },
+    include: {
+      updater: {
+        select: {
+          id: true,
+          fullName: true,
+          trustTier: true,
+          role: true,
+          totalPoints: true,
+          totalVerifiedHours: true,
+          badges: { select: { badgeType: true } }
+        }
+      }
+    },
+    orderBy: { createdAt: "asc" }
+  });
+
+  if (conflictingUpdates.length < 2) return;
+
+  // Fetch recent timeline context (last 10 non-flagged updates before the conflict)
+  const contextUpdates = await prisma.crisisEventUpdate.findMany({
+    where: {
+      crisisEventId,
+      isFlagged: false,
+      dismissedAt: null,
+      createdAt: { lt: cutoff }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+    select: {
+      updateNote: true,
+      newStatus: true,
+      updateType: true,
+      createdAt: true,
+      updater: { select: { fullName: true, trustTier: true, role: true } }
+    }
+  });
+
+  const crisis = await prisma.crisisEvent.findUnique({
+    where: { id: crisisEventId },
+    select: { title: true, status: true, incidentType: true, locationText: true }
+  });
+
+  if (!crisis) return;
+
+  // Build the prompt for AI analysis
+  const timelineContext = contextUpdates
+    .map((u) => `[${u.createdAt.toISOString()}] ${u.updater.fullName}: "${u.updateNote}" (status: ${u.newStatus})`)
+    .join("\n");
+
+  const conflictDescriptions = conflictingUpdates
+    .map((u, i) => {
+      const badges = u.updater.badges.map((b) => b.badgeType).join(", ") || "none";
+      return `Update ${i + 1}:
+  - Author: ${u.updater.fullName}
+  - Reputation: ${u.updater.totalPoints} points, ${u.updater.totalVerifiedHours} verified hours, badges: ${badges}
+  - Proposed status: ${u.newStatus}
+  - Note: "${u.updateNote}"
+  - Submitted at: ${u.createdAt.toISOString()}`;
+    })
+    .join("\n\n");
+
+  const prompt = `You are a crisis management AI assistant. Two volunteers have submitted conflicting status changes for the same crisis event within 5 minutes. Analyze the conflicting updates against the existing timeline and volunteer reputation to recommend which update is more likely correct.
+
+CRISIS EVENT:
+- Title: ${crisis.title}
+- Type: ${crisis.incidentType}
+- Location: ${crisis.locationText || "unknown"}
+- Current status: ${crisis.status}
+
+EXISTING TIMELINE (most recent first):
+${timelineContext || "No prior updates."}
+
+CONFLICTING UPDATES:
+${conflictDescriptions}
+
+Based on:
+1. Which update is more consistent with the existing timeline evidence?
+2. Which volunteer has higher reputation (points, verified hours, badges)?
+3. Which proposed status is more plausible given the crisis type and current status?
+4. Are there any red flags in either update (vague notes, unrealistic transitions)?
+
+Respond in JSON format:
+{
+  "recommendedUpdateIndex": <1-based index of the recommended update>,
+  "recommendation": "<one paragraph summary of which update to trust>",
+  "reasoning": "<detailed reasoning considering timeline, reputation, and plausibility>"
+}`;
+
+  try {
+    const aiResponse = await generateText(prompt, {
+      maxTokens: 16000,
+      temperature: 0.3,
+      reasoning: "none"
+    });
+
+    // Parse the AI response
+    let parsed: { recommendedUpdateIndex?: number; recommendation?: string; reasoning?: string };
+    try {
+      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+    } catch {
+      parsed = { recommendation: aiResponse.slice(0, 500) };
+    }
+
+    const recommendedIndex = (parsed.recommendedUpdateIndex ?? 1) - 1;
+    const recommendedUpdate = conflictingUpdates[Math.min(Math.max(recommendedIndex, 0), conflictingUpdates.length - 1)];
+
+    // Store the conflict resolution
+    await prisma.conflictResolution.create({
+      data: {
+        crisisEventId,
+        updateIds: conflictingUpdates.map((u) => u.id),
+        recommendation: parsed.recommendation ?? "AI analysis completed but could not generate recommendation.",
+        recommendedUpdateId: recommendedUpdate?.id ?? null,
+        reasoning: parsed.reasoning ?? null
+      }
+    });
+
+    console.log(`[conflict-resolution] AI analyzed ${conflictingUpdates.length} conflicting updates for crisis ${crisisEventId}`);
+  } catch (err) {
+    console.error("[conflict-resolution] AI analysis failed:", err);
+  }
+}
+
+/**
+ * List unresolved conflict resolutions for admin review.
+ */
+export async function getUnresolvedConflicts(crisisEventId?: string): Promise<{
+  id: string;
+  crisisEventId: string;
+  crisisTitle: string;
+  recommendation: string;
+  reasoning: string | null;
+  recommendedUpdateId: string | null;
+  updateIds: string[];
+  resolved: boolean;
+  createdAt: string;
+}[]> {
+  const conflicts = await prisma.conflictResolution.findMany({
+    where: {
+      ...(crisisEventId ? { crisisEventId } : {}),
+      resolved: false
+    },
+    include: {
+      crisisEvent: { select: { title: true } }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50
+  });
+
+  return conflicts.map((c) => ({
+    id: c.id,
+    crisisEventId: c.crisisEventId,
+    crisisTitle: c.crisisEvent.title,
+    recommendation: c.recommendation,
+    reasoning: c.reasoning,
+    recommendedUpdateId: c.recommendedUpdateId,
+    updateIds: c.updateIds,
+    resolved: c.resolved,
+    createdAt: c.createdAt.toISOString()
+  }));
+}
+
+/**
+ * Admin resolves a conflict by choosing which update to accept.
+ * The chosen update is unflagged and applied; the others are dismissed.
+ */
+export async function resolveConflict(
+  conflictId: string,
+  acceptedUpdateId: string,
+  adminId: string
+): Promise<void> {
+  const conflict = await prisma.conflictResolution.findUnique({
+    where: { id: conflictId },
+    include: { crisisEvent: { select: { status: true } } }
+  });
+
+  if (!conflict) throw new SafeError("Conflict resolution not found");
+  if (conflict.resolved) throw new SafeError("Conflict already resolved");
+
+  const rejectedUpdateIds = conflict.updateIds.filter((id) => id !== acceptedUpdateId);
+
+  await prisma.$transaction(async (tx) => {
+    // Unflag the accepted update and apply its status change
+    const accepted = await tx.crisisEventUpdate.findUnique({
+      where: { id: acceptedUpdateId },
+      select: { newStatus: true, previousStatus: true }
+    });
+
+    if (accepted && accepted.newStatus !== accepted.previousStatus) {
+      await tx.crisisEvent.update({
+        where: { id: conflict.crisisEventId },
+        data: { status: accepted.newStatus, version: { increment: 1 } }
+      });
+    }
+
+    await tx.crisisEventUpdate.update({
+      where: { id: acceptedUpdateId },
+      data: { isFlagged: false }
+    });
+
+    // Dismiss the rejected updates
+    if (rejectedUpdateIds.length > 0) {
+      await tx.crisisEventUpdate.updateMany({
+        where: { id: { in: rejectedUpdateIds } },
+        data: {
+          isFlagged: false,
+          dismissedById: adminId,
+          dismissedAt: new Date()
+        }
+      });
+    }
+
+    // Mark the conflict as resolved
+    await tx.conflictResolution.update({
+      where: { id: conflictId },
+      data: {
+        resolved: true,
+        resolvedById: adminId,
+        resolvedAt: new Date()
+      }
+    });
+  });
+
+  await refreshSituationSummary(conflict.crisisEventId);
+}
+

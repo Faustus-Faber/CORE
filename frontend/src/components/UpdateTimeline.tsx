@@ -1,7 +1,8 @@
 import { useState } from "react";
 
-import { dismissFlaggedUpdate } from "../services/api";
+import { dismissFlaggedUpdate, approveFlaggedUpdateApi } from "../services/api";
 import { severityBadgeClass } from "../utils/incident";
+import { TrustTierBadge } from "./TrustTierBadge";
 import type { CrisisUpdateEntry, IncidentSeverity } from "../types";
 
 type UpdateTimelineProps = {
@@ -48,6 +49,7 @@ export function UpdateTimeline({
   onRefresh
 }: UpdateTimelineProps) {
   const [dismissingId, setDismissingId] = useState<string | null>(null);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   if (entries.length === 0) {
@@ -72,6 +74,23 @@ export function UpdateTimeline({
       );
     } finally {
       setDismissingId(null);
+    }
+  };
+
+  const handleApprove = async (entryId: string) => {
+    setApprovingId(entryId);
+    setError("");
+    try {
+      await approveFlaggedUpdateApi(entryId);
+      onRefresh?.();
+    } catch (approveError) {
+      setError(
+        approveError instanceof Error
+          ? approveError.message
+          : "Failed to approve command update"
+      );
+    } finally {
+      setApprovingId(null);
     }
   };
 
@@ -103,6 +122,7 @@ export function UpdateTimeline({
                   <span className="text-sm font-semibold text-ink">
                     {entry.updaterName}
                   </span>
+                  <TrustTierBadge tier={entry.updaterTrustTier} />
                   <span className="text-xs text-slate-400">
                     {new Date(entry.createdAt).toLocaleString()}
                   </span>
@@ -249,14 +269,24 @@ export function UpdateTimeline({
               </div>
 
               {isAdmin && entry.reviewState === "PENDING_REVIEW" && (
-                <button
-                  type="button"
-                  onClick={() => void handleDismiss(entry.id)}
-                  disabled={dismissingId === entry.id}
-                  className="flex-shrink-0 rounded-xl border border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60"
-                >
-                  {dismissingId === entry.id ? "Dismissing..." : "Dismiss"}
-                </button>
+                <div className="flex flex-shrink-0 flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleApprove(entry.id)}
+                    disabled={approvingId === entry.id}
+                    className="rounded-xl border border-emerald-500 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
+                  >
+                    {approvingId === entry.id ? "Approving..." : "Approve (+pts)"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDismiss(entry.id)}
+                    disabled={dismissingId === entry.id}
+                    className="rounded-xl border border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60"
+                  >
+                    {dismissingId === entry.id ? "Dismissing..." : "Dismiss"}
+                  </button>
+                </div>
               )}
             </div>
           </article>

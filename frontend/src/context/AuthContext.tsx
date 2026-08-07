@@ -45,6 +45,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void refreshUser();
   }, [refreshUser]);
 
+  // Listen for 401 events from the API client — clear user on session expiry
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setUser(null);
+      setIsLoading(false);
+    };
+    window.addEventListener("auth:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("auth:unauthorized", handleUnauthorized);
+  }, []);
+
   const loginUser = useCallback(async (payload: LoginPayload) => {
     const { user: loggedInUser } = await loginUserRequest(payload);
     setUser(loggedInUser);
@@ -54,6 +64,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logoutUser = useCallback(async () => {
     await logoutUserRequest();
     setUser(null);
+    // Clear sensitive localStorage items from the previous session
+    try {
+      localStorage.removeItem("core:report-draft");
+      localStorage.removeItem("core_offline_report_drafts");
+      sessionStorage.removeItem("core_user_location");
+    } catch {
+      // Ignore storage errors (private mode, etc.)
+    }
   }, []);
 
   const value = useMemo(

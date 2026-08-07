@@ -25,18 +25,21 @@ export function SharedFolderPage() {
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
     useEffect(() => {
-        if (token) {
-            docService.getSharedFolder(token)
-                .then((data) => {
-                    setFolder(data);
-                    setLoading(false);
-                })
-                .catch((err) => {
-                    const message = err instanceof Error ? err.message : "This shared link is invalid or has expired.";
-                    setError(message);
-                    setLoading(false);
-                });
-        }
+        if (!token) return;
+        let cancelled = false;
+        docService.getSharedFolder(token)
+            .then((data) => {
+                if (cancelled) return;
+                setFolder(data);
+                setLoading(false);
+            })
+            .catch((err) => {
+                if (cancelled) return;
+                const message = err instanceof Error ? err.message : "This shared link is invalid or has expired.";
+                setError(message);
+                setLoading(false);
+            });
+        return () => { cancelled = true; };
     }, [token]);
 
     if (loading) return <div className="p-10 text-slate-500 text-center">Loading shared content...</div>;

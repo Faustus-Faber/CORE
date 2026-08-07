@@ -21,10 +21,7 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: CORS_ORIGIN
-        fromService:
-          type: web
-          name: core-frontend
-          property: url
+        sync: false
 
   # Frontend React SPA Static Site
   - type: web
@@ -39,8 +36,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: core-backend
-          property: url
-          append: /api
+        sync: false
